@@ -17,8 +17,15 @@ the build env is up (the build-env agent is reporting these).
 - **Codec: Everest ES8156** — **stereo audio DAC**, I2C control (incl. hardware volume).
 - **Amp: FM8002A** mono speaker amp (switchable via coprocessor) → built-in 8Ω speaker.
 - **3.5 mm headphone jack** with insertion detection (stereo, the good output).
-- **I2S** bus drives the codec. Sample rate/bit depth: confirm in BSP (target **48 kHz,
-  16/24-bit stereo**).
+- **I2S** drives the codec. **Confirmed from `badge-bsp` (`bsp/audio.h` +
+  `targets/tanmatsu/badge_bsp_audio.c`):** I2S standard mode, **16-bit, stereo,
+  interleaved L/R**, MSB slot. Default rate **44100 Hz**; change with
+  `bsp_audio_set_rate(48000)` (note: it tears down + re-creates the I2S channel).
+  - Output path: `bsp_audio_get_i2s_handle(&h)` → write blocks with `i2s_channel_write()`.
+    Our float DSP converts to `int16` interleaved at the sink.
+  - Volume: `bsp_audio_set_volume(0..100)` (hardware, via ES8156 over I2C).
+  - Speaker amp: `bsp_audio_set_amplifier(bool)` / `..._force(bool)` (auto-mutes on
+    headphone insert unless forced). Codec component: `nicolaielectronics__es8156`.
 - ⚠️ **No audio input / no audio ADC.** There is no line/mic-in codec path. The
   general-purpose ADC is for things like pots/CV on expansion headers, **not** for an
   analog audio signal chain.
