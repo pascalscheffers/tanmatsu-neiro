@@ -211,6 +211,13 @@ Opus clears the entry when the gate is resolved.
 
 _(none open)_
 
+✅ Stage 3 — Juno default-patch voicing — **RATIFIED 2026-06-28 (Opus 4.8)**
+  Sonic gate during 3b-ii. Pascal chose **"Clean 106"**: matrix default routings =
+  `ENV2→cutoff +0.35 LIN` and `LFO1→PWM +0.20 LIN` (2 of 16 slots; amp env already hardwired
+  in `JunoVoice`, so these are additive). No default vibrato — left for the user/mod-wheel.
+  Depths normalized + tunable on device without re-ratifying. Frozen in **ADR 0009 §Default-patch
+  voicing**; stage-3 gate row ✅. → Stage 3b-ii unblocked; dispatch fresh worker.
+
 ✅ Stage 3 — Mod-matrix shape — **RATIFIED 2026-06-28 (Opus 4.8)**
   Gate before 3b-i (architecture + data-format: sizes the audio inner loop *and* the preset
   bytes). Pascal chose **16 fixed routing slots/patch**, record =

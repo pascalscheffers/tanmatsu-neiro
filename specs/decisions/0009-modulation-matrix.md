@@ -25,6 +25,20 @@ Routing = { source, dest_param_id, depth, curve }   // fixed-size array per patc
   by mod depth, ENV→cutoff/PWM, etc.) so it behaves like a 106 out of the box; users can
   add/replace routings.
 
+## Default-patch voicing (RATIFIED 2026-06-28, Opus 4.8 — sonic gate, Stage 3b-ii)
+The factory Juno default ("Clean 106"): minimal but recognizably 106. The amp envelope is
+**already hardwired** in `JunoVoice` (since Stage 1), so the matrix default is *additive*.
+
+| source | dest   | depth  | curve |
+|--------|--------|--------|-------|
+| ENV2   | cutoff | +0.35  | LIN   |
+| LFO1   | PWM    | +0.20  | LIN   |
+
+(2 of 16 slots active; LFO1 = triangle, moderate rate.) Vibrato / extra motion is left for the
+user / mod-wheel — not in the default. Depths are normalized (scale the dest's natural range);
+exact feel is tunable on device without re-ratifying (it's a default-data tweak, not a shape
+change). This is the **INIT/factory default**; the other factory presets may layer more.
+
 ## Frozen shape (RATIFIED 2026-06-28, Opus 4.8 — gate "Mod-matrix shape", before Stage 3b-i)
 The concrete, preset-format-bearing shape. Frozen here because it sizes the audio inner loop
 *and* the persisted preset bytes; do not change without an ADR amendment + format bump.
