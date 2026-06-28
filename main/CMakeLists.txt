@@ -15,7 +15,12 @@ if(BENCH)
     # is muxed for badgelink), so the bench waits for a keypress and exits to the
     # launcher when done. The host bench (host/CMakeLists.txt) sets only
     # SYNTH_BENCH so `make bench` still runs unattended.
-    set(BENCH_FLAGS "-DSYNTH_BENCH=1" "-DSYNTH_BENCH_INTERACTIVE=1")
+    #
+    # -O2: the project default is -Og (IDF debug); the bench measures DSP cost, so
+    # it builds at -O2 to be representative of the shipping synth. Appended after
+    # the global -Og in COMPILE_OPTIONS, so the last -O wins. Bench build only;
+    # the normal image's optimization is unchanged (sdkconfig still DEBUG).
+    set(BENCH_FLAGS "-DSYNTH_BENCH=1" "-DSYNTH_BENCH_INTERACTIVE=1" "-O2")
 else()
     set(BENCH_SRCS "")
     set(BENCH_FLAGS "")
