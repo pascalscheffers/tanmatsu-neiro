@@ -63,8 +63,9 @@ the device. `make bench` builds the host with `-DSYNTH_BENCH` and runs it.
 - **Load it via AppFS, not a full reflash.** The bench is a throwaway diagnostic — there's
   no reason to overwrite the launcher firmware for it. Push it into the launcher's AppFS
   partition over USB and launch it; the launcher stays put and you drop back into it when
-  the bench reboots. One-time: `make badgelink` (clones the tool). Then, with the device in
-  the launcher:
+  the bench reboots. One-time: `make badgelink` (clones the tool). The device must be in
+  **USB mode** (launcher home screen → purple diamond; USB icon top-right) so badgelink can
+  find it. Then, with the device in the launcher:
   - terminal A: `make monitor BENCH=1` — opens the UART; reconnects across the launch-reboot.
   - terminal B: `make bench-device` — builds `BENCH=1`, uploads under the `synthbench`
     AppFS slug (the synth app's own slot is untouched), and starts it.

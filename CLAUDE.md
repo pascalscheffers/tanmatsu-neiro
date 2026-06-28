@@ -256,7 +256,8 @@ dedicated AppFS partition; [badgelink](https://docs.tanmatsu.cloud/software/badg
 uploads an app binary into it over USB and launches it, leaving the launcher firmware
 untouched (you drop back into the launcher when the app exits). Much faster than a full
 flash — the default for iterating. One-time: `make badgelink` (clones the tool; on Linux
-also install its udev rules). Then, with the device sitting in the launcher:
+also install its udev rules). The device must be in **USB mode** for badgelink to find it
+(launcher home screen → press the purple diamond; a USB icon appears top-right). Then:
 - `make install` — build + upload the synth into AppFS (slug `synth`).
 - `make run` — launch it.
 - Override `APP_SLUG`/`APP_TITLE` to install variants side-by-side without clobbering a slot.
