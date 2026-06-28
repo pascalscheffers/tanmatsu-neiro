@@ -284,14 +284,25 @@ static void draw_rows(pax_buf_t* fb, const UIState* s) {
     int n = group_params(s->page_groups[s->page], rows, 16);
     if (n == 0) return;
 
-    // Vertically centre the row block in the content area.
-    float block_h = (float)n * ROW_H;
+    // How many rows fit in the content area (integer, floor).
+    int visible = (int)(CONTENT_H / ROW_H);
+    if (visible < 1) visible = 1;
+    if (visible > n) visible = n;
+
+    // Scroll to keep the selected row in view.  scroll_top is the index of
+    // the first rendered row; clamp so the window never runs past the last row.
+    int scroll_top = s->row - visible / 2;
+    if (scroll_top < 0) scroll_top = 0;
+    if (scroll_top + visible > n) scroll_top = n - visible;
+
+    // Centre a full page (or partial if fewer rows than fit) in the content area.
+    float block_h = (float)visible * ROW_H;
     float start_y = CONTENT_Y + (CONTENT_H - block_h) * 0.5f;
     if (start_y < CONTENT_Y) start_y = CONTENT_Y;
 
-    for (int i = 0; i < n; i++) {
+    for (int i = scroll_top; i < scroll_top + visible; i++) {
         const ParamDesc* d  = rows[i];
-        float row_y = start_y + (float)i * ROW_H;
+        float row_y = start_y + (float)(i - scroll_top) * ROW_H;
         float mid_y = row_y + ROW_H * 0.5f;
         bool  sel   = (i == s->row);
 
