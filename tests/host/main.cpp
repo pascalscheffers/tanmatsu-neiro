@@ -12,6 +12,7 @@ void test_saturate_suite();
 void test_preset_suite();
 void test_mod_sources_suite();
 void test_mod_matrix_suite();
+void test_params_suite();
 
 int main(void)
 {
@@ -25,6 +26,7 @@ int main(void)
     test_preset_suite();
     test_mod_sources_suite();
     test_mod_matrix_suite();
+    test_params_suite();
     printf("All tests passed.\n");
     return 0;
 }

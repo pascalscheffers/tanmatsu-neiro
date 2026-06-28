@@ -53,6 +53,7 @@ static const char* group_name(uint8_t g) {
     switch (g) {
         case GROUP_OSC:    return "OSC";
         case GROUP_FILTER: return "FILTER";
+        case GROUP_HPF:    return "HPF";
         case GROUP_ENV:    return "ENV";
         case GROUP_ENV2:   return "ENV2";
         case GROUP_LFO:    return "LFO";

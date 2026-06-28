@@ -219,10 +219,14 @@ void test_voice_set_param_cutoff() {
     auto measure_rms = [](float cutoff) -> float {
         JunoVoice v;
         v.init(kSampleRate);
-        v.set_param((int)ParamId::SUB_LEVEL,     0.0f);
-        v.set_param((int)ParamId::NOISE_LEVEL,   0.0f);
-        v.set_param((int)ParamId::FILTER_CUTOFF, cutoff);
-        v.set_param((int)ParamId::FILTER_RES,    0.0f);
+        v.set_param((int)ParamId::SUB_LEVEL,       0.0f);
+        v.set_param((int)ParamId::NOISE_LEVEL,     0.0f);
+        v.set_param((int)ParamId::FILTER_CUTOFF,   cutoff);
+        v.set_param((int)ParamId::FILTER_RES,      0.0f);
+        // Disable new panel mods so only the base cutoff is tested.
+        v.set_param((int)ParamId::VCF_ENV_DEPTH,   0.0f);
+        v.set_param((int)ParamId::VCF_KEY_TRACK,   0.0f);
+        v.set_param((int)ParamId::VCF_LFO_DEPTH,   0.0f);
         NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
         v.note_on(69, 127, expr);  // A4 = 440 Hz
         float buf[64];

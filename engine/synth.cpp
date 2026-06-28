@@ -105,12 +105,33 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
         voice->set_param(ParamId::LFO2_RATE,     s_params.get(ParamId::LFO2_RATE));
         voice->set_param(ParamId::LFO2_DEPTH,    s_params.get(ParamId::LFO2_DEPTH));
         voice->set_param(ParamId::LFO2_SHAPE,    s_params.get(ParamId::LFO2_SHAPE));
+        // Stage 3c-i: new Juno params.
+        voice->set_param(ParamId::OSC_PWM,         s_params.get(ParamId::OSC_PWM));
+        voice->set_param(ParamId::OSC_WAVEFORM,    s_params.get(ParamId::OSC_WAVEFORM));
+        voice->set_param(ParamId::OSC_RANGE,       s_params.get(ParamId::OSC_RANGE));
+        voice->set_param(ParamId::VCF_ENV_DEPTH,   s_params.get(ParamId::VCF_ENV_DEPTH));
+        voice->set_param(ParamId::VCF_ENV_POLARITY,s_params.get(ParamId::VCF_ENV_POLARITY));
+        voice->set_param(ParamId::VCF_KEY_TRACK,   s_params.get(ParamId::VCF_KEY_TRACK));
+        voice->set_param(ParamId::VCF_LFO_DEPTH,   s_params.get(ParamId::VCF_LFO_DEPTH));
+        voice->set_param(ParamId::HPF_CUTOFF,      s_params.get(ParamId::HPF_CUTOFF));
+        voice->set_param(ParamId::LFO1_DELAY,      s_params.get(ParamId::LFO1_DELAY));
+        voice->set_param(ParamId::LFO2_DELAY,      s_params.get(ParamId::LFO2_DELAY));
+        voice->set_param(ParamId::VCA_GATE_MODE,   s_params.get(ParamId::VCA_GATE_MODE));
+        voice->set_param(ParamId::VCA_LEVEL,       s_params.get(ParamId::VCA_LEVEL));
     }
 
     // 4. Update chorus (non-per-voice) from the param store.
-    s_chorus.SetLfoFreq(s_params.get(ParamId::CHORUS_RATE));
-    s_chorus.SetLfoDepth(s_params.get(ParamId::CHORUS_DEPTH));
-    s_chorus.SetDelay(s_params.get(ParamId::CHORUS_DELAY));
+    // CHORUS_MODE: 0=off, 1=Chorus I (slow/lush), 2=Chorus II (fast/wide).
+    // Mode I/II differ in rate preset; depth and delay are user-tweakable on top.
+    int chorus_mode = (int)s_params.get(ParamId::CHORUS_MODE);
+    if (chorus_mode > 0) {
+        // Apply mode-specific rate preset, then user rate on top (additive).
+        // Mode I ≈ 0.5 Hz base; Mode II ≈ 1.0 Hz base (classic Juno behaviour).
+        float mode_rate = (chorus_mode == 2) ? 1.0f : 0.5f;
+        s_chorus.SetLfoFreq(mode_rate + s_params.get(ParamId::CHORUS_RATE) * 0.5f);
+        s_chorus.SetLfoDepth(s_params.get(ParamId::CHORUS_DEPTH));
+        s_chorus.SetDelay(s_params.get(ParamId::CHORUS_DELAY));
+    }
 
     // 5. Sum all active voices into the mono bus.
     memset(s_mono, 0, frames * sizeof(float));
@@ -123,9 +144,16 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     // 6. Mono bus → stereo chorus → master gain → soft-clip → output (ADR 0016).
     float gain = s_params.get(ParamId::MASTER_GAIN);
     for (size_t i = 0; i < frames; i++) {
-        s_chorus.Process(s_mono[i]);
-        left[i]  = soft_clip(s_chorus.GetLeft()  * gain);
-        right[i] = soft_clip(s_chorus.GetRight() * gain);
+        if (chorus_mode > 0) {
+            s_chorus.Process(s_mono[i]);
+            left[i]  = soft_clip(s_chorus.GetLeft()  * gain);
+            right[i] = soft_clip(s_chorus.GetRight() * gain);
+        } else {
+            // Chorus off: output mono signal to both channels (no stereo spread).
+            float v = soft_clip(s_mono[i] * gain);
+            left[i]  = v;
+            right[i] = v;
+        }
     }
 }
 

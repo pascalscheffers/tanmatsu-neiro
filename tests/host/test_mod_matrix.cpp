@@ -174,27 +174,35 @@ void test_matrix_multi_source_summing() {
 void test_matrix_cutoff_mod_in_voice() {
     test_begin("matrix: ENV2→cutoff routing audibly affects voice RMS");
 
-    // Voice A: no routing.
+    // Voice A: no routing. Disable panel mods (VCF_ENV_DEPTH=0) so only the
+    // bare 200 Hz cutoff applies — no ENV2 contribution from the panel knob.
     JunoVoice va;
     va.init(kSampleRate);
-    va.set_param((int)ParamId::ENV_ATTACK,   0.001f);
-    va.set_param((int)ParamId::ENV_SUSTAIN,  0.8f);
+    va.set_param((int)ParamId::ENV_ATTACK,    0.001f);
+    va.set_param((int)ParamId::ENV_SUSTAIN,   0.8f);
     va.set_param((int)ParamId::FILTER_CUTOFF, 200.0f);  // very low cutoff
-    va.set_param((int)ParamId::ENV2_ATTACK,  0.001f);
-    va.set_param((int)ParamId::ENV2_DECAY,   0.001f);
-    va.set_param((int)ParamId::ENV2_SUSTAIN, 1.0f);
+    va.set_param((int)ParamId::VCF_ENV_DEPTH, 0.0f);    // no panel env-mod
+    va.set_param((int)ParamId::VCF_KEY_TRACK, 0.0f);    // no key-follow
+    va.set_param((int)ParamId::VCF_LFO_DEPTH, 0.0f);   // no LFO mod
+    va.set_param((int)ParamId::ENV2_ATTACK,   0.001f);
+    va.set_param((int)ParamId::ENV2_DECAY,    0.001f);
+    va.set_param((int)ParamId::ENV2_SUSTAIN,  1.0f);
     NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
     va.note_on(69, 100, expr);
 
-    // Voice B: ENV2→cutoff with depth=1 (adds full env2 value to 200Hz base).
+    // Voice B: ENV2→cutoff via mod matrix with depth=5000 Hz.
+    // Same panel mods zeroed; only the matrix routing opens the filter.
     JunoVoice vb;
     vb.init(kSampleRate);
-    vb.set_param((int)ParamId::ENV_ATTACK,   0.001f);
-    vb.set_param((int)ParamId::ENV_SUSTAIN,  0.8f);
+    vb.set_param((int)ParamId::ENV_ATTACK,    0.001f);
+    vb.set_param((int)ParamId::ENV_SUSTAIN,   0.8f);
     vb.set_param((int)ParamId::FILTER_CUTOFF, 200.0f);
-    vb.set_param((int)ParamId::ENV2_ATTACK,  0.001f);
-    vb.set_param((int)ParamId::ENV2_DECAY,   0.001f);
-    vb.set_param((int)ParamId::ENV2_SUSTAIN, 1.0f);
+    vb.set_param((int)ParamId::VCF_ENV_DEPTH, 0.0f);    // panel mod off
+    vb.set_param((int)ParamId::VCF_KEY_TRACK, 0.0f);
+    vb.set_param((int)ParamId::VCF_LFO_DEPTH, 0.0f);
+    vb.set_param((int)ParamId::ENV2_ATTACK,   0.001f);
+    vb.set_param((int)ParamId::ENV2_DECAY,    0.001f);
+    vb.set_param((int)ParamId::ENV2_SUSTAIN,  1.0f);
     // Route: ENV2 → cutoff, depth 5000 (maps 0..1 env → 0..5000 Hz offset)
     vb.mod_matrix().set_route(0, Routing{
         (uint8_t)ModSource::ENV2,

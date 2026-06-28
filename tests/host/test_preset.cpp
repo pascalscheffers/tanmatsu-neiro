@@ -47,9 +47,10 @@ static void test_factory_init_name(void) {
 
 static void test_factory_params_count(void) {
     test_begin("factory_params returns kJunoParamCount entries");
-    uint16_t ids[32];
-    float    vals[32];
-    int n = preset_factory_params(0, ids, vals, 32);
+    /* Buffer must be at least kJunoParamCount large; use 64 to future-proof. */
+    uint16_t ids[64];
+    float    vals[64];
+    int n = preset_factory_params(0, ids, vals, 64);
     TEST_ASSERT(n == kJunoParamCount, "factory INIT should have all params");
     test_pass();
 }
@@ -82,9 +83,9 @@ static void test_serialize_parse_roundtrip(void) {
     TEST_ASSERT((size_t)len <= PRESET_BLOB_MAX, "blob exceeds max size");
 
     char     name[PRESET_NAME_LEN + 1];
-    uint16_t ids[32];
-    float    vals[32];
-    int count = parse_params_only(blob, (size_t)len, name, sizeof(name), ids, vals, 32);
+    uint16_t ids[64];
+    float    vals[64];
+    int count = parse_params_only(blob, (size_t)len, name, sizeof(name), ids, vals, 64);
     TEST_ASSERT(count == kJunoParamCount, "parsed count should equal table count");
     TEST_ASSERT(strcmp(name, "RoundTrip") == 0, "preset name mismatch after parse");
 
@@ -139,8 +140,8 @@ static void test_parse_truncated_blob(void) {
 
 static void test_factory_init_values_match_defaults(void) {
     test_begin("factory INIT physical values match table defaults");
-    uint16_t ids[32]; float vals[32];
-    int n = preset_factory_params(0, ids, vals, 32);
+    uint16_t ids[64]; float vals[64];
+    int n = preset_factory_params(0, ids, vals, 64);
     TEST_ASSERT(n == kJunoParamCount, "INIT should have all params");
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < kJunoParamCount; j++) {
@@ -191,11 +192,11 @@ static void test_routing_roundtrip(void) {
     TEST_ASSERT((size_t)len <= PRESET_BLOB_MAX, "blob with routings exceeds max size");
 
     char     name[PRESET_NAME_LEN + 1];
-    uint16_t ids[32]; float vals[32];
+    uint16_t ids[64]; float vals[64];
     Routing  r_out[PRESET_MAX_ROUTINGS];
     int      r_count = 0;
     int count = preset_parse(blob, (size_t)len, name, sizeof(name),
-                             ids, vals, 32,
+                             ids, vals, 64,
                              r_out, PRESET_MAX_ROUTINGS, &r_count);
     TEST_ASSERT(count == kJunoParamCount, "param count wrong after routing round-trip");
     TEST_ASSERT(r_count == 2, "routing count should be 2");
@@ -289,9 +290,9 @@ static void test_serialize_parse_with_zero_routings(void) {
 
     Routing r[PRESET_MAX_ROUTINGS];
     int r_count = -1;
-    char name[33]; uint16_t ids[32]; float vals[32];
+    char name[33]; uint16_t ids[64]; float vals[64];
     int count = preset_parse(blob, (size_t)len, name, sizeof(name),
-                             ids, vals, 32,
+                             ids, vals, 64,
                              r, PRESET_MAX_ROUTINGS, &r_count);
     TEST_ASSERT(count == kJunoParamCount, "param count wrong for zero-routings blob");
     TEST_ASSERT(r_count == 0, "r_count should be 0 for zero-routings blob");

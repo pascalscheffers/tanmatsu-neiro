@@ -81,8 +81,16 @@ private:
     float p_osc_level_    = 0.70f;
     float p_sub_level_    = 0.30f;
     float p_noise_level_  = 0.05f;
+    float p_osc_pwm_      = 0.50f;  // pulse-width amount (0=narrow..1=wide; cache-only until osc gains set_pw)
+    int   p_osc_waveform_ = 0;      // waveform select: 0=saw, 1=pulse, 2=tri
+    float p_osc_range_semi_ = 0.0f; // DCO range offset in semitones
     float p_cutoff_       = 2000.0f;
     float p_res_          = 0.30f;
+    float p_vcf_env_depth_    = 0.35f;  // ENV2 → VCF mod depth
+    int   p_vcf_env_polarity_ = 0;      // 0=positive, 1=negative
+    float p_vcf_key_track_    = 0.50f;  // key-follow amount (0..1)
+    float p_vcf_lfo_depth_    = 0.0f;   // LFO1 → VCF panel mod depth
+    float p_hpf_cutoff_   = 20.0f;  // HPF cutoff (cached; DSP block pending)
     float p_attack_       = 0.010f;  // seconds
     float p_decay_        = 0.100f;
     float p_sustain_      = 0.700f;
@@ -96,7 +104,18 @@ private:
     float p_lfo1_rate_    = 1.0f;
     float p_lfo1_depth_   = 0.5f;
     int   p_lfo1_shape_   = 0;   // LfoWave::SINE
+    float p_lfo1_delay_   = 0.0f;  // fade-in delay time (seconds)
     float p_lfo2_rate_    = 0.5f;
     float p_lfo2_depth_   = 0.5f;
     int   p_lfo2_shape_   = 0;   // LfoWave::SINE
+    float p_lfo2_delay_   = 0.0f;  // fade-in delay time (seconds)
+    // VCA params
+    int   p_vca_gate_mode_ = 0;     // 0=env, 1=gate
+    float p_vca_level_     = 1.0f;  // per-voice output level
+    // LFO delay state: sample counter used to implement the fade-in ramp.
+    // Reset on note_on; increments each sample; depth scales from 0→1 over delay_samples.
+    float lfo1_delay_samples_ = 0.0f;  // total fade-in length in samples
+    float lfo2_delay_samples_ = 0.0f;
+    float lfo1_delay_pos_     = 0.0f;  // current sample position in fade-in
+    float lfo2_delay_pos_     = 0.0f;
 };
