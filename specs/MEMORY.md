@@ -187,6 +187,15 @@ Opus clears the entry when the gate is resolved.
 
 _(none open)_
 
+✅ Stage 3 — Mod-matrix shape — **RATIFIED 2026-06-28 (Opus 4.8)**
+  Gate before 3b-i (architecture + data-format: sizes the audio inner loop *and* the preset
+  bytes). Pascal chose **16 fixed routing slots/patch**, record =
+  `{source:u8, dest_param_id:u16, depth:f32 (bipolar [-1,+1]), curve:u8}` — keeps ADR 0009's
+  per-routing `curve`. Audio-rate dests = pitch/PWM/cutoff/amp (per-block smoothed); all else
+  control-rate. Inactive slot = `source==NONE` or `depth==0`. Serialize field-by-field; format
+  bump deferred to 3b-ii. Frozen in **ADR 0009 §Frozen shape**; gate row in stage-3 doc marked ✅.
+  → Stage 3b-i unblocked; dispatch fresh worker.
+
 ✅ Stage 2 — Master output: soft-clip vs linear headroom — **RATIFIED 2026-06-28 (Opus 4.8)**
   The sonic gate deferred at 2b (the `synth.cpp` clip at moderate polyphony). Pascal chose
   **linear headroom + a gentle cubic soft-clip ceiling** → **ADR 0016**. No baked-in drive;

@@ -25,6 +25,34 @@ Routing = { source, dest_param_id, depth, curve }   // fixed-size array per patc
   by mod depth, ENV→cutoff/PWM, etc.) so it behaves like a 106 out of the box; users can
   add/replace routings.
 
+## Frozen shape (RATIFIED 2026-06-28, Opus 4.8 — gate "Mod-matrix shape", before Stage 3b-i)
+The concrete, preset-format-bearing shape. Frozen here because it sizes the audio inner loop
+*and* the persisted preset bytes; do not change without an ADR amendment + format bump.
+
+- **Fixed array of 16 `Routing` slots per patch** (no allocation; bounded, predictable cost).
+  16 leaves ~11 free above the ~5 the Juno default patch pre-wires (ADR 0009 defaults).
+- **Routing record** (serialize field-by-field, byte-wise like the existing preset format —
+  no struct memcpy, avoids alignment/padding UB):
+  ```
+  struct Routing {
+    uint8_t  source;         // ModSource id (0 = NONE → slot inactive)
+    uint16_t dest_param_id;  // any ParamId from JUNO_PARAM_TABLE
+    float    depth;          // bipolar [-1, +1], scales the dest's natural range
+    uint8_t  curve;          // ModCurve id, 0 = LIN (default)
+  };  // 8 bytes incl. padding; serialized as 1+2+4+1 = 8 bytes
+  ```
+  A slot with `source == NONE` **or** `depth == 0` is inactive and skipped in eval.
+- **Source ids** (stable, assign in `mod_matrix.h`): LFO1, LFO2, ENV1(amp), ENV2(mod),
+  velocity, key-track, mod-wheel, pitch-bend, aftertouch (+ MPE/macros/S&H/seq reserved for
+  later — leave id gaps). Per-voice sources (envs, per-voice LFO, velocity, key-track) resolve
+  per voice; global sources (wheel, bend, macros) resolve once per block.
+- **Audio-rate dests** — pitch, PWM, cutoff, amp — are summed per block and block-smoothed (or
+  per-sample) for smoothness. **All other dests are control-rate** (evaluated once per block).
+- Eval is **O(active routes)** and **denormal-safe** (ADR 0012). `curve` is a small LUT/shape
+  applied to `depth × source` before summing into the dest.
+- **Preset (Stage 3b-ii):** append a routings block = `count:u16` + `count × Routing`,
+  field-by-field; bump the format version. Unknown source/curve ids skipped forward-compat.
+
 ## Consequences
 - The matrix is bounded (fixed max routings per patch) → no allocation, predictable cost.
 - A new engine inherits modulation for free — it only declares its parameters.

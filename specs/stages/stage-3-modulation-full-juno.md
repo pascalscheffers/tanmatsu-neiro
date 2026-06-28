@@ -13,7 +13,7 @@ Juno default routings shipped as the default patch; **2 LFOs + 2 envelopes** per
 ## Gate table
 | Gate | When | Why Opus | Recommendation |
 |---|---|---|---|
-| 🛑 Mod-matrix shape | before 3b-i | architecture + data-format | Fixed N slots (start N≈8), each `{source, dest, depth}`; mark which dests are **audio-rate** (cutoff, pitch, amp) vs block-rate; freeze before it enters the preset format |
+| ✅ Mod-matrix shape | ~~before 3b-i~~ **RATIFIED 2026-06-28** | architecture + data-format | **16 slots**, `{source:u8, dest_param_id:u16, depth:f32 bipolar, curve:u8}`; audio-rate dests = pitch/PWM/cutoff/amp. Frozen in **ADR 0009 §Frozen shape**. |
 | 🛑 Juno default-patch voicing | during 3b-ii | sonic | Dial the signature Juno default routings/depths (env→VCA, env→cutoff, LFO→pitch/PWM); A/B against reference if available |
 | 🛑 Unison cost > Stage 0.5 budget | end of 3d-ii (device) | CPU-budget | re-open budget gate; cap unison voices or reduce poly under unison |
 
