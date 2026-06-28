@@ -28,6 +28,10 @@ void synth_render(float* left, float* right, size_t n, void* user);
 void engine_note_on(uint8_t pitch, uint8_t velocity);
 void engine_note_off(uint8_t pitch);
 
+// Count of currently active voices (gate-on or envelope still running).
+// Called from the UI thread; may read a frame-stale value — display use only.
+int engine_active_voices(void);
+
 #ifdef __cplusplus
 }
 #endif

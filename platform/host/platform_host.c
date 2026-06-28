@@ -183,6 +183,11 @@ bool platform_poll_event(platform_event_t* out) {
             return true;
         case SDL_KEYDOWN:
         case SDL_KEYUP:
+            if (e.type == SDL_KEYDOWN && e.key.repeat) {
+                // Auto-repeat: key was already reported as pressed; skip.
+                out->type = PLATFORM_EV_NONE;
+                return true;
+            }
             if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) {
                 out->type = PLATFORM_EV_QUIT;
                 return true;

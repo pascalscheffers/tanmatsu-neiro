@@ -7,6 +7,7 @@
 #include "platform.h"
 #include "synth.h"
 #include "ui.h"
+#include "control/keyboard.h"
 #ifdef SYNTH_BENCH
 #include "bench.h"
 #endif
@@ -16,7 +17,7 @@
 #include "pax_text.h"
 #endif
 
-// Audio format for Stage 0 (spec 02): 64-frame blocks at 48 kHz.
+// Audio format (spec 02): 64-frame blocks at 48 kHz.
 #define SAMPLE_RATE 48000u
 #define BLOCK_SIZE  64u
 
@@ -75,6 +76,7 @@ void app_run(void) {
     return;
 #endif
 
+    keyboard_init();
     synth_init(SAMPLE_RATE);
 
     const platform_audio_config_t audio_cfg = {
@@ -91,10 +93,12 @@ void app_run(void) {
             if (ev.type == PLATFORM_EV_QUIT) {
                 running = false;
             }
+            keyboard_handle_event(&ev);
         }
 
         if (fb) {
-            ui_draw(fb, platform_millis());
+            ui_draw(fb, platform_millis(),
+                    engine_active_voices(), keyboard_octave());
             platform_present();
         }
 

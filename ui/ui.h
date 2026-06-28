@@ -11,9 +11,11 @@
 extern "C" {
 #endif
 
-// Render one frame of the Stage 0 hello screen into `fb`. `millis` is wall-clock
-// time (platform_millis) used only to animate, proving the loop is live.
-void ui_draw(pax_buf_t* fb, uint64_t millis);
+// Render one frame of the Stage 1d synth page into `fb`.
+//   millis       — wall-clock time (platform_millis), for animation only.
+//   active_voices — count from engine_active_voices(); displayed as indicators.
+//   octave       — current keyboard octave from keyboard_octave().
+void ui_draw(pax_buf_t* fb, uint64_t millis, int active_voices, int octave);
 
 #ifdef __cplusplus
 }

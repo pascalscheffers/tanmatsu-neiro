@@ -78,3 +78,12 @@ void engine_note_on(uint8_t pitch, uint8_t velocity) {
 void engine_note_off(uint8_t pitch) {
     s_alloc.note_off(pitch);
 }
+
+int engine_active_voices(void) {
+    const VoiceSlot* slots = s_alloc.slots();
+    int count = 0;
+    for (int v = 0; v < kNumVoices; v++) {
+        if (slots[v].voice->is_active()) count++;
+    }
+    return count;
+}

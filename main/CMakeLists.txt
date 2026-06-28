@@ -42,6 +42,8 @@ idf_component_register(
 		"${DAISYSP}/Source/Filters/svf.cpp"
 		"${DAISYSP}/Source/Control/adsr.cpp"
 		"${DAISYSP}/Source/Effects/chorus.cpp"
+		# Stage 1d: musical-typing input.
+		"../control/keyboard.c"
 		"../ui/ui.c"
 		"../platform/device/platform_device.c"
 		${BENCH_SRCS}
