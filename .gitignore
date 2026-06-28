@@ -1,6 +1,7 @@
 build/
 build-host/
 build-bench/
+build-test/
 tags
 main/kbelf_lib.c
 sdkconfig.old
