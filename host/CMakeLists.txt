@@ -11,6 +11,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 # Repo root is one level up from host/.
 get_filename_component(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
+set(DAISYSP "${REPO_ROOT}/dsp/vendor/daisysp")
 
 # --- PAX (built host-side, static so its GNU-ld link flags never reach ld64) ---
 set(PAX_STATIC true)
@@ -32,7 +33,13 @@ pkg_check_modules(SDL2 REQUIRED sdl2)
 option(SYNTH_BENCH "Build the Stage 0.5 CPU profiling harness" OFF)
 
 set(HOST_SRCS
-    "${REPO_ROOT}/engine/synth.c"
+    # Stage 1b: synth.cpp replaces Stage 0 synth.c (JunoVoice + extern-C entry).
+    "${REPO_ROOT}/engine/synth.cpp"
+    "${REPO_ROOT}/engine/juno_voice.cpp"
+    # DaisySP modules used by JunoVoice (header-only: whitenoise, dsp wrappers).
+    "${DAISYSP}/Source/Synthesis/oscillator.cpp"
+    "${DAISYSP}/Source/Filters/svf.cpp"
+    "${DAISYSP}/Source/Control/adsr.cpp"
     "${REPO_ROOT}/ui/ui.c"
     "${REPO_ROOT}/app/app.c"
     "${REPO_ROOT}/platform/host/platform_host.c"
@@ -49,11 +56,18 @@ if(SYNTH_BENCH)
 endif()
 
 target_include_directories(tanmatsu-synth-host PRIVATE
+    # Repo root: resolves "dsp/osc.h", "engine/voice.h" etc.
+    "${REPO_ROOT}"
     "${REPO_ROOT}/platform"
     "${REPO_ROOT}/platform/host"
     "${REPO_ROOT}/engine"
     "${REPO_ROOT}/ui"
     "${REPO_ROOT}/app"
+    # DaisySP Source root: resolves "Synthesis/oscillator.h", "Utility/dsp.h",
+    # "Noise/whitenoise.h" etc. from our dsp/ wrappers and juno_voice.
+    "${DAISYSP}/Source"
+    # DaisySP .cpp files use flat #include "dsp.h" (without "Utility/" prefix).
+    "${DAISYSP}/Source/Utility"
     ${SDL2_INCLUDE_DIRS})
 
 target_link_directories(tanmatsu-synth-host PRIVATE ${SDL2_LIBRARY_DIRS})

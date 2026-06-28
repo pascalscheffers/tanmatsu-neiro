@@ -26,11 +26,19 @@ else()
     set(BENCH_FLAGS "")
 endif()
 
+set(DAISYSP "${CMAKE_CURRENT_SOURCE_DIR}/../dsp/vendor/daisysp")
+
 idf_component_register(
 	SRCS
 		"main.c"
 		"../app/app.c"
-		"../engine/synth.c"
+		# Stage 1b: synth.cpp replaces Stage 0 synth.c (JunoVoice + extern-C entry).
+		"../engine/synth.cpp"
+		"../engine/juno_voice.cpp"
+		# DaisySP modules used by JunoVoice.
+		"${DAISYSP}/Source/Synthesis/oscillator.cpp"
+		"${DAISYSP}/Source/Filters/svf.cpp"
+		"${DAISYSP}/Source/Control/adsr.cpp"
 		"../ui/ui.c"
 		"../platform/device/platform_device.c"
 		${BENCH_SRCS}
@@ -50,6 +58,13 @@ idf_component_register(
 		"../engine"
 		"../ui"
 		"../app"
+		# Repo root: resolves "dsp/osc.h", "engine/voice.h" etc.
+		".."
+		# DaisySP Source root: resolves "Synthesis/oscillator.h",
+		# "Utility/dsp.h", "Noise/whitenoise.h" etc.
+		"${DAISYSP}/Source"
+		# DaisySP .cpp files use flat #include "dsp.h" (without "Utility/" prefix).
+		"${DAISYSP}/Source/Utility"
 )
 
 idf_build_set_property(COMPILE_OPTIONS "-Wno-error=unused-variable" APPEND)

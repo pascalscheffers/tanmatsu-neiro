@@ -1,6 +1,6 @@
 # tests/host/CMakeLists.txt — host DSP test suite.
 #
-# Compiles a subset of dsp/vendor/daisysp and runs tests on the Mac.
+# Compiles dsp/ wrappers, engine/juno_voice, and runs all host DSP tests.
 # Configure into build-test/ (see the Makefile `test` target).
 # FTZ-off: no -ffast-math so denormals behave as on the device (ADR 0012).
 cmake_minimum_required(VERSION 3.16)
@@ -13,13 +13,23 @@ set(DAISYSP "${REPO_ROOT}/dsp/vendor/daisysp")
 add_executable(tanmatsu-tests
     main.cpp
     test_osc.cpp
+    test_voice.cpp
     "${DAISYSP}/Source/Synthesis/oscillator.cpp"
+    "${DAISYSP}/Source/Filters/svf.cpp"
+    "${DAISYSP}/Source/Control/adsr.cpp"
+    "${REPO_ROOT}/engine/juno_voice.cpp"
 )
 
 target_include_directories(tanmatsu-tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
+    # Repo root: resolves "dsp/osc.h", "engine/juno_voice.h" etc.
+    "${REPO_ROOT}"
+    # Engine layer (juno_voice.h includes voice.h by short name).
+    "${REPO_ROOT}/engine"
+    # DaisySP Source root: resolves "Synthesis/oscillator.h",
+    # "Filters/svf.h", "Utility/dsp.h", "Noise/whitenoise.h" etc.
     "${DAISYSP}/Source"
-    "${DAISYSP}/Source/Synthesis"
+    # DaisySP .cpp files use flat #include "dsp.h" (without "Utility/" prefix).
     "${DAISYSP}/Source/Utility"
 )
 
