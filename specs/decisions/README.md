@@ -20,3 +20,4 @@ decision, and the consequence. Supersede rather than rewrite history.
 | [0012](0012-denormals-no-hardware-ftz.md) | Denormals killed in software (P4 has no hardware FTZ); host tests run FTZ-off |
 | [0013](0013-flash-write-audio-placement.md) | Audio render path placed in IRAM so flash writes (presets/SD) don't glitch it |
 | [0014](0014-model-tier-workflow.md) | Opus plans (source-pinned runbooks); Sonnet executes; 🛑 gates hard-stop to escalate |
+| [0015](0015-spending-cpu-headroom.md) | Spend the Stage 0.5 CPU headroom on richness (reverb, oversampling) over raw voice count; profile the video path before waveform animation |

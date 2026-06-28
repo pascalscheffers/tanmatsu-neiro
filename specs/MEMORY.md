@@ -242,3 +242,22 @@ First real AppFS bench run printed nothing. Two independent causes, both fixed:
   shows -O2 (primary) vs -Og side by side; spec 02 row updated.
 - Note: shipping image is still `-Og`; moving the whole project to a PERF build is a separate
   easy change for later. **Stage 1 is unblocked** (per-voice budget ≤ ~30 000 cyc/blk).
+
+## 2026-06-28 — Post-Stage-0.5 architecture review (polyphony growth + headroom spend)
+- Reviewed whether Stage 0.5 results force any architectural change. Conclusion: **no rewrite**
+  — the design already treats voice count as a tunable constant with state-only voices, so
+  polyphony growth is supported by construction. But the data **inverted the premise** of
+  ADR 0003: CPU is *not* the binding constraint at 8 (4.4% of period, ~95% idle).
+- **ADR 0003 rationale amended** (decision unchanged): we *choose* 8 fat voices for sonic
+  reasons, not CPU scarcity. Added growth guardrails — single `kNumVoices` (never a literal
+  `8`), state-only pool, O(n) allocator, **re-profile the real DaisySP voice** before raising
+  the count (proxy is 5–8× optimistic, omits FX).
+- **ADR 0015 (new) — spending the CPU headroom:** richness over raw count. Priority: reverb →
+  per-voice quality (2× oversampling for "sparkling highs", denser unison) → waveform/scope
+  animation → raw voice count last. Each spend gated on a *real* profile (proxy had no FX bus).
+- **Waveform animation (Pascal's ask):** feasible, but the cost is on the **UI/video path**
+  (PAX draw + present + PSRAM framebuffer bandwidth) — Stage 0.5 never measured it. Implied new
+  task: a **display/UI render-path benchmark** (~Stage 2, before promising the scope). Audio
+  side is trivial + lock-free: publish a decimated sample ring; the UI reads at its own cadence.
+- Files: `decisions/0003` (amended), `decisions/0015` (new) + README index, spec 02 polyphony
+  section + deferred list.

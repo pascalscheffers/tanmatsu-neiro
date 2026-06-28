@@ -132,11 +132,13 @@ and tracked per stage thereafter against the ratified per-voice budget.
 | 0 | 936 KB (55% free) | — | audio scratch (`s_left/right/interleaved`) | framebuffer | — | sine engine; no IRAM placement yet |
 | 0.5 | (bench build only) | — | — | — | **480 000 cyc/blk @ 360 MHz** | measured on device (-O2); proxy voice ~2 610 cyc/blk; 8 voices = 4.4% period (`stages/stage-0.5-results.md`) |
 
-## Polyphony — 8 voices + unison (ADR 0003)
-Per-voice cost dominates the budget. **8 voices** with optional **unison** (stack/detune
-for fatness) rather than 16 thin voices — fatter sound, simpler stealing, comfortable CPU
-headroom for the chorus and a future reverb. Voice count is a tunable constant; revisit
-upward only after the first voice is profiled on hardware.
+## Polyphony — 8 voices + unison (ADR 0003, rationale amended)
+**8 voices** with optional **unison** (stack/detune for fatness) rather than 16 thin voices.
+Stage 0.5 showed CPU does *not* bind at 8 (4.4% of the period; ~95% idle) — so the reason to
+hold at 8 is **sonic** (fat Juno voices + predictable stealing), not cycles. Voice count is a
+tunable constant (one `kNumVoices`, never a literal `8`; pool stays state-only); re-profile
+the real voice before raising it. What the idle budget is spent on — reverb, 2× oversampling,
+waveform animation — over raw count: **ADR 0015**.
 
 ## Validation strategy
 - `dsp/` blocks get **host-side unit tests** (pure C/C++, compiles on the Mac): spectra,
@@ -165,5 +167,9 @@ polyphony = 8 + unison (0003); MIDI = USB-A host first (0005); licensing = permi
 ## Open / deferred (not blocking)
 - Block size (start 64 @ 48 kHz) and final voice count — settle by profiling on hardware.
 - USB-host MIDI class driver availability on the P4 — investigate at the MIDI stage (0005).
-- Reverb/delay on the master bus after the chorus — nice-to-have, budget permitting.
+- Reverb/delay on the master bus after the chorus — nice-to-have, budget permitting (now a
+  priority spend for the headroom, ADR 0015 — profile its real block cost on landing).
 - Musical-typing key layout and the live-tweak key map — design when PAX UI work starts.
+- **Display/UI render-path benchmark** (waveform-animation feasibility, ADR 0015) — a
+  Stage-0.5-style bench for PAX draw + present cost; run when UI work begins (~Stage 2),
+  before the scope feature is promised. The cost is video/PSRAM-bandwidth, not audio cycles.
