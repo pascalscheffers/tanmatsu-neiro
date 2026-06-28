@@ -283,3 +283,23 @@ First real AppFS bench run printed nothing. Two independent causes, both fixed:
 - **Next:** Sonnet executes Stage 1 sub-stages 1a→1d per `stages/README.md`. 1a vendors the
   DaisySP slice **at the pinned SHA above** (re-record it + keep upstream `LICENSE`) + stands
   up `make test`.
+
+## 2026-06-28 — Stage 1a: DaisySP vendor + host DSP test harness (COMPLETE)
+
+- **DaisySP vendored** at `599511b740f8f3a9b8db72a0642aa45b8a23c3a3` (MIT) under
+  `dsp/vendor/daisysp/`. Slice: oscillator (PolyBLEP), SVF + Moog ladder filters, ADSR,
+  white noise, chorus, utility headers (dsp.h, dcblock, delayline). Upstream LICENSE kept.
+  Utility path is `Source/Utility/dsp.h` (not `dsputils.h`). DaisySP requires all
+  `Source/*` subdirs on the include path (each file uses flat includes like `"dsp.h"`,
+  `"oscillator.h"`, etc., resolved via per-subdir include dirs in the build).
+- **`tests/host/` test harness** stood up. No external framework — a simple `runner.h`
+  (`TEST_ASSERT`, `TEST_ASSERT_LT`, `test_begin`/`test_pass`) + `main.cpp` + test files.
+  CMakeLists at `tests/host/CMakeLists.txt`; configure into `build-test/`.
+- **`make test`** target added to the Makefile (analogous to `make host`/`make bench`).
+- **First test** (`test_osc.cpp`): renders DaisySP PolyBLEP saw at 440/880/1000 Hz,
+  measures alias energy with a Hann-windowed Goertzel at the first two alias frequencies
+  (harmonics that fold back below Nyquist), asserts alias/fundamental ratio < -36 dB.
+  PolyBLEP measured at ~37–40 dB suppression depending on pitch; floor set at -36 dB.
+- **FTZ-off** enforced in CMakeLists (`-fno-fast-math`, no `-ffast-math`), matching ADR 0012.
+- `make test` ✅  `make host` ✅  `make build` ✅  membrane grep clean.
+- **Next:** Stage 1b — `dsp/` wrappers + `SynthModel`/`IVoice` + `JunoVoice`.
