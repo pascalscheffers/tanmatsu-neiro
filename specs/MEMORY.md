@@ -231,3 +231,14 @@ First real AppFS bench run printed nothing. Two independent causes, both fixed:
   ratified (see Open Opus gates ✅). Results: `stages/stage-0.5-results.md`; spec 02 budget
   row seeded. Caveat: built at `-Og` (conservative); `-O2` would only help.
 - **Next:** Stage 1 (one-voice MVP, DaisySP) against ≤ ~30 000 cyc/blk per-voice budget.
+
+## 2026-06-28 — Stage 0.5 -O2 confirmation
+- Re-ran the device bench at **-O2** (commit 8b0e09a, bench-only override). Our DSP kernels
+  gained **2–2.8×** (biquad 37→13, SVF 28→14, ladder 52→24, saw 36→16 cyc/smp); libm
+  `sinf`/`expf` **flat** (prebuilt) — `expf` ~144 cyc/smp at any `-O`, so the "no per-sample
+  expf" rule holds regardless of optimization.
+- Fused voice ~3 650 → **~2 610 cyc/blk** (~1.4×). **8 voices = 4.4%** period, 32 = 17.5%,
+  0 underruns. ADR 0003 headroom even wider; budget gate stays ratified. Results table now
+  shows -O2 (primary) vs -Og side by side; spec 02 row updated.
+- Note: shipping image is still `-Og`; moving the whole project to a PERF build is a separate
+  easy change for later. **Stage 1 is unblocked** (per-voice budget ≤ ~30 000 cyc/blk).
