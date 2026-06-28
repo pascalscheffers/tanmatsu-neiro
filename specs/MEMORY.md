@@ -194,3 +194,19 @@ Opus clears the entry when the gate is resolved.
   use AppFS; `make flash` demoted to fallback. One-time prereq: `make badgelink`.
 - **Open Opus gate below is unchanged** — still blocked on hardware serial capture; the
   capture method is now `make bench-device` + `make monitor BENCH=1` instead of full flash.
+
+## 2026-06-28 — Device console gotchas (Stage 0.5 bench debugging)
+First real AppFS bench run printed nothing. Two independent causes, both fixed:
+- **Two USB serial ports.** Tanmatsu exposes the **P4 host** console (`H_SDIO_DRV` logs;
+  our `printf` lands here) *and* the **C6 radio** slave console (`slave_rpc` logs). macOS
+  numbers them ~0x100 apart and they shift across the AppFS launch-reboot. We monitored the
+  radio port by mistake. Fix: `make sniff` (`tools/sniff-console.py`) opens **all**
+  `/dev/cu.usbmodem*` at once, labeled, re-scanning for ports that appear post-reboot.
+- **USB-Serial-JTAG buffers stdout.** Console isn't a TTY → newlib block-buffers stdout;
+  the small `printf` table never flushed (while `ESP_LOG` chatter, which bypasses stdio, did
+  show). Fix: `setvbuf(stdout, NULL, _IONBF, 0)` at the top of `bench_run()`.
+- Also fixed: `BENCH=1` wasn't forwarded to the device cmake (so the harness never compiled
+  on-device); `bench.c` printf used `%u`/`%d` for `uint32_t`/`int32_t` (→ `PRIu32`/`PRId32`,
+  `long` on RV32). AppFS dev loop (`make install/run/bench-device`) + `.PORT` override added.
+- **Next:** still need the captured numbers — USB mode → `make sniff` (terminal A) +
+  `make bench-device` (terminal B) → fill `stage-0.5-results.md`, then the Opus gate.
