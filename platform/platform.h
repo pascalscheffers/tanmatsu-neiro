@@ -74,6 +74,10 @@ bool platform_audio_start(const platform_audio_config_t* cfg, platform_audio_ren
 // Stop the audio sink; no further render calls occur after this returns.
 void platform_audio_stop(void);
 
+// End this app and hand control back to the system shell: on device, reboot
+// into the launcher (badge AppFS); on host, exit the process. Does not return.
+void platform_exit_to_launcher(void);
+
 // Non-blocking input poll. Returns true and fills *out when an event was
 // available, false when the queue is empty.
 bool platform_poll_event(platform_event_t* out);

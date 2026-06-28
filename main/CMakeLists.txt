@@ -11,7 +11,11 @@ endif()
 # to compile the profiling harness into the device image.
 if(BENCH)
     set(BENCH_SRCS "../engine/bench.c")
-    set(BENCH_FLAGS "-DSYNTH_BENCH=1")
+    # INTERACTIVE: on device the console can't be attached at AppFS launch (USB-C
+    # is muxed for badgelink), so the bench waits for a keypress and exits to the
+    # launcher when done. The host bench (host/CMakeLists.txt) sets only
+    # SYNTH_BENCH so `make bench` still runs unattended.
+    set(BENCH_FLAGS "-DSYNTH_BENCH=1" "-DSYNTH_BENCH_INTERACTIVE=1")
 else()
     set(BENCH_SRCS "")
     set(BENCH_FLAGS "")
@@ -47,5 +51,7 @@ idf_build_set_property(COMPILE_OPTIONS "-Wno-error=unused-variable" APPEND)
 idf_build_set_property(COMPILE_OPTIONS "-Wno-error=unused-const-variable" APPEND)
 
 if(BENCH)
-    idf_build_set_property(COMPILE_OPTIONS "${BENCH_FLAGS}" APPEND)
+    foreach(flag ${BENCH_FLAGS})
+        idf_build_set_property(COMPILE_OPTIONS "${flag}" APPEND)
+    endforeach()
 endif()

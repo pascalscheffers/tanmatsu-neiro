@@ -206,6 +206,11 @@ bool platform_audio_start(const platform_audio_config_t* cfg, platform_audio_ren
     return true;
 }
 
+void platform_exit_to_launcher(void) {
+    // Clears the AppFS one-shot magic and reboots into the launcher (badge-bsp).
+    bsp_device_restart_to_launcher();
+}
+
 void platform_audio_stop(void) {
     if (s_audio_task == NULL) return;  // not running
     atomic_store(&s_audio_run, false);

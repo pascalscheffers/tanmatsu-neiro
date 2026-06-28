@@ -5,6 +5,7 @@
 // Nothing above the membrane sees either library — they live only here.
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
+#include <stdlib.h>
 #include <time.h>
 #include "miniaudio.h"
 #include "pax_internal.h"  // pax_get_index_conv: native-format pixel -> ARGB
@@ -161,6 +162,11 @@ void platform_audio_stop(void) {
         ma_device_uninit(&s_device);
         s_audio_running = false;
     }
+}
+
+void platform_exit_to_launcher(void) {
+    // No launcher on the host — just leave the process.
+    exit(0);
 }
 
 bool platform_poll_event(platform_event_t* out) {
