@@ -270,6 +270,18 @@ Newest at the bottom. One entry per stage/session. Lean — link to specs, don't
   now reads "… ESC = exit". Bench path unaffected (returns before the new call).
 - `make host` ✅ `make build` ✅ (0xe74c0 ≈ 947 KB, 55% free).
 
+## 2026-06-28 — Observed: output clips at moderate polyphony (defer to Stage 2)
+
+- On-device, holding a few notes clips audibly. Diagnosed: **not** integer mixing
+  (the whole bus is float; only `to_i16` casts, hard-clamping to ±1). It's a
+  headroom/gain-staging issue — one voice already peaks ~1.05 pre-filter
+  (osc 0.70 + sub 0.30 + noise 0.05), resonance adds transient overshoot, and
+  summed held notes exceed full scale despite the chorus's ×0.25. The
+  control→audio race fix made it more audible (notes now sustain and stack).
+- **Decision (Pascal): defer to Stage 2** — fix properly with the master-gain
+  param + gain staging (and decide soft-clip vs linear headroom then). No interim
+  band-aid. The `synth_render` header comment already flags this.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
