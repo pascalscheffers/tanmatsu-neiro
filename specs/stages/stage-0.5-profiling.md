@@ -66,13 +66,22 @@ the device. `make bench` builds the host with `-DSYNTH_BENCH` and runs it.
   the bench reboots. One-time: `make badgelink` (clones the tool). The device must be in
   **USB mode** (launcher home screen → purple diamond; USB icon top-right) so badgelink can
   find it. Then, with the device in the launcher:
-  - terminal A: `make monitor BENCH=1` — opens the UART; reconnects across the launch-reboot.
+  - terminal A: `make sniff` — reads **all** `/dev/cu.usbmodem*` ports at once, labeled.
   - terminal B: `make bench-device` — builds `BENCH=1`, uploads under the `synthbench`
     AppFS slug (the synth app's own slot is untouched), and starts it.
 
-  The kernel table + ramp print into terminal A. `make flash` (full firmware overwrite) is
-  the fallback only if the launcher/AppFS path is unavailable. See AppFS dev loop in
-  `CLAUDE.md` → *Build, Flash, Run*.
+  **Console gotchas (both cost us a run — don't relearn them):**
+  1. The Tanmatsu exposes **two** USB serial interfaces: the **P4 host** (`[…01]`-ish,
+     shows `H_SDIO_DRV`) where our app's `printf` lands, and the **C6 radio** slave (shows
+     `slave_rpc`). The numbers shift across the launch-reboot. `make sniff` opens them all
+     so you can't pick the wrong one; the bench table appears on the P4 line.
+  2. The console is **USB-Serial-JTAG**, which isn't a TTY, so newlib block-buffers stdout.
+     `bench_run()` calls `setvbuf(stdout, NULL, _IONBF, 0)` so the table streams live — keep
+     that, or the output sits invisibly in the buffer while only `ESP_LOG` chatter shows.
+
+  `make sniff` tees to `build/<dev>-bench/console.log`. `make flash` (full firmware
+  overwrite) is the fallback only if the launcher/AppFS path is unavailable. See the AppFS
+  dev loop in `CLAUDE.md` → *Build, Flash, Run*.
 - **Load ramp (the real measurement):** install `bench_voice_proxy` as the audio render fn.
   Around the render call in the audio task, read `platform_cycles_now()` before/after and
   accumulate into a lock-free stat (the spec 08 "measure in the audio thread, report from a

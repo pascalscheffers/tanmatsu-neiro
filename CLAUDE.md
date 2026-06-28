@@ -262,11 +262,15 @@ also install its udev rules). The device must be in **USB mode** for badgelink t
 - `make run` — launch it.
 - Override `APP_SLUG`/`APP_TITLE` to install variants side-by-side without clobbering a slot.
 
-badgelink does **not** capture the console — UART output (e.g. the bench table) still comes
-via `make monitor`. AppFS partition details: https://docs.tanmatsu.cloud/software/appfs/.
+badgelink does **not** capture the console — output (e.g. the bench table) comes over USB
+serial. The Tanmatsu exposes **two** serial interfaces (P4 host + C6 radio) whose device
+numbers shift across reboots, and the console is **USB-Serial-JTAG** (block-buffers stdout
+when not a TTY — `printf` needs `setvbuf`/`fflush` or it stays invisible while `ESP_LOG`
+shows). Use `make sniff` (reads all `/dev/cu.usbmodem*` at once, labeled) rather than
+guessing a port. AppFS partition details: https://docs.tanmatsu.cloud/software/appfs/.
 
 - `make bench-device` — Stage 0.5: build `BENCH=1`, upload under the `synthbench` slug, and
-  launch the CPU bench via AppFS (synth slot untouched). Capture with `make monitor BENCH=1`.
+  launch the CPU bench via AppFS (synth slot untouched). Capture with `make sniff`.
 - `make size` / `make size-components` — track flash/RAM budget (do this often).
 - `make format` — clang-format the tree.
 

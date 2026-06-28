@@ -109,7 +109,16 @@ bench-run:
 .PHONY: bench-device
 bench-device: bench-upload bench-run
 	@echo ">>> Bench launched via AppFS — launcher firmware untouched."
-	@echo ">>> Capture the result table with:  make monitor BENCH=1"
+	@echo ">>> Capture the table with:  make sniff   (reads ALL usbmodem ports)"
+
+# Sniff every /dev/cu.usbmodem* at once — the Tanmatsu exposes multiple serial
+# interfaces (P4 host + C6 radio) whose numbers shift across the launch-reboot,
+# so this avoids guessing the port. Tees to build/<dev>-bench/console.log.
+# Run this in one terminal, then `make bench-device` in another.
+.PHONY: sniff
+sniff:
+	mkdir -p $(BUILD)
+	python3 tools/sniff-console.py --log $(BUILD)/console.log
 
 # Preparation
 
