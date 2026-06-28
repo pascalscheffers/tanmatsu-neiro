@@ -8,6 +8,12 @@ the per-stage files are the work.
 Read order at the start of any execution session: `CLAUDE.md` → `specs/00-overview.md` →
 `specs/MEMORY.md` → this file → the stage doc you're on.
 
+> **`specs/MEMORY.md` is long and append-only.** Do **not** read it whole. Read only the
+> **last 1–2 stage entries** (newest is at the bottom) plus the **"Open Opus gates"**
+> heading if present — that is the live state. The rest is history; pull an older entry
+> only if you have a specific reason. Same for the big specs: open the **linked section**,
+> not the whole file. (This is the first line of defense against compaction — see below.)
+
 ## The per-sub-stage loop
 
 A sub-stage (e.g. `1b`) is one Sonnet session — **5–15 files, no compaction**. For each:
@@ -28,6 +34,33 @@ A sub-stage (e.g. `1b`) is one Sonnet session — **5–15 files, no compaction*
 
 If a sub-stage is getting too big, split it (`1b` → `1b-i`, `1b-ii`) and stop at a clean,
 committed point rather than blowing context (CLAUDE.md staging rule).
+
+## Keep the session small — fit one sub-stage without compacting
+
+A sub-stage **must complete in a single context window with no compaction.** Compaction
+mid-stage is a failure signal: the sub-stage was too big, or context was spent on the wrong
+things. (Stage 2d compacted — that was too large; that's the bar we're now under.) Defenses,
+in order of impact:
+
+1. **Read narrow, not whole.** Open the linked spec *section*, not the file. Read the last
+   1–2 `MEMORY.md` entries, not the log. Don't re-read a file you just edited — the tools
+   track its state.
+2. **Delegate searches to a sub-agent.** "Where is X / what calls Y / does Z exist" → the
+   **Explore** agent. Its file dumps stay out of your context; you get back the conclusion.
+   This is the single biggest saver when a sub-stage touches unfamiliar code.
+3. **Scope is 5–15 files, ~one feature.** If a sub-stage's checklist implies more — more
+   files, a vendor import *and* wiring *and* UI, two unrelated concerns — **split it before
+   you start** (`2d` → `2d-i`, `2d-ii`) and do the first half this session. A planned split
+   up front beats an emergency stop at 90% context.
+4. **Write the `MEMORY.md` entry tight.** A dozen scannable lines: what landed, sizes, key
+   decisions, what's next. Link to specs/ADRs; don't restate them. A bloated entry costs the
+   *next* session too (it gets read in).
+5. **Don't paste large output into context.** Build/test logs: act on the failure line, not
+   the whole transcript. `make size`: record the one number, don't echo the table.
+
+If you feel context filling before the sub-stage's acceptance criteria are met: **stop at the
+last green commit, record the remainder in `MEMORY.md`, and hand the rest to a fresh session.**
+A clean stop is always better than a compaction.
 
 ## 🛑 OPUS GATE — escalation protocol
 

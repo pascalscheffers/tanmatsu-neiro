@@ -27,6 +27,12 @@ shapes; portamento time range; how mono retrigger/legato is detected in the allo
 | 3c | Full Juno param set exposed; UI pages complete | all Juno controls are table rows |
 | 3d | Play modes (mono / porta / unison / legato) in the allocator | each mode plays correctly |
 
+> **Context budget** ([protocol](README.md#keep-the-session-small--fit-one-sub-stage-without-compacting)):
+> each sub-stage is one no-compaction session. **3c is the split candidate** — "full Juno
+> param set" is many table rows *and* completing the UI pages; if it runs heavy, do the param
+> rows as `3c-i` and the UI completion as `3c-ii`. Read spec/ADR *sections*, not whole files;
+> use the **Explore** agent for "where is…" searches so their output stays out of context.
+
 ### 3a — modulation sources
 - Per voice: a **second ADSR** (filter/mod env) alongside the amp env, and **2 LFOs**.
   DaisySP has no dedicated LFO — reuse the vendored `Oscillator` at sub-audio rate or a tiny

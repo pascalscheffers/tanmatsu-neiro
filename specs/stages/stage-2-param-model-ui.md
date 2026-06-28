@@ -57,6 +57,13 @@ for filter/pitch, medium for levels); UI widget styling; ring buffer capacity.
 | 2c | UI pages rendered from the table (select + nudge + coarse, status strip) | live tweak visible + audible |
 | 2d | Preset save/load + INIT + small factory bank (gated format) | round-trip verified host + device |
 
+> **Context budget** ([protocol](README.md#keep-the-session-small--fit-one-sub-stage-without-compacting)):
+> 2d compacted in practice — it was too big for one session (storage seam + serialize-by-id +
+> save/load + INIT + factory bank, touching `platform.h` on two backends). If a future
+> sub-stage looks like that, **split it before starting** (seam+round-trip as `-i`, the
+> factory bank as `-ii`). Read spec 05's *section*, not the whole file; delegate "where is…"
+> searches to the **Explore** agent.
+
 ### 2a — the table + store
 - Declare `ParamDesc` (spec 05: id, group, name/short_name, min/max/default, curve, unit,
   display_fmt, midi_cc, smoothing_ms, flags) and the **one** parameter table. Adding a param
