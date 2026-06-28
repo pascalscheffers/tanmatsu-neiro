@@ -68,7 +68,11 @@ all: build
 badgelink:
 	rm -rf badgelink
 	git clone https://github.com/badgeteam/esp32-component-badgelink.git badgelink
-	cd badgelink/tools; ./install.sh
+	# Upstream install.sh runs `python -m venv`, but macOS only ships `python3` — it dies
+	# with "python: command not found". Create the venv ourselves with python3; badgelink.sh
+	# then sees .venv and skips install.sh, and its own `python` call works from inside the
+	# activated venv. Upstream candidate logged in specs/07-upstream-contributions.md.
+	cd badgelink/tools; python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 
 # AppFS app identity. Override APP_SLUG/APP_TITLE to install side-by-side variants
 # (e.g. the CPU bench below installs under its own slug so the synth app stays put).

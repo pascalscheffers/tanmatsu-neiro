@@ -86,6 +86,12 @@ Tiered by when it bites. Nothing here is committed-to yet — these are *needs t
   PAX is a high-value perf PR — *with numbers*.
 - **[maybe] launcher integration.** Icon/metadata/appfs niceties so the synth launches
   cleanly. Low priority.
+- **[trivial] badgelink `install.sh` macOS fix (2026-06-28).** `tools/install.sh` runs
+  `python -m venv .venv`, but macOS ships only `python3` → `python: command not found`.
+  One-line fix upstream (`python3 -m venv`, or detect). Repo `badgeteam/esp32-component-badgelink`.
+  We work around it in our Makefile (`make badgelink` builds the venv with `python3`
+  directly, so badgelink.sh skips install.sh). Worth a tiny PR; surface to Pascal. *No
+  local patch* — badgelink/ is a gitignored tool clone, not a managed_component.
 
 ## Workflow
 When any session hits one of these, **don't quietly work around it** — append it here with
