@@ -225,6 +225,16 @@ restate. When this passes ~200 lines, rotate older entries into the archive.
   App: **966 KB / 2 MB (54% free)** (+1 KB from Stage 3b-i).
 - **Next:** Stage 3c-i — full Juno param set as table rows (OSC_PWM + remaining Juno params).
 
+### Seam fix: set_mod_matrix promoted to IVoice (2026-06-28)
+- **What:** `engine_set_routings()` in `synth.cpp` was downcasting `IVoice*` → `JunoVoice*` to
+  call `set_mod_matrix`. Added `ModMatrix` forward-decl + pure-virtual `set_mod_matrix(const ModMatrix&)`
+  to `IVoice`; marked `JunoVoice::set_mod_matrix` `override`; removed the `static_cast` and the
+  now-unused `#include "juno_voice.h"` from `synth.cpp`.
+- **Why:** Restores ADR 0008 seam ("allocator/matrix only see IVoice") and ADR 0009 model-agnostic
+  matrix contract. Found during review of Stage 3b-ii deliverable.
+- `make test` ✅ (79/79) `make host` ✅ `make build` ✅. Flash: **856 KB** / DIRAM: **148 KB** (54% free). No behavior change.
+- **Next:** Stage 3c-i — full Juno param set as table rows.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
