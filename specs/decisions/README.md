@@ -16,3 +16,4 @@ decision, and the consequence. Supersede rather than rewrite history.
 | [0008](0008-engine-model-boundary.md) | Synth hosts swappable SynthModels; MPE-ready voices |
 | [0009](0009-modulation-matrix.md) | Modulation is a matrix; Juno routings are a default patch |
 | [0010](0010-timing-sample-clock.md) | Sample-accurate timing on a pluggable clock |
+| [0011](0011-optimize-device-host-adapts.md) | Optimize base code for the P4; the host simulator pays the conversion tax |

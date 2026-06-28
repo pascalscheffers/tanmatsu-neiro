@@ -161,6 +161,10 @@ it and you get clicks. These rules are not negotiable in the audio path:
    Vectorize / use lookup tables only *after* a profile pins the cost.
 7. **Denormals & NaNs kill.** Flush-to-zero where available; sanitize feedback paths
    (filters, delays) with tiny DC offsets or explicit clamps.
+8. **Optimize for the P4; the simulator adapts.** When a representation (buffer/pixel
+   format, layout, alignment, endianness, fixed vs float) favors one side, the shared code
+   uses the P4-optimal form and `platform/host/` does any conversion. The device never
+   burns cycles for the host's convenience. See `specs/decisions/0011-...`.
 
 ---
 
