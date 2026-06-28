@@ -214,3 +214,10 @@ First real AppFS bench run printed nothing. Two independent causes, both fixed:
   `platform_audio_stop()` never disabling the I2S channel → DMA replayed its last buffer
   forever. Fixed: task flushes silence + signals done; stop waits, disables channel, drops
   amp. (Device membrane, our code — not upstream.) The ramp itself ran fine to completion.
+- **Console vs badgelink share the USB-C** (`badgelink mode usb/debug` = USB-Serial-JTAG
+  console; `mode badgelink` = OTG). An AppFS-launched app inherits OTG → console detached.
+  No BSP API to flip it from the app. Solution (user's design): device bench is now
+  **interactive** — draws "press any key to start" on the badge screen (time to attach the
+  console), runs, then **returns to launcher** via new `platform_exit_to_launcher()` seam
+  (`bsp_device_restart_to_launcher`). Gated by `SYNTH_BENCH_INTERACTIVE` so host `make bench`
+  stays unattended. Fallback if console won't attach: `make flashmonitor BENCH=1`.

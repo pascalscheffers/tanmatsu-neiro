@@ -65,23 +65,34 @@ the device. `make bench` builds the host with `-DSYNTH_BENCH` and runs it.
   partition over USB and launch it; the launcher stays put and you drop back into it when
   the bench reboots. One-time: `make badgelink` (clones the tool). The device must be in
   **USB mode** (launcher home screen → purple diamond; USB icon top-right) so badgelink can
-  find it. Then, with the device in the launcher:
-  - terminal A: `make sniff` — reads **all** `/dev/cu.usbmodem*` ports at once, labeled.
-  - terminal B: `make bench-device` — builds `BENCH=1`, uploads under the `synthbench`
-    AppFS slug (the synth app's own slot is untouched), and starts it.
+  find it. The device bench is **interactive** (see below) precisely so you have time to
+  attach the console after launch. Flow:
+  1. `make bench-device` — builds `BENCH=1`, uploads under the `synthbench` AppFS slug (the
+     synth app's slot is untouched), and starts it. The badge screen shows
+     **"Press any key to start"**.
+  2. Get the console attached (the badge must be in **debug/USB** mode for USB-Serial-JTAG
+     to reach the host — it can't while badgelink/OTG owns the USB-C). Then `make sniff` —
+     it reads **all** `/dev/cu.usbmodem*` ports at once, labeled, and tees to
+     `build/<dev>-bench/console.log`.
+  3. Press a key **on the badge** → the bench runs and the table streams to the console.
+  4. When done the bench **returns to the launcher** on its own
+     (`platform_exit_to_launcher` → `bsp_device_restart_to_launcher`).
 
-  **Console gotchas (both cost us a run — don't relearn them):**
-  1. The Tanmatsu exposes **two** USB serial interfaces: the **P4 host** (`[…01]`-ish,
-     shows `H_SDIO_DRV`) where our app's `printf` lands, and the **C6 radio** slave (shows
-     `slave_rpc`). The numbers shift across the launch-reboot. `make sniff` opens them all
-     so you can't pick the wrong one; the bench table appears on the P4 line.
-  2. The console is **USB-Serial-JTAG**, which isn't a TTY, so newlib block-buffers stdout.
-     `bench_run()` calls `setvbuf(stdout, NULL, _IONBF, 0)` so the table streams live — keep
-     that, or the output sits invisibly in the buffer while only `ESP_LOG` chatter shows.
+  **Console gotchas (each cost us a run — don't relearn them):**
+  1. **Console vs badgelink share the USB-C.** `badgelink mode {usb/debug | device/badgelink}`
+     — `usb/debug` exposes USB-Serial-JTAG (console/flash/monitor); `badgelink` is OTG for
+     uploads. Mutually exclusive. An AppFS-launched app inherits OTG, so its console is
+     detached until the badge is in debug mode. The keypress prompt buys time to sort this.
+  2. **Two serial interfaces.** P4 host (shows `H_SDIO_DRV`; our `printf` lands here) and the
+     C6 radio slave (shows `slave_rpc`); numbers shift across reboots. `make sniff` opens all
+     of them so you can't pick wrong — the table appears on the P4 line.
+  3. **USB-Serial-JTAG block-buffers stdout** (not a TTY). `bench_run()` calls
+     `setvbuf(stdout, NULL, _IONBF, 0)` so the table streams live — keep it, or output sits
+     invisibly while only `ESP_LOG` chatter shows.
 
-  `make sniff` tees to `build/<dev>-bench/console.log`. `make flash` (full firmware
-  overwrite) is the fallback only if the launcher/AppFS path is unavailable. See the AppFS
-  dev loop in `CLAUDE.md` → *Build, Flash, Run*.
+  If the console still won't attach in your setup, fall back to a full image:
+  `make flashmonitor BENCH=1` (overwrites the launcher; re-flash it afterward to restore
+  AppFS). See the AppFS dev loop in `CLAUDE.md` → *Build, Flash, Run*.
 - **Load ramp (the real measurement):** install `bench_voice_proxy` as the audio render fn.
   Around the render call in the audio task, read `platform_cycles_now()` before/after and
   accumulate into a lock-free stat (the spec 08 "measure in the audio thread, report from a
