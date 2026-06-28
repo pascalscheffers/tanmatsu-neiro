@@ -234,6 +234,20 @@ bench: patches
 bench-clean:
 	rm -rf $(BENCH_BUILD)
 
+# Host DSP tests — pure dsp/ layer, no platform, FTZ-off (ADR 0012).
+# See tests/host/CMakeLists.txt.
+TEST_BUILD ?= build-test
+
+.PHONY: test
+test: patches
+	cmake -S tests/host -B $(TEST_BUILD)
+	cmake --build $(TEST_BUILD) -j
+	./$(TEST_BUILD)/tanmatsu-tests
+
+.PHONY: test-clean
+test-clean:
+	rm -rf $(TEST_BUILD)
+
 # Hardware
 
 .PHONY: flash
