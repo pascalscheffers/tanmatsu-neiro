@@ -3,13 +3,15 @@
 An analog-modeling (virtual-analog) / hybrid synthesizer for the **Tanmatsu** badge
 (Nicolai Electronics / badge.team), built on **ESP-IDF** for the **ESP32-P4**.
 
-> Read this file, then `specs/00-overview.md` and `specs/MEMORY.md` at the start of
-> every session. The specs are the source of truth for *what* we're building; this
-> file is the source of truth for *how* we build it.
+> Read this file, then `specs/00-overview.md`, `specs/MAP.md` (the seam index — jump there
+> before searching the tree), and `specs/MEMORY.md` (live log; older entries in
+> `MEMORY-archive.md`) at the start of every session. The specs are the source of truth for
+> *what* we're building; this file is the source of truth for *how* we build it.
 >
-> **Executing a stage?** Stages 0.5–3 have Sonnet-runnable runbooks in `specs/stages/`.
-> Read `specs/stages/README.md` (the per-sub-stage loop + the 🛑 OPUS GATE escalation
-> protocol) and your stage's doc. Model-tier workflow: ADR 0014.
+> **How we build this project (default):** Opus orchestrates; fresh-context Sonnet *workers*
+> execute closed **work-orders**, one bounded job each, and return a summary. See
+> *Development Workflow* below; methodology in **ADR 0017** (amends 0014), work-order template
+> + gate protocol in `specs/stages/README.md`. Build/run reference: `specs/09-build-and-run.md`.
 
 ---
 
@@ -35,30 +37,45 @@ An analog-modeling (virtual-analog) / hybrid synthesizer for the **Tanmatsu** ba
 
 ## Development Workflow
 
-### Spec-first, staged development
+### The standard methodology: orchestrate, then dispatch (ADR 0017)
 
-Every feature follows this order:
+The bulk of this project is built by **Opus orchestrating fresh-context Sonnet workers**, not
+by Opus writing code in its own session. The reason is context economy: a worker subagent
+starts empty (it sees only its prompt, never the orchestrator's conversation) and returns only
+a summary, so Opus can run a whole stage while keeping file-dumps and build logs out of its
+context. This is the project's main defense against the "rapid start, steady slowdown" that
+context bloat causes.
 
-1. **Specify** — Add/update a spec in `specs/`. Include acceptance criteria.
-2. **Plan** — For non-trivial work, propose stages and get approval before coding.
-3. **Implement** — Minimum code to satisfy the spec.
-4. **Verify** — It builds (`make build DEVICE=tanmatsu`); it runs on device or in the
-   host test harness; the acceptance criteria are met.
-5. **Commit** — One clean commit per stage.
-6. **Memorize** — Append progress to `specs/MEMORY.md` so context can be cleared.
+**The altitude call (Opus decides, per task):**
 
-### Stages
+- **Inline** — trivial/single-file edits, docs/spec changes, exploration, or anything ambiguous
+  or needing tight human steering: do it in this session.
+- **Spec-and-dispatch** — a stage sub-stage, a multi-file feature, or a bug whose fix is
+  understood and mechanical enough to specify: author a closed **work-order** and dispatch a
+  Sonnet worker. **Litmus test:** *if it can be written as a closed work-order, it should be* —
+  that specifiability is the signal it's worker-ready. If it can't be specified yet, investigate
+  first (inline or via an **Explore** subagent so the dumps stay out of context), *then*
+  specify, *then* dispatch.
 
-- A stage is a self-contained unit completable in **one session without compaction**.
-- Aim for **5–15 files** changed per stage. Bigger → split into sub-stages (1a, 1b…).
-- Stop at a clean point, memorize, and commit what works rather than blowing context.
+**The loop:** Opus authors the work-order → dispatches a worker (Agent tool, `model: sonnet`) →
+the worker implements, verifies, commits on green, appends a tight `MEMORY.md` entry, and
+returns a **summary** → Opus reviews the summary (not the diff) and re-dispatches the next.
+Template, budget rule (≤ ~8 files / ≤ ~5 read-sections), and the gate protocol live in
+[`specs/stages/README.md`](specs/stages/README.md). **Debugging** follows the same loop with a
+debug brief (repro + root cause up front); small fixes stay inline.
+
+Every dispatched job still follows: **Specify** (the work-order) → **Implement** (minimum code,
+reuse first) → **Verify** (`make build`/`make host`/`make test` green, acceptance met,
+membrane clean) → **Commit** (one atomic commit) → **Memorize**. Interactive model-switch is a
+fallback for exploratory work, not the default.
 
 ### Memory protocol (kryten-style: memory lives in the repo)
 
-`specs/MEMORY.md` is the portable, in-repo log of where we are. At the end of every
-stage record: what was accomplished, key decisions, current state, what's next. The
-repo is the source of truth so progress travels across machines and sessions. Keep it
-lean and scannable — link out to spec files rather than restating them.
+`specs/MEMORY.md` is the portable, in-repo log of where we are — the **live** file holds the
+last few entries + any open gates; older history is rotated into `specs/MEMORY-archive.md`. At
+the end of every dispatched job record: what was accomplished, key decisions, current state,
+what's next. The repo is the source of truth so progress travels across machines and sessions.
+Keep it lean and scannable — link out to spec files rather than restating them.
 
 ---
 
@@ -108,49 +125,25 @@ earlier than usual. When unsure, extract.
 
 ## Code Reuse & Licensing
 
-**Reuse is policy, not preference.** Before writing DSP, check whether one of these has
-it (all permissively licensed — see `specs/02-synth-architecture.md` for the map):
+**Reuse is policy, not preference** (Prime Directive 1). Before writing DSP, check the
+permissively-licensed sources first — Mutable Instruments (`stmlib`/`plaits`/`braids`),
+DaisySP, ESP-IDF + `badge-bsp`, TinyUSB, PAX graphics. The full map (what each provides, where
+it's vendored) is the dependency table in [`specs/02-synth-architecture.md`](specs/02-synth-architecture.md).
 
-- **Mutable Instruments `eurorack` (STM32 parts) — MIT.** `stmlib` (DSP utils, units,
-  filters, ring buffers), `plaits`/`braids` (macro-oscillators: VA, wavetable, FM,
-  granular). Already ported to other float-DSP MCUs (Daisy). This is our primary engine
-  source. Vendor under `dsp/vendor/mi/`.
-- **ESP-IDF + `badge-bsp`** — board support: display, input, audio/I2S, power, LEDs.
-- **ESP-IDF `esp_tinyusb` / TinyUSB** — USB device (incl. MIDI class). USB host MIDI
-  per `specs/03-control-ui.md`.
-- **PAX graphics** — all 2D UI rendering. Don't hand-roll drawing.
+Rules (always apply):
 
-Licensing rules for anything vendored:
-
-- **Strongly prefer MIT / BSD / Apache-2.0 / CC0.** These compose cleanly and match the
-  badge.team / template ethos (template is CC0; MIT recommended for our own code).
-- **GPL/LGPL/AGPL: ask before vendoring.** Not banned (this is open hardware, not an App
-  Store binary), but it changes the license of anything it touches. A licensing decision
-  is a spec decision — record it in `specs/decisions/`. Don't silently pull GPL DSP in.
-- **Record every third-party component** (name, version, license, why) in
-  `specs/02-synth-architecture.md`'s dependency table. Check transitive deps.
-- License our own original code **MIT** unless decided otherwise.
-
-When you vendor code: pin the source commit, note it, and keep local edits minimal and
-clearly marked so upstream updates stay tractable.
-
-**Upstream the platform, don't fork it.** We have PR access and personal ties to the core
-Tanmatsu software (Renze/Nicolai Electronics; PAX is by Pascal's kid). When we hit a bug,
-a small missing feature, or a real perf problem in PAX / badge-bsp / the launcher, the
-default is **fix it upstream and flag Pascal** — not a silent local workaround. Profile
-before claiming "slow"; discuss big/API-shaping changes with the author first. Policy,
-targets, and the live candidate list: `specs/07-upstream-contributions.md`.
-
-**Collect upstream fixes as tracked patches.** A fix to a dependency lives as a documented
-patch under `upstream-patches/<component>/NNNN-*.patch`, **committed to git** — not as an
-ad-hoc local shim. The dependency sources are in gitignored `managed_components/`, so the
-patch is re-applied to the build tree by `tools/apply-upstream-patches.sh` (run by
-`make patches`, and automatically by `make host` / `make build`; idempotent). Each patch's
-header explains *why it exists* and names its upstream target, so the file **is** the future
-PR — and others can iterate once we push. Prefer this over a workaround in our own code: it
-keeps the fix build-verified and one `git am` from a PR. Log it in
-`specs/07-upstream-contributions.md` too; delete the patch when it merges. See
-`upstream-patches/README.md`.
+- **Prefer MIT / BSD / Apache-2.0 / CC0.** **GPL/LGPL/AGPL: ask before vendoring** — it's not
+  banned (open hardware), but it changes the license of what it touches; record the call in
+  `specs/decisions/`. Don't silently pull GPL in.
+- **Record every third-party component** (name, version, license, why) in spec 02's dependency
+  table; check transitive deps. License our own original code **MIT**.
+- When you vendor: pin the source commit, note it, keep local edits minimal and marked.
+- **Upstream the platform, don't fork it.** A bug/gap/perf problem in PAX / badge-bsp / the
+  launcher → fix it upstream and flag Pascal, not a silent local workaround (profile before
+  claiming "slow"). Fixes live as **tracked patches** under `upstream-patches/`, committed to
+  git and re-applied to the build tree by `make patches`/`make build`. Policy + mechanism:
+  [`specs/07-upstream-contributions.md`](specs/07-upstream-contributions.md) and
+  `upstream-patches/README.md`.
 
 ---
 
@@ -242,40 +235,13 @@ third-party code). Keep commits atomic — one logical change each.
 
 ## Build, Flash, Run
 
-From the repo root (`DEVICE=tanmatsu` is the default target):
+Everyday loop (`DEVICE=tanmatsu` is default; full reference — device flash, AppFS, serial
+capture, bench — in [`specs/09-build-and-run.md`](specs/09-build-and-run.md)):
 
-- `make prepare` — one-time: clone ESP-IDF v5.5.1 + toolchain into `./esp-idf(-tools)`.
-- `make build` — build the app.
-- `make flash PORT=/dev/tty.usbmodemXXXX` — full firmware flash over USB (overwrites the
-  launcher; use for a clean image or when AppFS is unavailable).
-- `make flashmonitor PORT=…` — flash + serial monitor.
-- `make menuconfig` — sdkconfig editor.
-
-**Fast dev loop — AppFS, no firmware replace (prefer this).** The shipped launcher keeps a
-dedicated AppFS partition; [badgelink](https://docs.tanmatsu.cloud/software/badgelink/)
-uploads an app binary into it over USB and launches it, leaving the launcher firmware
-untouched (you drop back into the launcher when the app exits). Much faster than a full
-flash — the default for iterating. One-time: `make badgelink` (clones the tool; on Linux
-also install its udev rules). The device must be in **USB mode** for badgelink to find it
-(launcher home screen → press the purple diamond; a USB icon appears top-right). Then:
-- `make install` — build + upload the synth into AppFS (slug `synth`).
-- `make run` — launch it.
-- Override `APP_SLUG`/`APP_TITLE` to install variants side-by-side without clobbering a slot.
-
-badgelink does **not** capture the console — output (e.g. the bench table) comes over USB
-serial. The Tanmatsu exposes **two** serial interfaces (P4 host + C6 radio) whose device
-numbers shift across reboots, and the console is **USB-Serial-JTAG** (block-buffers stdout
-when not a TTY — `printf` needs `setvbuf`/`fflush` or it stays invisible while `ESP_LOG`
-shows). Use `make sniff` (reads all `/dev/cu.usbmodem*` at once, labeled) rather than
-guessing a port. AppFS partition details: https://docs.tanmatsu.cloud/software/appfs/.
-
-- `make bench-device` — Stage 0.5: build `BENCH=1`, upload under the `synthbench` slug, and
-  launch the CPU bench via AppFS (synth slot untouched). Capture with `make sniff`.
-- `make size` / `make size-components` — track flash/RAM budget (do this often).
-- `make format` — clang-format the tree.
-
-Host-side DSP unit tests (the `dsp/` layer is pure, so it compiles and runs on the Mac)
-build separately — see `specs/02-synth-architecture.md` once the test harness exists.
+- `make host` / `make test` — build+run the host target / host DSP unit tests (the fast loop).
+- `make build` — build the device app. `make install` + `make run` — upload to AppFS and launch.
+- `make size` — track flash/RAM budget (do this often). `make format` — clang-format the tree.
+- `make sniff` — capture device serial (console is USB-Serial-JTAG; numbers shift on reboot).
 
 ---
 
