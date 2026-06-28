@@ -130,7 +130,7 @@ and tracked per stage thereafter against the ratified per-voice budget.
 | Stage | Flash (app) | Internal IRAM | Internal DRAM | PSRAM | Cycles/block | Notes |
 |---|---|---|---|---|---|---|
 | 0 | 936 KB (55% free) | — | audio scratch (`s_left/right/interleaved`) | framebuffer | — | sine engine; no IRAM placement yet |
-| 0.5 | (bench build only) | — | — | — | _measured here_ | proxy benchmarks; deadline margin @ 64/48k |
+| 0.5 | (bench build only) | — | — | — | **480 000 cyc/blk @ 360 MHz** | measured on device; proxy voice ~3 650 cyc/blk; 8 voices = 6.2% period (`stages/stage-0.5-results.md`) |
 
 ## Polyphony — 8 voices + unison (ADR 0003)
 Per-voice cost dominates the budget. **8 voices** with optional **unison** (stack/detune

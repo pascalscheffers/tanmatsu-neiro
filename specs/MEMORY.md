@@ -167,14 +167,15 @@ Newest at the bottom. One entry per stage/session. Lean — link to specs, don't
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
 
-🛑 Stage 0.5d — CPU budget & polyphony
-  Why Opus: CPU-budget / architecture (touches ADR 0003, sizes all of Stage 1).
-  Decision: What is the per-voice cycle budget, and does 8 voices + unison fit with
-            headroom for chorus + a future reverb? Keep, raise, or lower voice count?
-  Recommendation: keep ADR 0003 (8 + unison) if fake-voice ramp clears 8 voices at
-            ≤70% period with room to spare; otherwise amend ADR 0003 to the ceiling.
-  Blocked on: hardware serial capture — `stage-0.5-results.md` must be filled first.
-  Sonnet action: STOP — results template committed; gate raised here; waiting for Opus.
+_(none open)_
+
+✅ Stage 0.5d — CPU budget & polyphony — **RATIFIED 2026-06-28 (Opus 4.8)**
+  Device: ESP32-P4 @ 360 MHz, block 64/48k = 480 000 cyc/blk. Proxy voice ~3 650 cyc/blk;
+  8 voices = 6.2% period, 32 voices = 24.4%, 0 underruns. **ADR 0003 (8 + unison) stands**
+  with large headroom. Per-voice Stage 1 budget: ≤ ~30 000 cyc/blk (~470 cyc/smp); avoid
+  per-sample expf (137 cyc/smp). Follow-ups (non-blocking): -O2 re-run (only widens margin);
+  raising polyphony is data-supported but a deliberate architecture change. Numbers +
+  reasoning: `specs/stages/stage-0.5-results.md`. → proceed to Stage 1.
 
 ## 2026-06-28 — AppFS dev loop (flash without replacing firmware)
 - Adopted the launcher's **AppFS** path as the default device dev loop: badgelink uploads
@@ -221,3 +222,12 @@ First real AppFS bench run printed nothing. Two independent causes, both fixed:
   console), runs, then **returns to launcher** via new `platform_exit_to_launcher()` seam
   (`bsp_device_restart_to_launcher`). Gated by `SYNTH_BENCH_INTERACTIVE` so host `make bench`
   stays unattended. Fallback if console won't attach: `make flashmonitor BENCH=1`.
+
+## 2026-06-28 — Stage 0.5 COMPLETE (device numbers captured + gate ratified)
+- Device bench ran on real P4 via AppFS + interactive keypress; captured over `make sniff`.
+- **P4 @ 360 MHz** (not the assumed 400), block 64/48k = **480 000 cyc/blk**. Kernel costs:
+  expf 137 cyc/smp (the expensive one), ladder 52, biquad 37, SVF/sinf 28, saw 36, memcpy 3.
+- Proxy voice ~3 650 cyc/blk → **8 voices = 6.2%**, 32 = 24.4%, **0 underruns**. ADR 0003
+  ratified (see Open Opus gates ✅). Results: `stages/stage-0.5-results.md`; spec 02 budget
+  row seeded. Caveat: built at `-Og` (conservative); `-O2` would only help.
+- **Next:** Stage 1 (one-voice MVP, DaisySP) against ≤ ~30 000 cyc/blk per-voice budget.
