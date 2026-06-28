@@ -43,6 +43,7 @@ fully parameterized and persistable.
 ## Gate table
 | Gate | When | Why Opus | Recommendation |
 |---|---|---|---|
+| ✅ Master output: soft-clip vs linear headroom | resolved 2026-06-28 | sonic | **RATIFIED — [ADR 0016](../decisions/0016-master-output-soft-clip.md):** linear headroom + a gentle cubic soft-clip ceiling. Implemented as the first item of 2c (below); do **not** stop. |
 | 🛑 Param-id namespace + preset format v1 | before 2d writes any file | data-format | Stable `uint16` ids grouped by section with gaps for growth; preset = `{model_id, format_version, [id→value], name}`; ratify in spec 05 before files exist |
 
 Decide-with-default (no gate): per-param smoothing time defaults (use class defaults: fast
@@ -73,6 +74,26 @@ for filter/pitch, medium for levels); UI widget styling; ring buffer capacity.
   is the path (ADR 0008). Verify the sound is unchanged from Stage 1 at default values.
 
 ### 2c — UI framework
+
+**First, the resolved output-stage gate ([ADR 0016](../decisions/0016-master-output-soft-clip.md)).**
+Small, self-contained; do it before the UI work:
+- Add **`dsp/saturate.h`** — pure, header-only, no vendor edit. One inline `soft_clip(float)`:
+  ```c
+  static inline float soft_clip(float x) {
+      if (x >=  1.5f) return  1.0f;
+      if (x <= -1.5f) return -1.0f;
+      return x - x * x * x * (1.0f / 6.75f);   // x - x³/6.75; unity slope at 0, ±1 at ±1.5
+  }
+  ```
+- Apply it in `engine/synth.cpp` step 6 to `left[i]`/`right[i]` **after** `* gain`, before
+  they leave `synth_render`. Update the stale `synth.cpp` gate comment to cite ADR 0016.
+- Host test (`tests/host/`): transparent below the knee (`soft_clip(0.3) ≈ 0.3`), monotone,
+  bounded to ±1 for large input, `soft_clip(±1.5) == ±1`. FTZ-off. No anti-denormal needed
+  (no feedback path). No spec 02 budget row (a few flops/sample).
+- Leave overt drive for later: ADR 0016 keeps a `MASTER_DRIVE` patch param as a Stage-3
+  option — **do not** add a saturator/drive knob now.
+
+Then the UI:
 - Render parameter **pages** from the table, grouped (OSC / FILTER / ENV / LFO / FX / MIX —
   spec 03). Row select; arrow / `,` / `.` nudge; Shift = coarse. Always-visible **status
   strip** (active voices, MIDI activity placeholder, CPU/block load from the Stage 0.5 stat,

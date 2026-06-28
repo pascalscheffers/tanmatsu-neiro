@@ -345,6 +345,14 @@ Opus clears the entry when the gate is resolved.
 
 _(none open)_
 
+✅ Stage 2 — Master output: soft-clip vs linear headroom — **RATIFIED 2026-06-28 (Opus 4.8)**
+  The sonic gate deferred at 2b (the `synth.cpp` clip at moderate polyphony). Pascal chose
+  **linear headroom + a gentle cubic soft-clip ceiling** → **ADR 0016**. No baked-in drive;
+  overt grit stays a future `MASTER_DRIVE` patch param (Stage 3). Implementation folded into
+  the runbook as the **first item of 2c**: new pure `dsp/saturate.h` (`soft_clip`, `x − x³/6.75`,
+  unity slope at 0, ±1 at ±1.5), applied post-master-gain in `synth_render`, + a host test.
+  Cheap (no libm), IRAM-safe. → Stage 2c unblocked; hand back to Sonnet.
+
 ✅ Stage 0.5d — CPU budget & polyphony — **RATIFIED 2026-06-28 (Opus 4.8)**
   Device: ESP32-P4 @ 360 MHz, block 64/48k = 480 000 cyc/blk. Proxy voice ~3 650 cyc/blk;
   8 voices = 6.2% period, 32 voices = 24.4%, 0 underruns. **ADR 0003 (8 + unison) stands**
