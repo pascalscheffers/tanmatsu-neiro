@@ -3,6 +3,35 @@
 **Status:** planned · **Executor:** Sonnet · **Protocol:** [stages/README.md](README.md)
 **Source of truth:** [`specs/05-data-model.md`](../05-data-model.md) (ParamDesc, Patch, versioning).
 
+## Session carry-in (from the Stage 1 wrap session, 2026-06-28)
+Things that landed/were learned after this runbook was written — read before 2a:
+
+- **Reuse the existing lock-free ring.** `engine/command_queue.h` already implements a
+  single-producer/single-consumer ring (`CommandQueue<Cap>`, std::atomic acquire/release,
+  power-of-two, host-tested). The 2a param store needs the *same* mechanism with a
+  different payload — **generalise this ring (e.g. template on payload type), do not write a
+  second one** (Prime Directive 2). Drain param updates in `synth_render` at the **same
+  point** note commands are drained (top of block, before render). Note events already flow
+  through this ring (control thread → audio thread); params join it.
+- **Master gain is a Stage 2 deliverable and fixes a real defect.** On device the output
+  **clips at moderate polyphony** — confirmed float-bus headroom, not integer mixing
+  (one voice peaks ~1.05 pre-filter; summed held voices exceed ±1 despite the chorus's
+  ×0.25). Add a **master-gain param to the MIX group** in 2b/2c. 🛑 *Soft-clip vs linear
+  headroom is a sonic gate* — Pascal deferred it here deliberately; raise it as an OPUS GATE,
+  don't pick one. See the `synth_render` header comment + the MEMORY entry.
+- **Device input only maps the musical keys + ESC right now.** `platform/device/
+  platform_device.c` translates scancodes for `a–;`, `z/x`, and ESC→QUIT only. The 2c UI
+  (row select, `,`/`.` nudge, **Shift = coarse**) needs arrows + comma/dot + **shift-modifier
+  tracking** added to the device input path. Host (SDL) already delivers these as keysyms, so
+  test UI nav on host but **budget time to extend the device mapping** — it is not free.
+- **Status strip (2c) gotchas:** `engine_active_voices()` is currently read from the UI
+  thread (benign race, fine for a counter — but if you surface it, consider publishing an
+  atomic snapshot from the audio thread). And the **live CPU/block load** the strip wants is
+  *not* wired into the running synth yet — only the offline Stage 0.5 bench measured it; a
+  small running cycle-count in the audio task is new work if you show it.
+- **Storage seam does not exist yet** (deferred in Stage 0). 2d adds it to `platform.h` as
+  planned — host = stdio file, device = BSP/SD. No surprise, just confirming.
+
 ## Goal
 The **single declarative parameter table** that drives UI **and** MIDI **and** presets
 (spec 05) — the central dedup mechanism (CLAUDE.md Prime Directive 2; protect it). A single
