@@ -75,6 +75,7 @@ static QueueHandle_t s_input_queue = NULL;
 static i2s_chan_handle_t        s_i2s         = NULL;
 static TaskHandle_t             s_audio_task  = NULL;
 static _Atomic bool             s_audio_run   = false;
+static _Atomic bool             s_audio_done  = true;  // task has exited its loop
 static platform_audio_render_fn s_render      = NULL;
 static void*                    s_render_user = NULL;
 static size_t                   s_block       = 0;
@@ -105,6 +106,13 @@ static void audio_task(void* arg) {
         // Blocking write on the DMA queue is the real-time deadline mechanism.
         i2s_channel_write(s_i2s, s_interleaved, n * 2 * sizeof(int16_t), &written, portMAX_DELAY);
     }
+    // Flush one block of silence so the DMA's last buffer isn't a stale tone the
+    // codec would replay until the channel is disabled (platform_audio_stop does
+    // that right after we exit).
+    memset(s_interleaved, 0, n * 2 * sizeof(int16_t));
+    size_t written = 0;
+    i2s_channel_write(s_i2s, s_interleaved, n * 2 * sizeof(int16_t), &written, pdMS_TO_TICKS(50));
+    atomic_store(&s_audio_done, true);
     vTaskDelete(NULL);
 }
 
@@ -184,6 +192,7 @@ bool platform_audio_start(const platform_audio_config_t* cfg, platform_audio_ren
     s_render_user = user;
     s_block       = cfg->block_size;
     atomic_store(&s_audio_run, true);
+    atomic_store(&s_audio_done, false);
 
     // Pin to the app core (1), leaving core 0 for UI/MIDI/SD. High priority so
     // the DMA queue never starves.
@@ -198,9 +207,19 @@ bool platform_audio_start(const platform_audio_config_t* cfg, platform_audio_ren
 }
 
 void platform_audio_stop(void) {
+    if (s_audio_task == NULL) return;  // not running
     atomic_store(&s_audio_run, false);
-    // The task deletes itself once it observes the flag; give it a moment.
-    vTaskDelay(pdMS_TO_TICKS(10));
+    // Wait for the task to finish its current write, flush silence, and exit
+    // (bounded — it may be blocked in one final block-write, ~1.3 ms at 48 k).
+    for (int i = 0; i < 50 && !atomic_load(&s_audio_done); i++) {
+        vTaskDelay(pdMS_TO_TICKS(2));
+    }
+    // Stop the DMA so the codec doesn't replay the last buffer forever (sounds
+    // like a crash) and drop the amplifier so nothing bleeds through.
+    if (s_i2s != NULL) {
+        i2s_channel_disable(s_i2s);
+    }
+    bsp_audio_set_amplifier(false);
     s_audio_task = NULL;
 }
 
