@@ -41,6 +41,8 @@ set(HOST_SRCS
     # Stage 2a: parameter table + store.
     "${REPO_ROOT}/engine/param_desc.cpp"
     "${REPO_ROOT}/engine/param_store.cpp"
+    # Stage 2d: preset serialisation + factory bank.
+    "${REPO_ROOT}/engine/preset.cpp"
     # DaisySP modules (header-only: whitenoise, dsp wrappers).
     "${DAISYSP}/Source/Synthesis/oscillator.cpp"
     "${DAISYSP}/Source/Filters/svf.cpp"

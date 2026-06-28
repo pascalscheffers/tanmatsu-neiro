@@ -18,6 +18,7 @@ add_executable(tanmatsu-tests
     test_command_queue.cpp
     test_param_store.cpp
     test_saturate.cpp
+    test_preset.cpp
     "${DAISYSP}/Source/Synthesis/oscillator.cpp"
     "${DAISYSP}/Source/Filters/svf.cpp"
     "${DAISYSP}/Source/Control/adsr.cpp"
@@ -27,6 +28,7 @@ add_executable(tanmatsu-tests
     "${REPO_ROOT}/engine/voice_alloc.cpp"
     "${REPO_ROOT}/engine/param_desc.cpp"
     "${REPO_ROOT}/engine/param_store.cpp"
+    "${REPO_ROOT}/engine/preset.cpp"
 )
 
 target_include_directories(tanmatsu-tests PRIVATE

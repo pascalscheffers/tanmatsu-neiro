@@ -40,6 +40,8 @@ idf_component_register(
 		# Stage 2a: parameter table + store.
 		"../engine/param_desc.cpp"
 		"../engine/param_store.cpp"
+		# Stage 2d: preset serialisation + factory bank.
+		"../engine/preset.cpp"
 		# DaisySP modules.
 		"${DAISYSP}/Source/Synthesis/oscillator.cpp"
 		"${DAISYSP}/Source/Filters/svf.cpp"

@@ -193,9 +193,10 @@ bool platform_poll_event(platform_event_t* out) {
                 // the user can hold them for continuous scroll/nudge. Filter
                 // everything else to prevent musical-key retriggering.
                 SDL_Keycode sym = e.key.keysym.sym;
-                int is_nav = (sym == SDLK_UP    || sym == SDLK_DOWN  ||
-                              sym == SDLK_LEFT   || sym == SDLK_RIGHT ||
-                              sym == SDLK_COMMA  || sym == SDLK_PERIOD);
+                int is_nav = (sym == SDLK_UP           || sym == SDLK_DOWN        ||
+                              sym == SDLK_LEFT          || sym == SDLK_RIGHT       ||
+                              sym == SDLK_COMMA         || sym == SDLK_PERIOD      ||
+                              sym == SDLK_LEFTBRACKET   || sym == SDLK_RIGHTBRACKET);
                 if (!is_nav) {
                     out->type = PLATFORM_EV_NONE;
                     return true;
@@ -244,6 +245,43 @@ uint64_t platform_cycles_now(void) {
 
 uint32_t platform_cycles_per_sec(void) {
     return 1000000000u;  // 1 GHz pseudo-clock matching the ns timebase above
+}
+
+// ---------------------------------------------------------------------------
+// Storage (Stage 2d) — POSIX file-per-key under ./presets/
+// ---------------------------------------------------------------------------
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+
+static const char* s_preset_dir = "presets";
+
+static void ensure_preset_dir(void) {
+    struct stat st;
+    if (stat(s_preset_dir, &st) != 0) {
+        mkdir(s_preset_dir, 0755);
+    }
+}
+
+int platform_storage_save(const char* key, const void* data, size_t len) {
+    ensure_preset_dir();
+    char path[256];
+    snprintf(path, sizeof(path), "%s/%.230s.tnp", s_preset_dir, key);
+    FILE* f = fopen(path, "wb");
+    if (!f) return -1;
+    size_t written = fwrite(data, 1, len, f);
+    fclose(f);
+    return (written == len) ? 0 : -1;
+}
+
+int platform_storage_load(const char* key, void* buf, size_t max_len) {
+    char path[256];
+    snprintf(path, sizeof(path), "%s/%.230s.tnp", s_preset_dir, key);
+    FILE* f = fopen(path, "rb");
+    if (!f) return -1;
+    size_t n = fread(buf, 1, max_len, f);
+    fclose(f);
+    return (int)n;
 }
 
 // ---------------------------------------------------------------------------

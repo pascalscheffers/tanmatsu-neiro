@@ -114,6 +114,20 @@ uint32_t platform_cycles_per_sec(void);
 // the main loop paces the display without busy-spinning. Not for the audio path.
 void platform_sleep_ms(uint32_t ms);
 
+// ---------------------------------------------------------------------------
+// Storage (Stage 2d) — key/blob store
+// ---------------------------------------------------------------------------
+// Synchronous key/value blob store. On device: ESP-IDF NVS (keys ≤ 15 chars,
+// blobs up to ~32 KB). On host: one file per key in ./presets/.
+// Call only from the control/UI thread — never from the audio thread.
+
+// Save `len` bytes from `data` under `key`. Returns 0 on success, -1 on error.
+int platform_storage_save(const char* key, const void* data, size_t len);
+
+// Load the blob for `key` into `buf` (at most `max_len` bytes).
+// Returns bytes loaded on success, -1 if the key does not exist or on error.
+int platform_storage_load(const char* key, void* buf, size_t max_len);
+
 #ifdef __cplusplus
 }
 #endif

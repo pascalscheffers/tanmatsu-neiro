@@ -11,7 +11,9 @@
 #include "pax_text.h"
 #include "engine/param_desc.h"
 #include "engine/param_id.h"
+#include "engine/preset.h"
 #include "engine/synth.h"
+#include "platform.h"
 
 // ---------------------------------------------------------------------------
 // Colors
@@ -99,9 +101,30 @@ static float clamp01(float x) {
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+// Apply physical param values to the engine + sync the norms shadow.
+// Shared by factory-preset and user-preset loading paths.
+static void ui_apply_params(UIState* s, const char* name, int preset_idx,
+                             const uint16_t* ids, const float* values, int count) {
+    for (int i = 0; i < count; i++) {
+        engine_set_param(ids[i], values[i]);
+        if (ids[i] < UI_NORM_TABLE_SIZE) {
+            for (int j = 0; j < kJunoParamCount; j++) {
+                if (JUNO_PARAM_TABLE[j].id == ids[i]) {
+                    s->norms[ids[i]] = phys_to_norm(JUNO_PARAM_TABLE[j], values[i]);
+                    break;
+                }
+            }
+        }
+    }
+    strncpy(s->preset_name, name, sizeof(s->preset_name) - 1);
+    s->preset_name[sizeof(s->preset_name) - 1] = '\0';
+    s->preset_idx = preset_idx;
+}
+
 extern "C" void ui_state_init(UIState* s) {
     memset(s, 0, sizeof(*s));
-    s->preset_name = "INIT";
+    s->preset_idx = 0;
+    strncpy(s->preset_name, "INIT", sizeof(s->preset_name) - 1);
 
     // Build page list: unique groups in table order.
     for (int i = 0; i < kJunoParamCount; i++) {
@@ -120,6 +143,20 @@ extern "C" void ui_state_init(UIState* s) {
         const ParamDesc& d = JUNO_PARAM_TABLE[i];
         if (d.id < UI_NORM_TABLE_SIZE) {
             s->norms[d.id] = phys_to_norm(d, d.def);
+        }
+    }
+
+    // Try to restore the user preset from storage.
+    static uint8_t blob[PRESET_BLOB_MAX];
+    int bytes = platform_storage_load("user", blob, sizeof(blob));
+    if (bytes > 0) {
+        static uint16_t ids[32];
+        static float    vals[32];
+        char            name[PRESET_NAME_LEN + 1];
+        int count = preset_parse(blob, (size_t)bytes, name, sizeof(name),
+                                 ids, vals, 32);
+        if (count > 0) {
+            ui_apply_params(s, name, -1, ids, vals, count);
         }
     }
 }
@@ -164,6 +201,32 @@ extern "C" bool ui_handle_event(UIState* s, const platform_event_t* ev) {
             float norm = clamp01(s->norms[d->id] + ((ev->key == '.') ? step : -step));
             s->norms[d->id] = norm;
             engine_set_param_norm(d->id, norm);
+            return true;
+        }
+        case '[':
+        case ']': {
+            // Cycle through the factory bank.
+            int total = preset_factory_count();
+            if (total <= 0) return true;
+            int next = s->preset_idx + ((ev->key == ']') ? 1 : -1);
+            if (next < 0) next = total - 1;
+            if (next >= total) next = 0;
+            uint16_t ids[32];
+            float    vals[32];
+            int count = preset_factory_params(next, ids, vals, 32);
+            if (count > 0) {
+                ui_apply_params(s, preset_factory_name(next), next, ids, vals, count);
+            }
+            return true;
+        }
+        case '=': {
+            // Save the current UI state as the user preset.
+            static uint8_t blob[PRESET_BLOB_MAX];
+            int len = preset_serialize(blob, sizeof(blob),
+                                       s->preset_name, s->norms, UI_NORM_TABLE_SIZE);
+            if (len > 0) {
+                platform_storage_save("user", blob, (size_t)len);
+            }
             return true;
         }
         default:
@@ -282,14 +345,12 @@ static void draw_status(pax_buf_t* fb, const UIState* s) {
     pax_draw_text(fb, COL_DIM, pax_font_sky_mono, FONT_SM, 140.0f, text_y, buf);
 
     // Preset name.
-    if (s->preset_name) {
-        pax_draw_text(fb, COL_TEXT, pax_font_sky_mono, FONT_SM,
-                      280.0f, text_y, s->preset_name);
-    }
+    pax_draw_text(fb, COL_TEXT, pax_font_sky_mono, FONT_SM,
+                  280.0f, text_y, s->preset_name);
 
-    // Key hints — right-aligned area.
+    // Key hints.
     pax_draw_text(fb, COL_DIM, pax_font_sky_mono, FONT_SM - 2.0f,
-                  430.0f, text_y, "<> pg  ^v row  ,/. nudge  ESC exit");
+                  430.0f, text_y, "<>pg  ^v row  ,/.nudge  [/]preset  =save  ESC");
 }
 
 extern "C" void ui_draw(pax_buf_t* fb, uint64_t millis, const UIState* s) {

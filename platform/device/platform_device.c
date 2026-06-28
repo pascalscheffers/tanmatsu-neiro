@@ -252,9 +252,12 @@ static int scancode_to_key(bsp_input_scancode_t sc) {
         case BSP_INPUT_SCANCODE_SEMICOLON: return ';';
         case BSP_INPUT_SCANCODE_Z:         return 'z';
         case BSP_INPUT_SCANCODE_X:         return 'x';
-        case BSP_INPUT_SCANCODE_COMMA:     return ',';
-        case BSP_INPUT_SCANCODE_DOT:       return '.';
-        default:                           return 0;
+        case BSP_INPUT_SCANCODE_COMMA:      return ',';
+        case BSP_INPUT_SCANCODE_DOT:        return '.';
+        case BSP_INPUT_SCANCODE_LEFTBRACE:  return '[';
+        case BSP_INPUT_SCANCODE_RIGHTBRACE: return ']';
+        case BSP_INPUT_SCANCODE_EQUAL:      return '=';
+        default:                            return 0;
     }
 }
 
@@ -325,6 +328,44 @@ uint64_t platform_millis(void) {
 
 void platform_sleep_ms(uint32_t ms) {
     vTaskDelay(pdMS_TO_TICKS(ms));
+}
+
+// ---------------------------------------------------------------------------
+// Storage (Stage 2d) — NVS blob per key under namespace "synth_p"
+// ---------------------------------------------------------------------------
+// NVS is already initialised in platform_init() via nvs_flash_init().
+// Key names are limited to 15 characters; we truncate silently.
+// Blobs up to ~32 KB each; our presets are ~126 bytes — well within budget.
+#include "nvs.h"
+
+#define STORAGE_NVS_NS "synth_p"
+
+static void nvs_truncate_key(const char* key, char* out, size_t out_max) {
+    size_t i;
+    for (i = 0; i < out_max - 1 && key[i]; i++) out[i] = key[i];
+    out[i] = '\0';
+}
+
+int platform_storage_save(const char* key, const void* data, size_t len) {
+    char safe[16];
+    nvs_truncate_key(key, safe, sizeof(safe));
+    nvs_handle_t h;
+    if (nvs_open(STORAGE_NVS_NS, NVS_READWRITE, &h) != ESP_OK) return -1;
+    esp_err_t err = nvs_set_blob(h, safe, data, len);
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    return (err == ESP_OK) ? 0 : -1;
+}
+
+int platform_storage_load(const char* key, void* buf, size_t max_len) {
+    char safe[16];
+    nvs_truncate_key(key, safe, sizeof(safe));
+    nvs_handle_t h;
+    if (nvs_open(STORAGE_NVS_NS, NVS_READONLY, &h) != ESP_OK) return -1;
+    size_t len = max_len;
+    esp_err_t err = nvs_get_blob(h, safe, buf, &len);
+    nvs_close(h);
+    return (err == ESP_OK) ? (int)len : -1;
 }
 
 // ---------------------------------------------------------------------------

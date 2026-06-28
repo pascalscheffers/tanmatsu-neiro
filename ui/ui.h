@@ -20,15 +20,16 @@ extern "C" {
 
 // Persistent UI state — owned by app.c, passed by pointer to all ui_ calls.
 typedef struct {
-    int         page;                        // selected page index (0..num_pages-1)
-    int         row;                         // selected row within the page
-    int         active_voices;               // set by app each frame
-    int         octave;                      // set by app each frame
-    const char* preset_name;                 // placeholder until Stage 2d
-    float       norms[UI_NORM_TABLE_SIZE];   // normalised [0,1] shadow per param ID
+    int     page;                        // selected page index (0..num_pages-1)
+    int     row;                         // selected row within the page
+    int     active_voices;               // set by app each frame
+    int     octave;                      // set by app each frame
+    char    preset_name[33];             // displayed in the status strip
+    int     preset_idx;                  // factory index (0-based) or -1 for user preset
+    float   norms[UI_NORM_TABLE_SIZE];   // normalised [0,1] shadow per param ID
     // Internal — do not modify directly:
-    int         num_pages;
-    uint8_t     page_groups[8];  // group enum value for each page slot
+    int     num_pages;
+    uint8_t page_groups[8];  // group enum value for each page slot
 } UIState;
 
 // Initialise UIState from the param table: build the page list, compute
