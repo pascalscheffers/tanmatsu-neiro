@@ -1,7 +1,8 @@
 # Stage 1 — One voice (MVP)
 
-**Status:** planned · **Executor:** Sonnet · **Protocol:** [stages/README.md](README.md)
-**Blocked by:** Stage 0.5 CPU-budget gate (the per-voice budget sizes this stage).
+**Status:** ready to execute · **Executor:** Sonnet · **Protocol:** [stages/README.md](README.md)
+**Blocked by:** nothing — Stage 0.5 CPU-budget gate is **ratified** (per-voice budget
+≤ ~30 000 cyc/blk; `stages/stage-0.5-results.md`). Filter gate (1b) pre-resolved below.
 
 ## Goal
 The first **playable** synth: the `SynthModel`/`IVoice` boundary (ADR 0008), one Juno voice
@@ -16,7 +17,9 @@ purity (ADR 0007). Vendor a thin slice under `dsp/vendor/daisysp/`, **wrap don't
 Record the exact upstream commit hash in `MEMORY.md` at vendor time, and add a row to the
 dependency ledger in `specs/02`. Modules used this stage (confirmed present):
 - `Source/Synthesis/oscillator.{h,cpp}` — PolyBLEP saw/square/tri (the VA macro-osc mode + the sub).
-- `Source/Filters/svf.{h,cpp}` **and** `Source/Filters/moogladder.{h,cpp}` — filter (pick is gated).
+- `Source/Filters/svf.{h,cpp}` — **the voice filter (resolved: SVF 2-pole multimode)**.
+  Also vendor `Source/Filters/moogladder.{h,cpp}` but leave it unwired — kept to A/B for Juno
+  character later.
 - `Source/Control/adsr.{h,cpp}` — amp envelope / VCA.
 - `Source/Noise/whitenoise.h` — noise source.
 - `Source/Effects/chorus.{h,cpp}` — master chorus starting point.
@@ -26,10 +29,10 @@ MI `plaits`/`stmlib` (wavetable/FM macro-osc modes) is **Stage 7**, not now. The
 osc is shaped as a macro-osc but only its VA mode is implemented this stage.
 
 ## Gate table
-| Gate | When | Why Opus | Recommendation |
+| Gate | When | Why Opus | Status / Recommendation |
 |---|---|---|---|
-| 🛑 Filter model: SVF vs MoogLadder | start of 1b | sonic | **SVF** — gives the LP/BP/HP multimode ADR 0002 specifies; keep MoogLadder vendored to A/B for Juno character later |
-| 🛑 Per-voice cost > Stage 0.5 budget | end of 1c (on device) | CPU-budget | re-open the budget/polyphony gate with the measured real-voice cost |
+| ✅ Filter model: SVF vs MoogLadder | start of 1b | sonic | **RESOLVED 2026-06-28 (Pascal): SVF 2-pole multimode** — LP/BP/HP per ADR 0002. Keep MoogLadder vendored to A/B for Juno character later. No stop. |
+| 🛑 Per-voice cost > Stage 0.5 budget | end of 1c (on device) | CPU-budget | re-open the budget/polyphony gate with the measured real-voice cost (only fires if > ~30 000 cyc/blk — unlikely given headroom) |
 
 Decide-with-default (no gate): voice-steal policy = **oldest-released, then oldest**;
 C/C++ seam = keep `synth_render` `extern "C"`, implement engine/dsp in C++; `NoteExpression`
@@ -57,17 +60,20 @@ is a minimal struct now (bend/pressure/slide fields, channel-filled), MPE wiring
 - `dsp/` wrappers expose our blocks over the vendored code (thin, named per our convention:
   `osc_`, `filter_`, `env_`), keeping `dsp/vendor/` un-edited.
 - Define the `SynthModel`/`IVoice` interface (ADR 0008 shape) in `engine/`. Implement one
-  **`JunoVoice`**: macro-osc (VA mode) + sub-osc (−1 oct) + white noise → mix → filter
-  (the gated pick) → ADSR-driven VCA. Allocation-free, block-based `render()` that **adds**
+  **`JunoVoice`**: macro-osc (VA mode) + sub-osc (−1 oct) + white noise → mix → **SVF
+  2-pole multimode filter** (resolved) → ADSR-driven VCA. Allocation-free, block-based
+  `render()` that **adds**
   into the buffer (ADR 0008). Software denormal suppression in the filter/feedback paths
   (ADR 0012).
 - Host tests: ADSR shape (attack/decay/sustain/release timing), filter sweep response
   (cutoff/res do the expected thing), voice silent after release + `reset()`.
 
 ### 1c — polyphony + master FX + wiring
-- Generic **voice allocator** (model-agnostic, reads `make_voice()`): fixed pool of 8
-  (ADR 0003), `note_on`/`note_off`, steal policy (default above). Unison hooks may stub
-  here; full unison is Stage 3.
+- Generic **voice allocator** (model-agnostic, reads `make_voice()`): fixed pool sized by a
+  single **config-sourced `kNumVoices`** (default 8, ADR 0003 — never a literal `8` in pool
+  arrays, loops, or unison math; compile-time constant now, runtime "fat/thin" mode later per
+  ADR 0015), `note_on`/`note_off`, steal policy (default above). Allocator O(n) in voice
+  count. Unison hooks may stub here; full unison is Stage 3.
 - **Master chorus** (DaisySP Chorus) on the summed voice bus — the Juno character (ADR 0002).
 - Re-point `synth_render` from the Stage 0 sine to `engine_render` (sum voices → chorus →
   out). Mark the render call chain `IRAM_ATTR`; constant tables → DRAM/PSRAM, not flash

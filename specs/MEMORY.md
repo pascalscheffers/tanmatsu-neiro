@@ -261,3 +261,17 @@ First real AppFS bench run printed nothing. Two independent causes, both fixed:
   side is trivial + lock-free: publish a decimated sample ring; the UI reads at its own cadence.
 - Files: `decisions/0003` (amended), `decisions/0015` (new) + README index, spec 02 polyphony
   section + deferred list.
+
+## 2026-06-28 — Stage 1 handoff prep (filter gate pre-resolved; runbook unblocked)
+- Prepped Stage 1 for a clean Sonnet execution session. Runbook status → **ready to execute**;
+  Stage 0.5 budget gate noted as ratified (≤ ~30 000 cyc/blk per voice).
+- **Filter gate (1b) pre-resolved (Pascal): SVF 2-pole multimode** as the JunoVoice filter
+  (LP/BP/HP per ADR 0002). MoogLadder still vendored but unwired — kept to A/B for Juno
+  character later. Folded into the runbook (gate table ✅, reuse list, 1b text) so Sonnet does
+  **not** stop at the start of 1b.
+- Folded the config-sourced `kNumVoices` guardrail (ADR 0003/0015) into sub-stage 1c: pool
+  sized by one constant, never a literal `8`, O(n) allocator, runtime fat/thin mode later.
+- Remaining Stage 1 gate is data-dependent only: 🛑 per-voice cost > budget at end of 1c (on
+  device) — fires only if measured > ~30 000 cyc/blk (unlikely given headroom).
+- **Next:** Sonnet executes Stage 1 sub-stages 1a→1d per `stages/README.md`. 1a vendors the
+  DaisySP slice (record commit hash here) + stands up `make test`.
