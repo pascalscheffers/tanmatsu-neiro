@@ -193,6 +193,31 @@ Newest at the bottom. One entry per stage/session. Lean — link to specs, don't
   the proxy showed 8 voices = 6.2% period even without -O2.
 - **Next:** Stage 1d — musical-typing input + minimal PAX UI page.
 
+## 2026-06-28 — Stage 1d: musical-typing input + minimal PAX page (COMPLETE)
+
+- **`control/keyboard.c/h`** (new): GarageBand-style two-row piano layout. Keys
+  `a-;` map to 17 chromatic semitones (C…E+1); `z`/`x` shift the octave down/up
+  (default octave 4, range 1–7 → 'a' = C4 = MIDI 60). Calls `engine_note_on/off`
+  from the UI thread. Control layer is pure C, no platform or engine-internal deps.
+- **`engine_active_voices()`** added to `synth.h`/`synth.cpp`: counts active slots
+  (gate-on or envelope still running); called from the UI thread for display only.
+- **`ui_draw()` signature updated**: `(fb, millis, active_voices, octave)`. New
+  Stage 1d page: title, 8 cyan/dim voice-activity cells centred, Oct indicator,
+  and a key-hint line at the bottom. `millis` retained for Stage 2 animation.
+- **SDL key-repeat filtered** in `platform_host.c` (`e.key.repeat != 0` → 
+  PLATFORM_EV_NONE): held keys no longer retrigger voices on the host.
+- **`app.c`** wires `keyboard_init` + `keyboard_handle_event` + 
+  `engine_active_voices` + `keyboard_octave` into the main loop.
+- `make test` ✅ (12/12) `make host` ✅ `make build` ✅ membrane grep clean.
+- App size: 0xe71f0 ≈ 947 KB, 55% partition free (+6 KB from 1c).
+- **Device note**: badge BSP `platform_poll_event` only fires key-press events
+  (`pressed = true`); note-off comes via the envelope release tail naturally.
+  Primary verification is on host where key-up works properly.
+- **Stage 1 COMPLETE.** All sub-stages 1a–1d done. Acceptance criteria met:
+  press keys → up to 8 Juno voices audible on host; release frees voices;
+  `make test` green; render chain IRAM; membrane clean; per-voice cost recorded.
+- **Next:** Stage 2 — parameter table + full UI pages.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
