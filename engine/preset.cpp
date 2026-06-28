@@ -1,9 +1,16 @@
-// engine/preset.cpp — preset serialisation + factory bank (Stage 2d).
+// engine/preset.cpp — preset serialisation + factory bank (Stage 2d, bumped 3b-ii).
 #include "preset.h"
+#include "mod_matrix.h"
 #include "param_desc.h"
 #include "param_id.h"
 #include <math.h>
 #include <string.h>
+
+// Virtual PWM destination (parallel to kModDestPitch = 0xFFFE in mod_matrix.h).
+// No ParamId exists yet — PWM hardware wiring is Stage 3c.  The sentinel is
+// stored in preset routings so blobs written now round-trip correctly once 3c
+// promotes it to a proper ParamId or kModDestPwm constant in mod_matrix.h.
+static constexpr uint16_t kPresetDestPwm = 0xFFFDu;
 
 // ---------------------------------------------------------------------------
 // Curve helper (mirrors ParamStore::apply_curve; kept local, no coupling)
@@ -36,18 +43,32 @@ static float apply_curve_local(const ParamDesc& d, float norm) {
 // ---------------------------------------------------------------------------
 // Factory bank — hardcoded physical values, no storage required
 // ---------------------------------------------------------------------------
+
+// "Clean 106" default routings (ADR 0009 §Default-patch voicing, RATIFIED).
+// Amp envelope is hardwired in JunoVoice — do NOT add ENV1→amp here.
+static const Routing k_clean_106_routings[] = {
+    // source             dest_param_id              depth   curve
+    { (uint8_t)ModSource::ENV2,  (uint16_t)ParamId::FILTER_CUTOFF, +0.35f, (uint8_t)ModCurve::LIN },
+    { (uint8_t)ModSource::LFO1,  kPresetDestPwm,                   +0.20f, (uint8_t)ModCurve::LIN },
+};
+static constexpr int k_clean_106_count = (int)(sizeof(k_clean_106_routings) /
+                                               sizeof(k_clean_106_routings[0]));
+
 struct FactoryPreset {
     const char* name;
     uint16_t    ids[32];
     float       vals[32];
     int         count;
+    const Routing* routings;
+    int             routing_count;
 };
 
 // All values in physical units (the same space engine_set_param() expects).
 // Param ordering follows JUNO_PARAM_TABLE order (cosmetic — loader goes by id).
 // Stage 3a: added ENV2 (attack/decay/sustain/release) + LFO1/2 (rate/depth/shape).
+// Stage 3b-ii: added routings fields; all presets carry "Clean 106" routings.
 static const FactoryPreset k_factory[] = {
-    // 0: INIT — all table defaults
+    // 0: INIT — all table defaults + "Clean 106" routings (ADR 0009 RATIFIED)
     {
         "INIT",
         {ParamId::OSC_LEVEL, ParamId::SUB_LEVEL,     ParamId::NOISE_LEVEL,
@@ -67,8 +88,9 @@ static const FactoryPreset k_factory[] = {
          0.500f, 0.700f, 0.400f,
          0.500f},
         24,
+        k_clean_106_routings, k_clean_106_count,
     },
-    // 1: Bass — thick sub, tight attack, dark filter
+    // 1: Bass — thick sub, tight attack, dark filter + "Clean 106" routings
     {
         "Bass",
         {ParamId::OSC_LEVEL, ParamId::SUB_LEVEL,     ParamId::NOISE_LEVEL,
@@ -88,8 +110,9 @@ static const FactoryPreset k_factory[] = {
          0.30f, 0.40f, 0.30f,
          0.60f},
         24,
+        k_clean_106_routings, k_clean_106_count,
     },
-    // 2: Pad — slow attack, lush chorus, long release
+    // 2: Pad — slow attack, lush chorus, long release + "Clean 106" routings
     {
         "Pad",
         {ParamId::OSC_LEVEL, ParamId::SUB_LEVEL,     ParamId::NOISE_LEVEL,
@@ -109,8 +132,9 @@ static const FactoryPreset k_factory[] = {
          0.40f, 0.90f, 0.55f,
          0.50f},
         24,
+        k_clean_106_routings, k_clean_106_count,
     },
-    // 3: Lead — bright, cutting, light chorus
+    // 3: Lead — bright, cutting, light chorus + "Clean 106" routings
     {
         "Lead",
         {ParamId::OSC_LEVEL, ParamId::SUB_LEVEL,     ParamId::NOISE_LEVEL,
@@ -130,6 +154,7 @@ static const FactoryPreset k_factory[] = {
          1.00f, 0.50f, 0.30f,
          0.50f},
         24,
+        k_clean_106_routings, k_clean_106_count,
     },
 };
 
@@ -154,6 +179,17 @@ int preset_factory_params(int idx,
     return n;
 }
 
+int preset_factory_routings(int idx, Routing* routings_out, int max_count) {
+    if (idx < 0 || idx >= k_factory_count) return -1;
+    const FactoryPreset& fp = k_factory[idx];
+    if (!fp.routings || fp.routing_count == 0) return 0;
+    int n = (fp.routing_count < max_count) ? fp.routing_count : max_count;
+    for (int i = 0; i < n; i++) {
+        routings_out[i] = fp.routings[i];
+    }
+    return n;
+}
+
 // ---------------------------------------------------------------------------
 // Serialisation helpers (explicit byte-level I/O avoids alignment/ABI issues)
 // ---------------------------------------------------------------------------
@@ -170,16 +206,19 @@ static float    rd_f32(const uint8_t** p) { float    v; memcpy(&v,*p,4); (*p)+=4
 // ---------------------------------------------------------------------------
 int preset_serialize(void* buf, size_t buf_max,
                      const char* name,
-                     const float* norms, int norms_len) {
+                     const float* norms, int norms_len,
+                     const Routing* routings, int routings_len) {
     const size_t param_count = (size_t)kJunoParamCount;
-    const size_t need = 42u + param_count * 6u;
+    const int    r_count     = (routings && routings_len > 0) ? routings_len : 0;
+    // header(42) + params(6 each) + routing_count(2) + routings(8 each)
+    const size_t need = 42u + param_count * 6u + 2u + (size_t)r_count * 8u;
     if (buf_max < need) return -1;
 
     uint8_t* p = (uint8_t*)buf;
 
     // Header
     memcpy(p, "TNMT", 4); p += 4;
-    wr_u8(&p, PRESET_FORMAT_VERSION);
+    wr_u8(&p, PRESET_FORMAT_VERSION);  // v2
     wr_u8(&p, PRESET_MODEL_JUNO);
     wr_u16(&p, 0u);  // flags, reserved
 
@@ -200,16 +239,27 @@ int preset_serialize(void* buf, size_t buf_max,
         wr_f32(&p, phys);
     }
 
+    // Routings block (v2): count + records, field-by-field (1+2+4+1 = 8 bytes each)
+    wr_u16(&p, (uint16_t)r_count);
+    for (int i = 0; i < r_count; i++) {
+        wr_u8(&p,  routings[i].source);
+        wr_u16(&p, routings[i].dest_param_id);
+        wr_f32(&p, routings[i].depth);
+        wr_u8(&p,  routings[i].curve);
+    }
+
     return (int)(p - (uint8_t*)buf);
 }
 
 int preset_parse(const void* buf, size_t len,
                  char* name_out, int name_max,
-                 uint16_t* ids_out, float* vals_out, int max_count) {
+                 uint16_t* ids_out, float* vals_out, int max_count,
+                 Routing* routings_out, int max_routings, int* routings_count_out) {
     static constexpr size_t kHeaderSize = 42u;
     if (len < kHeaderSize) return -1;
 
-    const uint8_t* p = (const uint8_t*)buf;
+    const uint8_t* p   = (const uint8_t*)buf;
+    const uint8_t* end = p + len;
 
     // Magic
     if (memcmp(p, "TNMT", 4) != 0) return -1;
@@ -219,7 +269,9 @@ int preset_parse(const void* buf, size_t len,
     uint8_t model_id = rd_u8(&p);
     rd_u16(&p);  // flags, ignored
 
-    if (version != PRESET_FORMAT_VERSION || model_id != PRESET_MODEL_JUNO) return -1;
+    // Accept v1 (no routings block) and v2 (with routings block).
+    if ((version != 1 && version != PRESET_FORMAT_VERSION) ||
+        model_id != PRESET_MODEL_JUNO) return -1;
 
     // Name
     if (name_out && name_max > 0) {
@@ -233,7 +285,7 @@ int preset_parse(const void* buf, size_t len,
 
     uint16_t count = rd_u16(&p);
 
-    // Validate enough bytes remain for the declared count.
+    // Validate enough bytes remain for the declared param count.
     if (len < kHeaderSize + (size_t)count * 6u) return -1;
 
     int n = 0;
@@ -246,5 +298,36 @@ int preset_parse(const void* buf, size_t len,
             n++;
         }
     }
+
+    // Routings block (v2 only — v1 blobs end here).
+    int r_out = 0;
+    if (version == 2 && p < end) {
+        // Need at least 2 bytes for the routing count.
+        if ((size_t)(end - p) >= 2u) {
+            uint16_t r_count = rd_u16(&p);
+            // Each routing = 1+2+4+1 = 8 bytes.
+            for (uint16_t i = 0; i < r_count; i++) {
+                if ((size_t)(end - p) < 8u) break;  // truncated — stop safely
+                uint8_t  src   = rd_u8(&p);
+                uint16_t dest  = rd_u16(&p);
+                float    depth = rd_f32(&p);
+                uint8_t  curve = rd_u8(&p);
+                // Skip unknown source ids (forward-compat).
+                if (src >= (uint8_t)ModSource::_COUNT && src != 0) {
+                    // unknown source: skip (dest/depth/curve already consumed above)
+                    continue;
+                }
+                if (routings_out && r_out < max_routings) {
+                    routings_out[r_out].source        = src;
+                    routings_out[r_out].dest_param_id = dest;
+                    routings_out[r_out].depth         = depth;
+                    routings_out[r_out].curve         = curve;
+                    r_out++;
+                }
+            }
+        }
+    }
+
+    if (routings_count_out) *routings_count_out = r_out;
     return n;
 }

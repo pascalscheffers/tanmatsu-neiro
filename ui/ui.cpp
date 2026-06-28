@@ -9,6 +9,7 @@
 #include <string.h>
 #include "pax_fonts.h"
 #include "pax_text.h"
+#include "engine/mod_matrix.h"
 #include "engine/param_desc.h"
 #include "engine/param_id.h"
 #include "engine/preset.h"
@@ -148,17 +149,29 @@ extern "C" void ui_state_init(UIState* s) {
         }
     }
 
+    // Load the INIT factory routings ("Clean 106") into the mod matrix at startup.
+    // Overridden below if a stored user preset with routings is found.
+    {
+        Routing routings[PRESET_MAX_ROUTINGS];
+        int r_count = preset_factory_routings(0, routings, PRESET_MAX_ROUTINGS);
+        engine_set_routings(routings, r_count);
+    }
+
     // Try to restore the user preset from storage.
     static uint8_t blob[PRESET_BLOB_MAX];
     int bytes = platform_storage_load("user", blob, sizeof(blob));
     if (bytes > 0) {
         static uint16_t ids[32];
         static float    vals[32];
-        char            name[PRESET_NAME_LEN + 1];
+        Routing routings[PRESET_MAX_ROUTINGS];
+        int     r_count = 0;
+        char    name[PRESET_NAME_LEN + 1];
         int count = preset_parse(blob, (size_t)bytes, name, sizeof(name),
-                                 ids, vals, 32);
+                                 ids, vals, 32,
+                                 routings, PRESET_MAX_ROUTINGS, &r_count);
         if (count > 0) {
             ui_apply_params(s, name, -1, ids, vals, count);
+            engine_set_routings(routings, r_count);
         }
     }
 }
@@ -219,13 +232,24 @@ extern "C" bool ui_handle_event(UIState* s, const platform_event_t* ev) {
             if (count > 0) {
                 ui_apply_params(s, preset_factory_name(next), next, ids, vals, count);
             }
+            // Load the factory routings into the mod matrix.
+            Routing routings[PRESET_MAX_ROUTINGS];
+            int r_count = preset_factory_routings(next, routings, PRESET_MAX_ROUTINGS);
+            engine_set_routings(routings, r_count);
             return true;
         }
         case '=': {
-            // Save the current UI state as the user preset.
+            // Save the current UI state (params + active routings) as the user preset.
+            // Routings come from the INIT factory bank (index 0 = "Clean 106").
+            // Full per-patch routing edit is a later stage; for now we persist whatever
+            // the factory loaded so round-trips stay consistent.
             static uint8_t blob[PRESET_BLOB_MAX];
+            Routing routings[PRESET_MAX_ROUTINGS];
+            int r_count = preset_factory_routings(s->preset_idx >= 0 ? s->preset_idx : 0,
+                                                  routings, PRESET_MAX_ROUTINGS);
             int len = preset_serialize(blob, sizeof(blob),
-                                       s->preset_name, s->norms, UI_NORM_TABLE_SIZE);
+                                       s->preset_name, s->norms, UI_NORM_TABLE_SIZE,
+                                       routings, r_count);
             if (len > 0) {
                 platform_storage_save("user", blob, (size_t)len);
             }

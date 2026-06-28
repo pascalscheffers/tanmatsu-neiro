@@ -8,6 +8,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Forward declaration for C-compatible use in the engine_set_routings prototype.
+// C++ callers can #include "mod_matrix.h" for the full Routing definition.
+#ifdef __cplusplus
+#include "mod_matrix.h"
+#else
+struct Routing;  // opaque in C; see engine/mod_matrix.h for the full definition
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -44,6 +52,14 @@ void engine_set_param_norm(uint16_t id, float norm);
 // Read the current smoothed value for a param (control-thread safe; may lag
 // the audio thread by one block — use for display only, not for audio logic).
 float engine_get_param(uint16_t id);
+
+// Load a complete set of modulation routings into every active voice.
+// Called from the control thread (preset load, init).  The routings are copied
+// into each voice's ModMatrix immediately; audio thread picks them up next block.
+// `routings`: array of Routing records to load.
+// `count`: number of valid entries in `routings` (max kMaxRoutes).
+// Slots beyond `count` are cleared (set to NONE/0).
+void engine_set_routings(const struct Routing* routings, int count);
 
 #ifdef __cplusplus
 }
