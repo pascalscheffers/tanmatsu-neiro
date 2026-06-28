@@ -81,9 +81,19 @@ Tiered by when it bites. Nothing here is committed-to yet — these are *needs t
 - **[Stage 5] USB-host MIDI.** ADR 0005's real unknown. If neither IDF nor BSP provides a
   USB-host MIDI class driver, a reusable component (contributed to badge.team) is better
   than a private one. Discuss scope with Renze before building.
-- **[watch, Stage 2+] PAX performance.** Full-frame 800×480×24bpp blits every redraw are
-  heavy for a live-tweak UI. If profiling shows it, dirty-rect / partial-blit support in
-  PAX is a high-value perf PR — *with numbers*.
+- **[watch, Stage 2+] PAX rendering performance — three levers.** PAX runs in its most
+  conservative mode on the P4 (one core, no PPA, full-frame present); headroom, not a
+  defect. Full analysis + file:line citations: `specs/notes/pax-rendering-perf.md`.
+  Profile first (bench harness exists). In ROI order:
+  1. **Dirty-rect present** (*our side*) — present only `pax_get_dirty` bounds instead of
+     the whole 800×480×24bpp buffer every frame; the dirty box is already tracked, nothing
+     reads it. Biggest, cheapest win; a PAX-side partial-blit helper may be a small nicety.
+  2. **Activate multicore renderer** (*our side*) — the async dual-core engine is compiled
+     in but the default is the synchronous single-core one; one `pax_set_renderer` call
+     opts in. Gated on not contending with the audio core — verify before enabling.
+  3. **Wire the ESP32-P4 PPA / 2D-DMA** (*upstream PAX PR*) — config slot + 64-byte buffer
+     alignment exist, but `esp_driver_ppa` is commented out in CMake and there's no PPA
+     renderer; all fills/blits are CPU. Discuss shape with Pascal first, bring numbers, PR.
 - **[maybe] launcher integration.** Icon/metadata/appfs niceties so the synth launches
   cleanly. Low priority.
 - **[trivial] badgelink `install.sh` macOS fix (2026-06-28).** `tools/install.sh` runs
