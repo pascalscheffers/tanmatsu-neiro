@@ -282,6 +282,35 @@ Newest at the bottom. One entry per stage/session. Lean — link to specs, don't
   param + gain staging (and decide soft-clip vs linear headroom then). No interim
   band-aid. The `synth_render` header comment already flags this.
 
+## 2026-06-28 — Stage 2a: ParamDesc table + param store + host tests (COMPLETE)
+
+- **`engine/spsc_ring.h`** (new): generic `SpscRing<T, Cap>` extracted from `CommandQueue`.
+  Same SPSC algorithm, templated on payload — the note ring and param ring now share one
+  implementation (Prime Directive 2). `command_queue.h` becomes a thin shim: defines
+  `NoteCmd` + `using CommandQueue<Cap> = SpscRing<NoteCmd, Cap>`. All existing callers
+  untouched.
+- **`engine/param_id.h`** (new): stable `uint16_t` IDs grouped by section (0x10=OSC,
+  0x20=FILTER, 0x30=ENV, 0x50=FX, 0x60=AMP) with 16-slot gaps for growth. 14 Juno IDs,
+  all < `kParamIdMax = 128`. Preset format serialisation is gated at Stage 2d; IDs are
+  internal data (Decide-with-default).
+- **`engine/param_desc.{h,cpp}`** (new): `ParamDesc` struct (id, group, name, short_name,
+  min/max/def, curve, unit, display_fmt, midi_cc, smoothing_ms, flags) + `JUNO_PARAM_TABLE`
+  (14 rows: OSC/SUB/NOISE levels, SVF cutoff+res+mode, ADSR ×4, chorus rate+depth+delay,
+  master gain). Master gain (ParamId::MASTER_GAIN, GROUP_AMP, def=0.5) is the deferred
+  clipping fix — Stage 2b wires it into `synth_render`.
+- **`engine/param_store.{h,cpp}`** (new): `ParamStore` class. `param_set_norm(id, norm)`
+  applies the curve mapping (LIN/EXP/LOG/STEPPED) and pushes a `ParamUpdate` into a
+  `SpscRing<ParamUpdate,64>`. `drain()` drains the ring + steps block-rate one-pole
+  smoothers (alpha = 1 − exp(−block_dt/tau)); anti-denormal per ADR 0012. `get(id)`
+  returns the current smoothed value for the audio path. `kParamIdMax = 128`; flat array
+  of `ParamState[128]` ≈ 1.5 KB DRAM — cheap.
+- **21 new host tests** (36 total, all pass): LIN/EXP/LOG/STEPPED curve correctness,
+  smoothing converges within 5×tau (< 1% error), no overshoot, default init, ring burst
+  (63 updates), graceful full-drop, table uniqueness/bounds, physical-value clamping.
+- `make test` ✅ (36/36) `make host` ✅ `make build` ✅ membrane clean.
+  App: 0xe74c0 ≈ 947 KB, 55% free (unchanged — param code dead-stripped until 2b wires it).
+- **Next:** Stage 2b — route Stage 1's hardcoded voice params through the table.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
