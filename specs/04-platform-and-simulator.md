@@ -31,6 +31,23 @@ above the membrane, so violations don't compile.
 - **No clock seam:** musical time comes from the sample counter (ADR 0010). The HAL only
   exposes wall-clock for UI animation.
 
+## Cost — the HAL is link-time, not a per-sample layer (zero-overhead by construction)
+The HAL must not eat the P4 real-time budget. It doesn't, *if built this way*:
+- **Only the audio-sink seam is on the deadline, and it's crossed once per block** (~1.33
+  ms @ 64/48k), never per sample. All per-sample DSP lives above the HAL in portable
+  `engine/`/`dsp/` — the same compiled code on both targets. The other four seams run on
+  the non-audio core at frame/event rate.
+- **Implement seams as link-time-selected free functions** (`platform_*`), one concrete
+  impl linked per build (build system picks `device/` or `host/`). **No vtables, no
+  fn-pointer structs, no `if (target)` in the path.** The `synth_render` call is then a
+  direct, inlinable call; LTO erases the boundary entirely.
+- The only intrinsic per-block cost on device is **float→int16 convert + clamp + copy to
+  the I2S DMA buffer** — output work under any design, not abstraction overhead. Keep it a
+  tight, vectorizable loop; P4 SIMD only if a profile demands it.
+- **Don't conflate with the `IVoice`/`SynthModel` boundary (ADR 0008):** that one *is* a
+  runtime interface, but coarse — ~1 indirect call per voice per block (≈8/block),
+  negligible. HAL = compile/link-time; SynthModel = per-block; **neither is per-sample.**
+
 ## Host tech stack (dev-host only, never shipped to device)
 - **SDL2** — window, present, keyboard/mouse. Cross-platform (mac/linux/win).
 - **miniaudio** — audio out. Single-header, MIT, zero-dep.
