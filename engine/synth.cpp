@@ -14,7 +14,6 @@
 
 #include "synth.h"
 #include "juno_model.h"
-#include "juno_voice.h"
 #include "voice_alloc.h"
 #include "command_queue.h"
 #include "param_desc.h"
@@ -161,7 +160,6 @@ int engine_active_voices(void) {
 void engine_set_routings(const Routing* routings, int count) {
     // Build a ModMatrix from the supplied routings, then push it to every voice.
     // Called from the control thread (preset load); not in the audio path.
-    // Cast to JunoVoice* is safe: only JunoVoice instances are created by JunoModel.
     ModMatrix mat;
     mat.clear();
     if (routings && count > 0) {
@@ -172,8 +170,7 @@ void engine_set_routings(const Routing* routings, int count) {
     }
     const VoiceSlot* slots = s_alloc.slots();
     for (int v = 0; v < kNumVoices; v++) {
-        JunoVoice* jv = static_cast<JunoVoice*>(slots[v].voice);
-        jv->set_mod_matrix(mat);
+        slots[v].voice->set_mod_matrix(mat);
     }
 }
 

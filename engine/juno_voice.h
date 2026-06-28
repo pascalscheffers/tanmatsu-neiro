@@ -45,7 +45,7 @@ public:
 
     // --- Stage 3b-i: modulation matrix wiring ---
     // Replace the entire 16-slot routing table for this voice.
-    void set_mod_matrix(const ModMatrix& m) { mod_matrix_ = m; }
+    void set_mod_matrix(const ModMatrix& m) override { mod_matrix_ = m; }
 
     // Direct access to edit individual slots in place (avoids a full copy).
     ModMatrix& mod_matrix() { return mod_matrix_; }

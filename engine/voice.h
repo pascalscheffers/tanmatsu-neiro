@@ -6,6 +6,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Forward declaration — keeps voice.h free of heavy includes.
+// mod_matrix.h is only needed by files that call set_mod_matrix.
+class ModMatrix;
+
 // Per-note expression (MPE-ready). v1 fills from channel-wide controls.
 // MPE maps the same fields per-note. Channel wired fully in Stage 5.
 struct NoteExpression {
@@ -32,4 +36,6 @@ public:
     virtual void render(float* buf, size_t n) = 0;
     // True while the envelope is running (allocator uses this for stealing).
     virtual bool is_active() const = 0;
+    // Install the per-voice modulation routings (control thread; not audio-path).
+    virtual void set_mod_matrix(const ModMatrix& mat) = 0;
 };
