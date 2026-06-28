@@ -43,6 +43,25 @@ green, appends a tight `MEMORY.md` entry, and **returns only a summary** (what l
 diff only if a summary smells wrong). That review-the-summary discipline is what keeps the
 orchestrator's context flat across many tasks.
 
+**Tier *and* effort, per dispatch.** Picking the worker is two knobs, not one — *which model*
+and *how much reasoning effort*. Match both **down** for cheap work (that is the saving) and
+**up** only where the cost of a miss is high (DSP correctness, verification). The altitude grid:
+
+| Task | Worker |
+|---|---|
+| Mechanical read/search/extract — locate code, map naming, summarize specs/MEMORY | **Haiku** (the Explore tier) |
+| Cheap, but needs a shred of judgment — a fully-specified rename, a yes/no audit | **Sonnet · low effort** |
+| Normal implementation — the bulk of a work-order | **Sonnet · medium** (default) |
+| Tricky DSP correctness, a verify/judge pass, confirming a debug root cause | **Sonnet · high effort** |
+| Work-order authoring, architecture, seams, gate resolution | **Opus** (the orchestrator) |
+
+*Mechanism (be precise about where the lever exists).* Reasoning effort is a **per-call option
+on a Workflow `agent()` dispatch** (`{model, effort}`). The plain **Agent-tool dispatch — the
+single-worker default of "The loop" above — has no `effort` field; it inherits the session
+effort.** So: when fanning out via a Workflow, set `effort` per the grid; for a one-off
+Agent-tool worker, either accept the session effort or wrap the job in a one-item Workflow when
+a different effort genuinely pays. Model *is* settable on both (`model: sonnet` / `model: haiku`).
+
 **Gates without a model-switch.** A worker cannot switch its own model. On a 🛑 OPUS GATE (or
 an ad-hoc gate per the "Ask" list) it **stops, commits green WIP, records the open question in
 `MEMORY.md` under "Open Opus gates", and returns the gate to Opus** — who, already the right

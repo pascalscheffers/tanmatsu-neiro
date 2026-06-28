@@ -47,9 +47,13 @@ is expensive panic).
 Opus stays the single interactive session and orchestrates; it does **not** implement
 non-trivial work in its own context. Per work-order:
 
-1. **Opus dispatches** a fresh-context Sonnet worker (Agent tool, `model: sonnet`) with the
-   work-order as a self-contained prompt. The worker starts empty — it sees only the
-   work-order, never Opus's conversation.
+1. **Opus dispatches** a fresh-context worker with the work-order as a self-contained prompt
+   (Agent tool, `model: sonnet` for implementation; `model: haiku` for the Explore/triage
+   tier). The worker starts empty — it sees only the work-order, never Opus's conversation.
+   **Match effort to the task** per the tier/effort grid in
+   [ADR 0017](../decisions/0017-orchestrator-worker-methodology.md): effort is set per call
+   when fanning out via a Workflow (`{model, effort}`); a single Agent-tool worker inherits
+   the session effort, so wrap it in a one-item Workflow only when a different effort pays.
 2. **The worker runs the per-sub-stage loop below**, then **returns only a summary** — what
    landed, the `make size` number, any gate hit, what's next. Its greps, file reads, and build
    logs stay quarantined in its context.

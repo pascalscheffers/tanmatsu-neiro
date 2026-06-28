@@ -57,7 +57,8 @@ context bloat causes.
   first (inline or via an **Explore** subagent so the dumps stay out of context), *then*
   specify, *then* dispatch.
 
-**The loop:** Opus authors the work-order → dispatches a worker (Agent tool, `model: sonnet`) →
+**The loop:** Opus authors the work-order → dispatches a worker (Agent tool, `model: sonnet`
+for implementation, `model: haiku` for Explore/triage; effort matched to the task per ADR 0017) →
 the worker implements, verifies, commits on green, appends a tight `MEMORY.md` entry, and
 returns a **summary** → Opus reviews the summary (not the diff) and re-dispatches the next.
 Template, budget rule (≤ ~8 files / ≤ ~5 read-sections), and the gate protocol live in

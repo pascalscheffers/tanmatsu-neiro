@@ -144,6 +144,20 @@ restate. When this passes ~200 lines, rotate older entries into the archive.
 - **Next:** dispatch **Stage 3a** as the first live worker run; confirm Opus context stays flat
   (summary only) and the worker reads only its read-list. Record before/after bootstrap size.
 
+## 2026-06-28 — Methodology: tier + effort grid added to dispatch (ADR 0017)
+
+- Dispatch is now **two knobs, not one**: which model *and* how much reasoning effort, matched
+  to the task. Grid in ADR 0017: Haiku for mechanical read/search/extract (Explore tier);
+  Sonnet·low for cheap-but-needs-judgment; Sonnet·medium for normal implementation; Sonnet·high
+  for tricky DSP correctness / verify / debug-root-cause confirmation; Opus for authoring,
+  architecture, seams, gates.
+- **Mechanism caveat (important):** `effort` is a per-call option only on a **Workflow
+  `agent()`** dispatch. The plain **Agent-tool** single-worker dispatch (the default loop) has
+  no effort field — it inherits the session effort; wrap in a one-item Workflow when a job
+  genuinely needs a different effort. Model is settable on both.
+- Folded into ADR 0017 (Decision), `stages/README.md` (dispatch step 1), CLAUDE.md (the loop).
+- **Next:** unchanged — dispatch **Stage 3a** as the first live worker run.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
