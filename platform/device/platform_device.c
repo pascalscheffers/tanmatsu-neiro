@@ -1,0 +1,222 @@
+// platform_device.c — Tanmatsu HAL backend (ESP-IDF + badge-bsp).
+//
+// One of two implementations of platform.h (the other is platform/host/).
+// BSP owns the display and input; we run a pinned high-priority task that pulls
+// stereo float from the engine and writes int16 to the I2S DAC. Nothing above
+// the membrane sees any of these headers — they live only here.
+#include <string.h>
+#include "bsp/audio.h"
+#include "bsp/device.h"
+#include "bsp/display.h"
+#include "bsp/input.h"
+#include "bsp/power.h"
+#include "driver/gpio.h"
+#include "driver/i2s_std.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
+#include "nvs_flash.h"
+#include "platform.h"
+
+static const char TAG[] = "platform";
+
+// Largest audio block we will be asked to render; sized once, used by the audio
+// task's preallocated buffers so the real-time path never allocates.
+#define MAX_BLOCK 256
+
+// ---------------------------------------------------------------------------
+// Display
+// ---------------------------------------------------------------------------
+static pax_buf_t s_fb           = {0};
+static size_t    s_h_res        = 0;
+static size_t    s_v_res        = 0;
+static bool      s_have_display = false;
+
+static pax_buf_type_t bsp_to_pax_format(bsp_display_color_format_t fmt) {
+    switch (fmt) {
+        case BSP_DISPLAY_COLOR_FORMAT_16_565RGB:
+            return PAX_BUF_16_565RGB;
+        case BSP_DISPLAY_COLOR_FORMAT_32_8888ARGB:
+            return PAX_BUF_32_8888ARGB;
+        case BSP_DISPLAY_COLOR_FORMAT_24_888RGB:
+        default:
+            return PAX_BUF_24_888RGB;
+    }
+}
+
+static pax_orientation_t bsp_to_pax_orientation(bsp_display_rotation_t rot) {
+    switch (rot) {
+        case BSP_DISPLAY_ROTATION_90:
+            return PAX_O_ROT_CCW;
+        case BSP_DISPLAY_ROTATION_180:
+            return PAX_O_ROT_HALF;
+        case BSP_DISPLAY_ROTATION_270:
+            return PAX_O_ROT_CW;
+        case BSP_DISPLAY_ROTATION_0:
+        default:
+            return PAX_O_UPRIGHT;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Input
+// ---------------------------------------------------------------------------
+static QueueHandle_t s_input_queue = NULL;
+
+// ---------------------------------------------------------------------------
+// Audio
+// ---------------------------------------------------------------------------
+static i2s_chan_handle_t        s_i2s         = NULL;
+static TaskHandle_t             s_audio_task  = NULL;
+static volatile bool            s_audio_run   = false;
+static platform_audio_render_fn s_render      = NULL;
+static void*                    s_render_user = NULL;
+static size_t                   s_block       = 0;
+
+static float   s_left[MAX_BLOCK];
+static float   s_right[MAX_BLOCK];
+static int16_t s_interleaved[MAX_BLOCK * 2];
+
+static inline int16_t to_i16(float v) {
+    if (v > 1.0f) v = 1.0f;
+    if (v < -1.0f) v = -1.0f;
+    return (int16_t)(v * 32767.0f);
+}
+
+static void audio_task(void* arg) {
+    (void)arg;
+    const size_t n = s_block;
+    while (s_audio_run) {
+        s_render(s_left, s_right, n, s_render_user);
+        for (size_t i = 0; i < n; i++) {
+            s_interleaved[i * 2 + 0] = to_i16(s_left[i]);
+            s_interleaved[i * 2 + 1] = to_i16(s_right[i]);
+        }
+        size_t written = 0;
+        // Blocking write on the DMA queue is the real-time deadline mechanism.
+        i2s_channel_write(s_i2s, s_interleaved, n * 2 * sizeof(int16_t), &written, portMAX_DELAY);
+    }
+    vTaskDelete(NULL);
+}
+
+// ---------------------------------------------------------------------------
+// Lifecycle
+// ---------------------------------------------------------------------------
+bool platform_init(void) {
+    gpio_install_isr_service(0);
+
+    esp_err_t res = nvs_flash_init();
+    if (res == ESP_ERR_NVS_NO_FREE_PAGES || res == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        nvs_flash_erase();
+        res = nvs_flash_init();
+    }
+    if (res != ESP_OK) {
+        ESP_LOGE(TAG, "NVS init failed: %d", res);
+        return false;
+    }
+
+    const bsp_configuration_t cfg = {
+        .display = {.requested_color_format = BSP_DISPLAY_COLOR_FORMAT_24_888RGB, .num_fbs = 1},
+    };
+    if (bsp_device_initialize(&cfg) != ESP_OK) {
+        ESP_LOGE(TAG, "BSP init failed");
+        return false;
+    }
+
+    bsp_display_color_format_t color_format;
+    bsp_display_endianness_t   endian;
+    res = bsp_display_get_parameters(&s_h_res, &s_v_res, &color_format, &endian);
+    if (res == ESP_OK) {
+        pax_buf_init(&s_fb, NULL, s_h_res, s_v_res, bsp_to_pax_format(color_format));
+        pax_buf_reversed(&s_fb, endian == BSP_DISPLAY_ENDIAN_BIG);
+        pax_buf_set_orientation(&s_fb, bsp_to_pax_orientation(bsp_display_get_default_rotation()));
+        s_have_display = true;
+    } else if (res != ESP_ERR_NOT_SUPPORTED) {
+        ESP_LOGE(TAG, "display params failed: %d", res);
+        return false;
+    }
+
+    if (bsp_input_get_queue(&s_input_queue) != ESP_OK) {
+        ESP_LOGW(TAG, "no input queue");
+        s_input_queue = NULL;
+    }
+    return true;
+}
+
+pax_buf_t* platform_framebuffer(void) {
+    return s_have_display ? &s_fb : NULL;
+}
+
+void platform_present(void) {
+    if (!s_have_display) return;
+    bsp_display_blit(0, 0, s_h_res, s_v_res, pax_buf_get_pixels(&s_fb));
+}
+
+bool platform_audio_start(const platform_audio_config_t* cfg, platform_audio_render_fn render, void* user) {
+    if (cfg->block_size > MAX_BLOCK) {
+        ESP_LOGE(TAG, "block_size %u exceeds MAX_BLOCK %u", (unsigned)cfg->block_size, MAX_BLOCK);
+        return false;
+    }
+    if (bsp_audio_get_i2s_handle(&s_i2s) != ESP_OK || s_i2s == NULL) {
+        ESP_LOGE(TAG, "no I2S handle");
+        return false;
+    }
+
+    // Honor the requested rate: the BSP enables the channel at init, but the
+    // clock can only be reconfigured while the channel is disabled.
+    i2s_channel_disable(s_i2s);
+    bsp_audio_set_rate(cfg->sample_rate);
+    i2s_channel_enable(s_i2s);
+
+    bsp_audio_set_volume(80.0f);
+    bsp_audio_set_amplifier(true);  // headphone detection still routes correctly
+
+    s_render      = render;
+    s_render_user = user;
+    s_block       = cfg->block_size;
+    s_audio_run   = true;
+
+    // Pin to the app core (1), leaving core 0 for UI/MIDI/SD. High priority so
+    // the DMA queue never starves.
+    BaseType_t ok =
+        xTaskCreatePinnedToCore(audio_task, "audio", 4096, NULL, configMAX_PRIORITIES - 2, &s_audio_task, 1);
+    if (ok != pdPASS) {
+        ESP_LOGE(TAG, "audio task create failed");
+        s_audio_run = false;
+        return false;
+    }
+    return true;
+}
+
+void platform_audio_stop(void) {
+    s_audio_run = false;
+    // The task deletes itself once it observes the flag; give it a moment.
+    vTaskDelay(pdMS_TO_TICKS(10));
+    s_audio_task = NULL;
+}
+
+bool platform_poll_event(platform_event_t* out) {
+    if (!s_input_queue) return false;
+    bsp_input_event_t ev;
+    if (xQueueReceive(s_input_queue, &ev, 0) != pdTRUE) {
+        return false;
+    }
+    if (ev.type == INPUT_EVENT_TYPE_KEYBOARD) {
+        out->type    = PLATFORM_EV_KEY;
+        out->key     = ev.args_keyboard.ascii;
+        out->pressed = true;
+    } else {
+        out->type = PLATFORM_EV_NONE;
+    }
+    return true;
+}
+
+uint64_t platform_millis(void) {
+    return (uint64_t)(esp_timer_get_time() / 1000);
+}
+
+void platform_sleep_ms(uint32_t ms) {
+    vTaskDelay(pdMS_TO_TICKS(ms));
+}

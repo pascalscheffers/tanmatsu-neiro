@@ -126,9 +126,11 @@ upward only after the first voice is profiled on hardware.
 |---|---|---|---|
 | esp-idf | v5.5.1 | Apache-2.0 | platform |
 | badge-bsp | ^0.9.9 | (verify) | board support |
-| pax-gfx | ^2.1.0 | (verify) | UI |
+| pax-gfx | ^2.1.0 | MIT | UI (also built host-side via its non-ESP CMake path) |
 | tanmatsu-wifi | ^1.1.2 | (verify) | radio (optional; may drop) |
 | MI eurorack (plaits/stmlib) | (pin on vendor) | MIT | oscillator/DSP |
+| miniaudio | 0.11.22 | MIT-0 / public-domain | **host-only** audio sink; vendored `platform/host/miniaudio.h` |
+| SDL2 | system (brew `sdl2`) | Zlib | **host-only** window/present/input; never shipped to device |
 
 ---
 

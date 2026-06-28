@@ -4,11 +4,20 @@ list(APPEND extra_requires esp-hosted-tanmatsu)
 endif()
 
 
+# Portable upper layers (shared verbatim with the host build) plus the device
+# HAL backend. Sources live outside main/ so the host CMake build compiles the
+# exact same files — one source tree, two build descriptions.
 idf_component_register(
 	SRCS
 		"main.c"
+		"../app/app.c"
+		"../engine/synth.c"
+		"../ui/ui.c"
+		"../platform/device/platform_device.c"
 	PRIV_REQUIRES
 		esp_lcd
+		esp_driver_i2s
+		esp_timer
 		fatfs
 		nvs_flash
 		bt
@@ -17,6 +26,10 @@ idf_component_register(
 		${extra_requires}
 	INCLUDE_DIRS
 		"."
+		"../platform"
+		"../engine"
+		"../ui"
+		"../app"
 )
 
 idf_build_set_property(COMPILE_OPTIONS "-Wno-error=unused-variable" APPEND)

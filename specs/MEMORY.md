@@ -45,3 +45,32 @@ Newest at the bottom. One entry per stage/session. Lean — link to specs, don't
 - Naming palette drafted in `notes/naming.md` (aviation/Dutch instrument + chip/demoscene
   engine names; leads: **Fokker**, **Klang**). Awaiting Pascal's pick — not blocking.
 - **Next:** build **Stage 0** (hello-audio + the HAL membrane on host + device).
+
+## 2026-06-28 — Stage 0: hello audio + the membrane (ADR 0007 proven)
+- Built the **platform HAL membrane**. New portable top-level layers compile for *both*
+  targets from one source tree: `engine/synth.{h,c}` (220 Hz sine), `ui/ui.{h,c}` (PAX
+  hello screen + sweep bar), `app/app.{h,c}` (shared init + main loop). Contract in
+  `platform/platform.h` — 6 calls: init, framebuffer, present, audio_start/stop,
+  poll_event, millis, sleep_ms. MIDI + storage seams deferred (no consumer yet).
+- **Host backend** `platform/host/platform_host.c` = SDL2 + miniaudio; `main()` lives here.
+  Build via `make host` → `build-host/tanmatsu-synth-host` (CMake in `host/CMakeLists.txt`,
+  separate from IDF). **Verified: builds + runs clean on the Mac** (window + audio device
+  init, no crash). Audible-sine / visible-window is the human check via `make host-run`.
+- **Device backend** `platform/device/platform_device.c` = BSP display/input + a pinned
+  (core 1, prio MAX-2) FreeRTOS audio task: render→int16 interleave→`i2s_channel_write`
+  (blocking DMA = the deadline); all buffers preallocated (RT rules). `main/main.c` is now
+  a 3-line shim → `app_run()`; `main/CMakeLists.txt` pulls the portable sources via `../`.
+  **Verified: `make build DEVICE=tanmatsu` clean. app size 0xe4820 ≈ 936 KB, 55% partition
+  free** (was 987 KB baseline). On-hardware audio check pending a board.
+- **Membrane holds by construction:** `grep` for esp_/bsp/SDL/miniaudio above the line is
+  clean; the host build literally lacks those headers.
+- Findings: PAX builds host-side unmodified except two glibc-isms — needed compat shims
+  `host/compat/{endian.h,malloc.h}` (Apple-only include path; PAX's ESP includes are
+  `#ifdef ESP_PLATFORM`-guarded). PAX gui target excluded on host (EXCLUDE_FROM_ALL; pulls
+  ESP deps, unused in Stage 0). Correction to the hardware note: `bsp_audio_set_rate` only
+  reconfigs the I2S clock (needs the channel *disabled*), it does not tear down/recreate —
+  so audio_start does disable→set_rate→enable to honor 48 kHz.
+- Block size **64 @ 48 kHz**, stereo float `[-1,1]`. `clang-format` lives at
+  `/opt/homebrew/opt/llvm/bin` (not on PATH; `make format` fails without it).
+- **Next:** Stage 1 — the SynthModel/IVoice boundary (ADR 0008) + Juno voice (MI macro-osc
+  + VA filter + ADSR), 8-voice allocator, master chorus, musical typing, host DSP tests.

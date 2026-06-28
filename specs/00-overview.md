@@ -29,14 +29,16 @@ MIDI keyboard or a DAW, tweakable on the badge's screen + keyboard.
 - `notes/` — working notes (e.g. `naming.md`).
 - `MEMORY.md` — running progress log (read at session start).
 
-## Current status (2026-06-27)
+## Current status (2026-06-28)
 - Repo cloned from `tanmatsu-template`; local-only git (no push remote).
-- `CLAUDE.md` + initial specs written.
-- **Build environment** being set up by a background agent (`make prepare` → ESP-IDF
-  v5.5.1 + RISC-V toolchain; first `make build DEVICE=tanmatsu`; BSP audio/USB API report).
-- **Awaiting Pascal's answers** to the five open questions in `02-synth-architecture.md`
-  (sonic base, polyphony, MIDI priority, license stance, expansion scope) before
-  ratifying architecture into `decisions/`.
+- `CLAUDE.md` + specs `00`–`06` written; ADRs 0001–0010 ratified.
+- **Build env GREEN** on both targets: ESP-IDF v5.5.1 device build + a desktop CMake host
+  build (SDL2 + miniaudio).
+- **Stage 0 DONE** — the platform HAL membrane (ADR 0007). One engine (`synth_render`)
+  plays a sine and renders a PAX screen on host (verified live on the Mac) and device
+  (compile-verified, 936 KB / 55% partition free); only `platform/{host,device}/` differs.
+  See `MEMORY.md`.
+- **Next:** Stage 1 — one Juno voice (MVP).
 
 ## Roadmap
 Full staged roadmap + feature matrix in `06-feature-scope-and-roadmap.md`. In brief:

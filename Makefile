@@ -142,6 +142,24 @@ checkbuildenv:
 build: icons checkbuildenv submodules
 	source "$(IDF_PATH)/export.sh" >/dev/null && idf.py $(IDF_PARAMS)
 
+# Host (desktop simulator) build — same upper layers, SDL2 + miniaudio backend.
+# See host/CMakeLists.txt; configures into build-host/.
+
+HOST_BUILD ?= build-host
+
+.PHONY: host
+host:
+	cmake -S host -B $(HOST_BUILD)
+	cmake --build $(HOST_BUILD) -j
+
+.PHONY: host-run
+host-run: host
+	./$(HOST_BUILD)/tanmatsu-synth-host
+
+.PHONY: host-clean
+host-clean:
+	rm -rf $(HOST_BUILD)
+
 # Hardware
 
 .PHONY: flash
@@ -219,7 +237,8 @@ efuse:
 
 .PHONY: format
 format:
-	find main/ -iname '*.h' -o -iname '*.c' -o -iname '*.cpp' | xargs clang-format -i
+	find main/ engine/ ui/ app/ platform/ \( -iname '*.h' -o -iname '*.c' -o -iname '*.cpp' \) \
+		-not -path 'platform/host/miniaudio.h' | xargs clang-format -i
 
 # Re-compile protobuf files
 # If you are an end user, you do not need to run this;
