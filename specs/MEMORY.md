@@ -235,6 +235,31 @@ Newest at the bottom. One entry per stage/session. Lean — link to specs, don't
 - `make build DEVICE=tanmatsu` ✅ (0xe7340 ≈ 947 KB, 55% free). On-device confirm
   pending Pascal. Host/tests unaffected (`platform_device.c` is device-only).
 
+## 2026-06-28 — Fix: control→audio data race (rapid-press crackle)
+
+- **Bug:** crackle when rapidly pressing keys, *independent of voice count*. Root
+  cause = an unsynchronised cross-core data race, not polyphony/clipping.
+  `engine_note_on/off` ran on the **UI thread (core 0)** and called
+  `VoiceAlloc::note_on` → mutated voice state directly (gate, osc freq, vel, and
+  `voice->reset()` re-initialising env + osc phase) **while the audio task
+  (core 1) was inside `voice->render()`** advancing that same state. Each event
+  landing mid-block tore a voice's env/osc state → a click; more presses → more
+  collisions → crackle. Violated CLAUDE.md RT rule (no shared mutation; use a
+  lock-free handoff) — ADR 0008's note path was stubbed in directly at Stage 1d.
+- **Fix:** `engine/command_queue.h` — header-only **lock-free SPSC ring**
+  (`NoteCmd` + `CommandQueue<Cap>`, std::atomic acquire/release, power-of-two,
+  Cap-1 usable). Control thread `push()`es; `synth_render` `pop()`-drains at the
+  top of the block, so the voice pool is mutated **only on the audio thread**.
+  64 slots ≫ events/frame; full → drop (never a race). Block-boundary timing
+  (~1.3 ms) is sub-perceptual; sample-accurate scheduling is a later stage.
+  Pure/DRAM-resident → host-testable + IRAM-safe (ADR 0013).
+- **Known benign residual:** `engine_active_voices()` still reads slot state from
+  the UI thread for the display counter — a harmless read race (count may be off
+  by one for a frame); not an audio defect. Tighten if it ever matters.
+- 4 new host tests (16/16): empty/FIFO/full/wraparound. `make test` ✅
+  `make host` ✅ `make build` ✅ (0xe7460 ≈ 947 KB, 55% free). On-device confirm
+  pending Pascal.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

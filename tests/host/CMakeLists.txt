@@ -15,6 +15,7 @@ add_executable(tanmatsu-tests
     test_osc.cpp
     test_voice.cpp
     test_alloc.cpp
+    test_command_queue.cpp
     "${DAISYSP}/Source/Synthesis/oscillator.cpp"
     "${DAISYSP}/Source/Filters/svf.cpp"
     "${DAISYSP}/Source/Control/adsr.cpp"

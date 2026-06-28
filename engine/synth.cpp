@@ -18,6 +18,7 @@
 #include "synth.h"
 #include "juno_model.h"
 #include "voice_alloc.h"
+#include "command_queue.h"
 #include "synth_config.h"
 #include "Effects/chorus.h"
 #include <string.h>
@@ -30,6 +31,11 @@ static float        s_mono[kMaxBlock];
 static JunoModel        s_juno_model;
 static VoiceAlloc       s_alloc;
 static daisysp::Chorus  s_chorus;
+
+// Note events cross from the control thread (core 0) to the audio thread
+// (core 1) here. 64 slots >> the few events a UI frame can produce between
+// audio blocks. See command_queue.h.
+static CommandQueue<64> s_cmds;
 
 void synth_init(uint32_t sample_rate) {
     s_juno_model.init((float)sample_rate);
@@ -52,6 +58,21 @@ void synth_init(uint32_t sample_rate) {
 IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     (void)user;
     size_t frames = n < kMaxBlock ? n : kMaxBlock;
+
+    // Drain control-thread note commands first. This is the ONLY place the
+    // voice pool is mutated, so render() can never race a note_on/off from the
+    // UI thread (the source of the rapid-press crackle). Block-boundary timing
+    // (~1.3 ms) is sub-perceptual; sample-accurate scheduling is a later stage.
+    NoteCmd cmd;
+    while (s_cmds.pop(cmd)) {
+        if (cmd.type == NoteCmd::kNoteOn) {
+            NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+            s_alloc.note_on(cmd.pitch, cmd.velocity, expr);
+        } else {
+            s_alloc.note_off(cmd.pitch);
+        }
+    }
+
     memset(s_mono, 0, frames * sizeof(float));
 
     // Sum all active voices into the mono bus.
@@ -70,13 +91,17 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     }
 }
 
+// Control thread (core 0): enqueue for the audio thread to apply. Never touches
+// voice state directly. A dropped command (queue full) is preferable to a data
+// race; at UI/MIDI rates the queue never fills.
 void engine_note_on(uint8_t pitch, uint8_t velocity) {
-    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
-    s_alloc.note_on(pitch, velocity, expr);
+    NoteCmd c{NoteCmd::kNoteOn, pitch, velocity};
+    s_cmds.push(c);
 }
 
 void engine_note_off(uint8_t pitch) {
-    s_alloc.note_off(pitch);
+    NoteCmd c{NoteCmd::kNoteOff, pitch, 0};
+    s_cmds.push(c);
 }
 
 int engine_active_voices(void) {
