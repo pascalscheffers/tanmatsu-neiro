@@ -72,5 +72,15 @@ Newest at the bottom. One entry per stage/session. Lean — link to specs, don't
   so audio_start does disable→set_rate→enable to honor 48 kHz.
 - Block size **64 @ 48 kHz**, stereo float `[-1,1]`. `clang-format` lives at
   `/opt/homebrew/opt/llvm/bin` (not on PATH; `make format` fails without it).
+- **Post-Stage-0 review** against ADRs that landed mid-stage (0011, spec 07):
+  - **ADR 0011 (device-optimal, host adapts):** *audio* already compliant (engine emits
+    planar float; device int16 is intrinsic I2S; host interleaves). *Display* was not —
+    fixed: the host now renders into a **device-native** `pax_buf` (24_888RGB) and converts
+    to the SDL ARGB texture in `platform_present` via `pax_get_index_conv` (host pays the
+    tax). Bonus: the sim now shows the device's exact color depth (spec 04 1:1 goal).
+  - **Spec 07 (upstream-first):** logged the confirmed PAX host-build findings (two glibc
+    headers + unguarded esp includes in gui) and corrected the `bsp_audio_set_rate` note.
+    Compat shims marked `TODO(upstream)`. **Flagged for Pascal** — PAX portability is the
+    ideal first upstream PR (author = robotman2412).
 - **Next:** Stage 1 — the SynthModel/IVoice boundary (ADR 0008) + Juno voice (MI macro-osc
   + VA filter + ADSR), 8-voice allocator, master chorus, musical typing, host DSP tests.

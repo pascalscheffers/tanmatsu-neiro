@@ -6,11 +6,18 @@
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include "miniaudio.h"
+#include "pax_internal.h"  // pax_get_index_conv: native-format pixel -> ARGB
 #include "platform.h"
 
 // Match the device panel so UI/UX built on the Mac transfers 1:1 (spec 04).
 #define WIN_W 800
 #define WIN_H 480
+
+// The shared UI renders into a framebuffer in the device panel's native format
+// (ADR 0011: the engine/UI use the P4-optimal representation; the host pays the
+// conversion tax). This mirrors the format the device backend requests from the
+// BSP — keep the two in sync if the panel format ever changes.
+#define HOST_FB_FORMAT PAX_BUF_24_888RGB
 
 // Largest chunk we hand to the engine per render call inside the audio callback.
 // miniaudio's frame count per callback is bounded by the period size we request
@@ -29,6 +36,10 @@ static platform_audio_render_fn s_render        = NULL;
 static void*                    s_render_user   = NULL;
 
 static uint64_t s_start_ms = 0;
+
+// Staging buffer: the panel-native framebuffer converted to the ARGB8888 the SDL
+// texture wants. Filled every present(); host-only, so a static buffer is fine.
+static uint32_t s_present[WIN_W * WIN_H];
 
 // ---------------------------------------------------------------------------
 // Audio
@@ -94,9 +105,9 @@ bool platform_init(void) {
         return false;
     }
 
-    // Framebuffer pixel layout matches the SDL texture so colors pass through
-    // 1:1; the device backend uses whatever format the BSP reports instead.
-    pax_buf_init(&s_fb, NULL, WIN_W, WIN_H, PAX_BUF_32_8888ARGB);
+    // Render in the device-native format (ADR 0011); present() converts to the
+    // SDL texture format, so the sim shows the same color depth as the panel.
+    pax_buf_init(&s_fb, NULL, WIN_W, WIN_H, HOST_FB_FORMAT);
 
     s_start_ms = SDL_GetTicks64();
     return true;
@@ -107,7 +118,14 @@ pax_buf_t* platform_framebuffer(void) {
 }
 
 void platform_present(void) {
-    SDL_UpdateTexture(s_texture, NULL, pax_buf_get_pixels(&s_fb), WIN_W * 4);
+    // Convert the panel-native framebuffer to ARGB8888 (host pays the tax, ADR
+    // 0011). pax_get_index_conv normalizes whatever the buffer format is, so the
+    // result matches the device's on-screen color exactly.
+    const int count = WIN_W * WIN_H;
+    for (int i = 0; i < count; i++) {
+        s_present[i] = 0xFF000000u | pax_get_index_conv(&s_fb, i);
+    }
+    SDL_UpdateTexture(s_texture, NULL, s_present, WIN_W * 4);
     SDL_RenderClear(s_renderer);
     SDL_RenderCopy(s_renderer, s_texture, NULL, NULL);
     SDL_RenderPresent(s_renderer);

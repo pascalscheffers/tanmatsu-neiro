@@ -45,17 +45,26 @@ MIT — ADR 0004). Verify PAX/BSP licenses before the first PR.
 ## Live candidate list (append as we find them; surface to Pascal)
 Tiered by when it bites. Nothing here is committed-to yet — these are *needs to discuss*.
 
-- **[now / Stage 0] PAX host build.** Spec 04 assumes PAX compiles off-ESP for the
-  simulator. If it needs a CMake/host target or small portability fixes (no IDF includes
-  in the core renderer, settable pixel buffer), that's the ideal first upstream PR — and
-  the author is family. De-risks the whole host-first strategy. *Confirm during Stage 0.*
-  **Don't panic** about it: a PAX portability tweak is normal and expected, not a fire.
-  Surface the specific need to Pascal calmly, keep Stage 0 moving (lean on the spec-04
-  software-present fallback if needed to stay unblocked), and let the upstream fix land at
-  its own pace. No thrashing, no panic-fork.
-- **[soon] `bsp_audio` ergonomics.** `bsp_audio_set_rate` tears down + recreates the I2S
-  channel; default is 44.1 k. A `bsp_audio_get_format()` accessor and/or a documented
-  init-at-rate path would be cleaner than re-deriving it. Minor; raise if it annoys us.
+- **[now / Stage 0] PAX host build — CONFIRMED (Stage 0, 2026-06-28).** PAX core *does*
+  build off-ESP via its non-ESP CMake path (`pax_gfx` target); ESP includes are properly
+  `#ifdef ESP_PLATFORM`-guarded. Two small macOS portability gaps remain:
+  1. `core/src/{pax_gfx.c,pax_shapes.c}` include `<malloc.h>` and
+     `core/src/{pax_setters.c,renderer/*}` include `<endian.h>` — both glibc-isms absent on
+     Darwin (use `<stdlib.h>` / `<machine/endian.h>`).
+  2. The **gui** sources (`gui/src/elem/*.c`, `pax_gui.c`) have *unguarded* `esp_*` includes,
+     so the `pax_gui` target won't compile off-ESP (we `EXCLUDE_FROM_ALL` it for now).
+  Local workaround in place: Apple-only compat shims `host/compat/{endian.h,malloc.h}` added
+  to PAX's include path (marked `TODO(upstream)`); gui excluded. No software-present fallback
+  needed — full PAX renders on host. **Ideal first upstream PR** (small, author is family):
+  swap the two glibc headers for portable ones and guard the gui esp includes. Surface to
+  Pascal calmly; retire the shims when it lands.
+- **[soon] `bsp_audio` ergonomics — clarified (Stage 0).** Correction: `bsp_audio_set_rate`
+  does **not** tear down/recreate — it calls `i2s_channel_reconfig_std_clock`, which requires
+  the channel **disabled** first (the BSP enables it at init). So changing rate means
+  disable→set_rate→enable (what `platform/device/` now does). A `bsp_audio_get_format()`
+  accessor (sample rate + bit width + channels) would let us stop hardcoding 16-bit stereo,
+  and a `bsp_audio_set_rate` that handles the disable/enable internally would be cleaner.
+  Minor; raise if it annoys us.
 - **[Stage 5] USB-host MIDI.** ADR 0005's real unknown. If neither IDF nor BSP provides a
   USB-host MIDI class driver, a reusable component (contributed to badge.team) is better
   than a private one. Discuss scope with Renze before building.
