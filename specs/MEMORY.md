@@ -181,6 +181,30 @@ restate. When this passes ~200 lines, rotate older entries into the archive.
   App: 964 KB / 2 MB (54% partition free, +3 KB from Stage 2d).
 - **Next:** Stage 3b-i — mod-matrix engine (gated: matrix-shape ratification first).
 
+## 2026-06-28 — Stage 3b-i: mod-matrix engine (COMPLETE)
+
+- **`engine/mod_matrix.h/cpp`** (new): `Routing` struct (source:u8, dest_param_id:u16,
+  depth:f32, curve:u8) matches the ADR 0009 frozen shape. `ModSource` enum (NONE=0,
+  LFO1=1..AFTERTOUCH=9; ids 10–19 reserved for MPE/macros). `ModCurve` enum (LIN=0,
+  SQR=1, CUBE=2). `ModMatrix` holds 16 slots; `eval(ModSources)→ModOutputs` is
+  O(active routes), skips NONE/zero-depth slots. Anti-denormal: accumulators seeded
+  with +1e-20f per ADR 0012 (P4 has no HW FTZ).
+- **Audio-rate dests** (cutoff, pitch via `kModDestPitch=0xFFFE`, amp) block-smoothed
+  per sample via linear interp from base to modulated value over the block. **Control-rate
+  dests** (res, sub-level, noise-level) applied once per block.
+- **`engine/juno_voice`** wired: `mod_matrix_` member per voice; `render()` evaluates
+  the matrix once per block using last-block source values (ENV2, LFO1/2, velocity,
+  key-track); applies audio-rate mods via per-sample freq/cutoff/amp ramps. `midi_note_`
+  cached for key-track computation (centered on A4=69, ±1 unit/semitone/12).
+- **12 new host tests** (73 total, all pass): exact-math depth, zero-depth/NONE no-op,
+  multi-source summation, audible cutoff mod in voice, pitch semitone accumulation,
+  LIN/SQR/CUBE curve outputs, all-inactive → near-zero, 16-slot sum, ENV2 exact math,
+  velocity full-range, key-track polarity.
+- `make test` ✅ (73/73) `make host` ✅ `make build` ✅ membrane clean.
+  App: **965 KB / 2 MB (54% free)** (+1 KB from Stage 3a).
+- **Next:** Stage 3b-ii — Juno default-patch voicing (🛑 sonic gate) + preset format
+  carries routings.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
