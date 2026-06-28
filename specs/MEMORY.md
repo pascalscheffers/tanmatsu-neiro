@@ -248,6 +248,22 @@ restate. When this passes ~200 lines, rotate older entries into the archive.
 - `make test` ✅ (85/85) `make host` ✅ `make build` ✅ membrane clean. App: **968 KB / 2 MB (54% free, +2 KB)**.
 - **Next:** Stage 3c-ii — complete UI pages so every row is reachable. Also: unify `kPresetDestPwm` sentinel with `ParamId::OSC_PWM` (follow-up); HPF DSP block (separate sub-stage after HPF_CUTOFF row landed).
 
+## 2026-06-28 — Stage 3c-ii: UI pages complete — all 37 rows reachable (COMPLETE)
+
+- **Root cause:** `draw_rows` vertically centred the full row block but did not clip or scroll. The LFO
+  group has 8 rows × 56 px = 448 px, which exceeds the 402 px content area — row 8 rendered behind the
+  status strip and was never visible.
+- **Fix (ui/ui.cpp, draw_rows only):** stateless "follow-selection" scroll. Compute `visible =
+  floor(CONTENT_H/ROW_H) = 7`, derive `scroll_top` so the selected row stays centred, clamp to stay
+  in-bounds. Pages with ≤7 rows are unaffected (scroll_top=0, block vertically centred as before).
+- **All 8 groups have readable page names** (group_name() already covered them all from Stage 3c-i).
+- **All 37 rows reachable** on host and device: navigation wraps through all rows/pages; scroll brings
+  any row into view. No model knowledge added (ADR 0008 clean). Membrane grep clean.
+- Tracked open items (not in scope here): HPF DSP wiring (second dsp::Filter in JunoVoice); unify
+  `kPresetDestPwm=0xFFFD` sentinel with `ParamId::OSC_PWM`.
+- `make test` ✅ (85/85) `make host` ✅ `make build` ✅. Flash: **968 KB / 2 MB (54% free)**, DIRAM: **149 KB** (unchanged from 3c-i).
+- **Next:** Stage 3d-i — play modes (mono/portamento/legato) in the allocator.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
