@@ -19,5 +19,9 @@ Newest at the bottom. One entry per stage/session. Lean — link to specs, don't
 - **Audio API confirmed** (`bsp/audio.h`): I2S 16-bit stereo interleaved, default 44.1k
   (`bsp_audio_set_rate(48000)` to change), `bsp_audio_get_i2s_handle` →
   `i2s_channel_write`; hw volume + amp toggle. Codec = `es8156` component.
-- **Open:** five architecture questions in `02-synth-architecture.md` await Pascal.
-- **Next:** ratify decisions → Stage 0 (hello-audio: write a sine to the DAC).
+- **Decisions ratified** (ADRs 0001–0006 in `specs/decisions/`): VA/hybrid digital
+  target · Juno-106 hybrid voice · 8 voices + unison · permissive-only vendoring · USB-A
+  host MIDI first · v1 screen+keyboard only. Architecture spec promoted from draft.
+- **Next:** Stage 0 — hello-audio: set rate 48k, get I2S handle, write a sine block loop,
+  confirm clean output on speaker + headphones. Then Stage 1: vendor MI macro-osc + VA
+  filter + ADSR for one voice with host-side DSP tests.

@@ -1,8 +1,11 @@
-# Synth Architecture (DRAFT — pending grill answers)
+# Synth Architecture
 
-Status: **proposal**. Sonic base, polyphony, and a few other choices are open questions
-(end of this file). Everything here is the *recommended* design; it gets ratified into
-`specs/decisions/` once Pascal confirms.
+Status: **ratified** (2026-06-27). The defining choices are locked in `specs/decisions/`
+(ADRs 0001–0006); this document is the design they describe. Revisit by writing a new ADR.
+
+Locked: VA/hybrid digital target (0001) · Juno-106 hybrid voice (0002) · 8 voices +
+unison (0003) · permissive-only vendoring (0004) · USB-A host MIDI first (0005) · v1
+screen+keyboard only (0006).
 
 ## Design goals (from Pascal)
 - Polyphonic, **fat bass**, **sparkling highs**.
@@ -91,11 +94,11 @@ A single declarative table defines every tweakable once:
 - **No malloc/log/block in the audio path** (see CLAUDE.md Real-Time Audio Rules).
 - Track `make size` after every stage; keep a running RAM/flash budget here.
 
-## Polyphony (open — see below)
-Per-voice cost dominates the budget. Recommendation: **8 voices** with optional **unison**
-(stack/detune for fatness) rather than 16 thin voices — fatter sound, simpler stealing,
-comfortable CPU headroom for the chorus and a future reverb. Revisit after the first
-voice is profiled on hardware.
+## Polyphony — 8 voices + unison (ADR 0003)
+Per-voice cost dominates the budget. **8 voices** with optional **unison** (stack/detune
+for fatness) rather than 16 thin voices — fatter sound, simpler stealing, comfortable CPU
+headroom for the chorus and a future reverb. Voice count is a tunable constant; revisit
+upward only after the first voice is profiled on hardware.
 
 ## Validation strategy
 - `dsp/` blocks get **host-side unit tests** (pure C/C++, compiles on the Mac): spectra,
@@ -113,13 +116,13 @@ voice is profiled on hardware.
 
 ---
 
-## OPEN QUESTIONS (the grill) — answers ratify into `specs/decisions/`
-1. **Sonic base / character.** Juno-106 skeleton (recommended) vs Jupiter-8 (2 VCO,
-   fatter, costlier) vs Prophet-5 (2 VCO, SSM filter) vs FM-forward hybrid.
-2. **Polyphony target.** 8 + unison (recommended) vs 16 thin vs dynamic.
-3. **MIDI role priority.** Device (USB-C, play from DAW) + host (USB-A, plug a keyboard)
-   — both eventually; which first?
-4. **Vendoring license stance.** Permissive-only (MIT/BSD/Apache — keeps the clean reuse
-   path) vs GPL allowed too (unlocks Surge/Zyn/Vital but infects our license).
-5. **Expansion/CV in scope?** Physical knobs/encoders/CV via PMOD/Qwiic later, or
-   screen+keyboard only for v1?
+## Resolved (was "the grill") — see `specs/decisions/`
+All five bootstrap questions are ratified: sonic base = Juno-106 hybrid (ADR 0002);
+polyphony = 8 + unison (0003); MIDI = USB-A host first (0005); licensing = permissive-only
+(0004); expansion/CV = out of scope for v1, screen+keyboard only (0006).
+
+## Open / deferred (not blocking)
+- Block size (start 64 @ 48 kHz) and final voice count — settle by profiling on hardware.
+- USB-host MIDI class driver availability on the P4 — investigate at the MIDI stage (0005).
+- Reverb/delay on the master bus after the chorus — nice-to-have, budget permitting.
+- Musical-typing key layout and the live-tweak key map — design when PAX UI work starts.
