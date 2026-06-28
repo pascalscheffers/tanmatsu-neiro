@@ -5,7 +5,12 @@ Status: **ratified** (2026-06-27). The defining choices are locked in `specs/dec
 
 Locked: VA/hybrid digital target (0001) · Juno-106 hybrid voice (0002) · 8 voices +
 unison (0003) · permissive-only vendoring (0004) · USB-A host MIDI first (0005) · v1
-screen+keyboard only (0006).
+screen+keyboard only (0006) · host-first + platform HAL (0007) · swappable SynthModels,
+MPE-ready (0008) · modulation matrix (0009) · sample-accurate clock (0010).
+
+**Companion specs:** platform/simulator → `04`; data model (param table, presets,
+patterns) → `05`; full feature scope + staged roadmap → `06`. This file is the DSP/voice
+design; those cover how it's hosted, stored, and sequenced.
 
 ## Design goals (from Pascal)
 - Polyphonic, **fat bass**, **sparkling highs**.
@@ -67,11 +72,22 @@ The chorus is doing a lot of the "Juno" character and the stereo width — high 
 
 ## Layering (mirrors CLAUDE.md)
 ```
-ui/ ─► control/ ─► engine/ ─► dsp/ (pure, vendored MI here) ─► platform/ (BSP/I2S/USB/SD)
+ui/ ─► control/ ─► engine/ ─► dsp/ (pure, vendored MI here)
+                                   ┊
+              everything above ────┴──── platform/  (HAL: device=BSP/I2S/USB/SD, host=SDL2/miniaudio/RtMidi)
 ```
 - `dsp/` is pure and host-testable. No IDF includes. This is where MI code is wrapped.
-- `engine/` = voice allocator + mod matrix + master FX. Owns the fixed voice pool.
-- `platform/` = the only place that talks to ESP-IDF/BSP hardware.
+- `engine/` hosts swappable **SynthModels** (ADR 0008): the model-agnostic **voice
+  allocator** (poly/mono/unison/legato), **modulation matrix** (ADR 0009), **master FX
+  bus** (chorus→delay→reverb), parameter store, and the sample-accurate **event scheduler**
+  (ADR 0010). Owns the fixed voice pool; voices hold state only (shared tables in PSRAM).
+- A **SynthModel** = a parameter table + an `IVoice` factory. Juno-106 is the first; the
+  per-voice signal flow above *is* the Juno model's voice. New engines add a table + voice,
+  nothing else.
+- `control/` = note sources (MIDI in, musical-typing, arp, sequencer, MIDI-file) all
+  normalized to one event stream into the scheduler; preset/pattern load-save.
+- `platform/` is the **only** layer touching OS/board APIs — the HAL membrane (ADR 0007,
+  spec `04`). Device and host impls behind one contract.
 
 ## The parameter table (central dedup mechanism)
 A single declarative table defines every tweakable once:

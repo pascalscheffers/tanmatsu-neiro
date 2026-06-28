@@ -42,7 +42,30 @@ Proposed model (refine after first build):
   can grow without breaking old presets.
 - Ship a handful of factory presets that show off fat bass / sparkling highs.
 
-## Open questions
-- See `specs/02` Q3 (MIDI role priority) and Q5 (physical controls in scope).
-- Musical-typing layout: piano-style (recommended, familiar) vs chromatic/isomorphic?
-- Do we want an on-device step sequencer / arpeggiator in scope for v1, or MIDI-in only?
+## Decided control features (see `specs/06` for stage order, `specs/05` for data)
+- **Performance layer (all in):** assignable **macros** (routed via the mod matrix),
+  **pitch-bend + mod wheel**, **velocity + aftertouch** response, **sustain/hold + panic**.
+- **Arpeggiator (full):** up/down/up-down/random/as-played, octave range, clock-synced
+  rate, gate length, swing, latch/hold.
+- **Sequencer (step + real-time, one model):** grid programming *and* real-time record
+  into the same pattern, with per-step parameter locks; patterns chain into songs.
+  Data model in `specs/05`; timing in ADR 0010.
+- **MIDI-file player:** pick a `.mid` (SMF type 0/1) on SD; its notes drive the current
+  patch (mono-timbral) — play with nothing plugged in.
+- **Clock:** internal master clock + **tap tempo**; pluggable so external MIDI-clock sync
+  can slave it later (ADR 0010). Drives arp, sequencer, and tempo-synced delay.
+
+## UI paradigm — hybrid panel + pages
+A **Juno-style panel overview** (glanceable state, live performance) plus **focused edit
+pages** for detail, both rendered from the parameter table via PAX, identical on host and
+device. Always-visible status strip (voices, MIDI/clock activity, CPU/block load, preset);
+RGB LEDs mirror activity/clip. Fixed control positions — no layout shift while playing.
+
+## Presets — full library (detail in `specs/05`)
+Factory + user banks on SD, category/tag browser, A/B compare, INIT patch, randomize/morph.
+Parameter-table-driven and versioned so the format survives feature growth.
+
+## Still to design (not blocking)
+- Exact musical-typing layout (lean: piano-style rows) and the live-tweak key map — settle
+  when the PAX UI work starts on the real panel.
+- MIDI-learn (assignable CC) — easy on top of the param table; schedule with MIDI I/O.

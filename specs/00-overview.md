@@ -20,9 +20,13 @@ MIDI keyboard or a DAW, tweakable on the badge's screen + keyboard.
 
 ## Spec map
 - `01-hardware.md` — what the Tanmatsu actually offers (audio, USB, compute, memory).
-- `02-synth-architecture.md` — DSP/voice design, reuse map, real-time/memory plan.
-- `03-control-ui.md` — MIDI input, live-tweak UI, presets.
+- `02-synth-architecture.md` — DSP/voice design, engine boundary, reuse map, RT/memory.
+- `03-control-ui.md` — note input, performance/arp/sequencer/MIDI-file, live-tweak UI.
+- `04-platform-and-simulator.md` — the host/device platform HAL (5 seams) and host stack.
+- `05-data-model.md` — parameter table, patches/presets, pattern/sequence model (dedup).
+- `06-feature-scope-and-roadmap.md` — MVP/v1/later feature matrix + staged roadmap.
 - `decisions/` — ratified design decisions (ADR-style), one per file.
+- `notes/` — working notes (e.g. `naming.md`).
 - `MEMORY.md` — running progress log (read at session start).
 
 ## Current status (2026-06-27)
@@ -34,12 +38,8 @@ MIDI keyboard or a DAW, tweakable on the badge's screen + keyboard.
   (sonic base, polyphony, MIDI priority, license stance, expansion scope) before
   ratifying architecture into `decisions/`.
 
-## Near-term roadmap (provisional, after decisions land)
-1. **Stage 0 — Hello audio.** BSP audio up; play a sine through the DAC at target Fs/block.
-   Confirms I2S, latency, and the real-time scaffold. (depends on build-env report)
-2. **Stage 1 — One voice.** Vendor MI macro-osc + VA filter + ADSR; one monophonic voice
-   from the parameter table; host-side DSP tests.
-3. **Stage 2 — Polyphony + chorus.** Voice pool, allocator, Juno-style chorus on master.
-4. **Stage 3 — MIDI in.** USB-MIDI device first (or host — see Q3); musical typing.
-5. **Stage 4 — Live UI.** Parameter pages, status strip, presets on SD.
-6. **Stage 5 — Sound design.** Factory presets; A/B vs reference; tune fat/sparkle.
+## Roadmap
+Full staged roadmap + feature matrix in `06-feature-scope-and-roadmap.md`. In brief:
+Stage 0 hello-audio + platform HAL → Stage 1 one-voice MVP → Stage 2 param model + UI →
+Stage 3 modulation + full Juno → Stage 4 timing/arp/sequencer/FX → Stage 5 MIDI I/O →
+Stage 6 library/capture/polish → Stage 7+ second engine (proves the boundary).
