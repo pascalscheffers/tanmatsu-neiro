@@ -49,6 +49,10 @@ Tiered by when it bites. Nothing here is committed-to yet — these are *needs t
   simulator. If it needs a CMake/host target or small portability fixes (no IDF includes
   in the core renderer, settable pixel buffer), that's the ideal first upstream PR — and
   the author is family. De-risks the whole host-first strategy. *Confirm during Stage 0.*
+  **Don't panic** about it: a PAX portability tweak is normal and expected, not a fire.
+  Surface the specific need to Pascal calmly, keep Stage 0 moving (lean on the spec-04
+  software-present fallback if needed to stay unblocked), and let the upstream fix land at
+  its own pace. No thrashing, no panic-fork.
 - **[soon] `bsp_audio` ergonomics.** `bsp_audio_set_rate` tears down + recreates the I2S
   channel; default is 44.1 k. A `bsp_audio_get_format()` accessor and/or a documented
   init-at-rate path would be cleaner than re-deriving it. Minor; raise if it annoys us.
