@@ -124,6 +124,26 @@ restate. When this passes ~200 lines, rotate older entries into the archive.
   (ADR 0013 in practice — Pascal to verify after next `make install`).
 - **Next:** Stage 3 — MIDI in (USB host + device), CC mapping through the param table.
 
+## 2026-06-28 — Methodology: orchestrator/worker fan-out is now the default (ADR 0017)
+
+- Diagnosed the "rapid start → slowdown" pattern (Stage 2d compacted): cause is context bloat
+  from work sized by *feature* not *budget* + briefs that describe instead of pin reads + a
+  fat always-loaded baseline — **not** the tree layout (own source ~4 KLoC; deps aren't loaded
+  unless read). Subagents start with a **fresh** context, so they're the fix, not a workaround.
+- **New default (ADR 0017, amends 0014):** Opus orchestrates; fresh-context Sonnet *workers*
+  execute closed **work-orders** (Touch/Read/Reuse/Don't-read/Acceptance/Split-if; debug variant
+  adds Repro/Root-cause) and return a summary. Opus reviews summaries, not diffs. Gates return
+  to Opus instead of a model-switch. Altitude rule: inline if trivial/ambiguous, dispatch if
+  specifiable. Hard budget: ≤ ~8 files / ≤ ~5 read-sections per work-order → Opus splits at
+  authoring.
+- **Enabling changes:** work-order template + dispatch loop in `stages/README.md`; CLAUDE.md
+  rewritten (methodology is now the always-on content) + build catalog moved to
+  `specs/09-build-and-run.md`; new `specs/MAP.md` seam index (read before grepping); `MEMORY.md`
+  rotated 577→148 lines (history in `MEMORY-archive.md`); Stage 3 sub-stages retrofitted with
+  work-orders (first stage to run under this model).
+- **Next:** dispatch **Stage 3a** as the first live worker run; confirm Opus context stays flat
+  (summary only) and the worker reads only its read-list. Record before/after bootstrap size.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
