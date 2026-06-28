@@ -12,6 +12,7 @@
 #include "bench.h"
 #include "platform.h"
 
+#include <inttypes.h>
 #include <math.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -160,7 +161,7 @@ static void measure(const char* name, kernel_fn fn, float* buf, size_t n,
     uint32_t cyc_blk = (uint32_t)((t1 - t0) / BENCH_REPEATS);
     float    us_blk  = cyc_blk * 1e6f / (float)cps;
     float    pct     = 100.0f * cyc_blk / (float)block_period;
-    printf("  %-22s  %7u cyc/blk  %5u cyc/smp  %6.2f us  %5.1f%%\n",
+    printf("  %-22s  %7" PRIu32 " cyc/blk  %5" PRIu32 " cyc/smp  %6.2f us  %5.1f%%\n",
            name, cyc_blk, (uint32_t)(cyc_blk / n), us_blk, pct);
 }
 
@@ -239,9 +240,9 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
     printf("============================================================\n");
     printf("  Tanmatsu Synth — Stage 0.5 CPU Benchmark\n");
     printf("============================================================\n");
-    printf("  Block : %u samples @ %u Hz (%.2f us/block)\n",
+    printf("  Block : %" PRIu32 " samples @ %" PRIu32 " Hz (%.2f us/block)\n",
            block_size, sample_rate, block_us);
-    printf("  CPU   : ~%u MHz   block_period = %u cycles\n",
+    printf("  CPU   : ~%" PRIu32 " MHz   block_period = %" PRIu32 " cycles\n",
            cps / 1000000u, block_period);
     printf("  Note  : host numbers are pseudo-1GHz ns reference;\n");
     printf("          device UART numbers are the actual budget.\n");
@@ -300,11 +301,12 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
         int32_t  mrg = (int32_t)block_period - (int32_t)rc;
         const char* verdict = (pct <= 70.0f) ? "OK" : (pct <= 85.0f) ? "WARN" : "OVER";
 
-        printf("  %6u  %8u  %7.1f%%  %10d  %s\n", nv, rc, pct, mrg, verdict);
+        printf("  %6" PRIu32 "  %8" PRIu32 "  %7.1f%%  %10" PRId32 "  %s\n", nv, rc, pct,
+               mrg, verdict);
 
         if (pct > 95.0f) {
             ceiling_voices = nv;
-            printf("  --> ceiling reached at %u voices (>95%% period)\n", nv);
+            printf("  --> ceiling reached at %" PRIu32 " voices (>95%% period)\n", nv);
             break;
         }
     }
@@ -313,7 +315,7 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
 
     printf("============================================================\n");
     if (ceiling_voices) {
-        printf("  Safe voice ceiling (<=70%%): ~%u voices\n",
+        printf("  Safe voice ceiling (<=70%%): ~%" PRIu32 " voices\n",
                (ceiling_voices > 1) ? ceiling_voices - 1 : 1);
     }
     printf("  Record these numbers in specs/stages/stage-0.5-results.md\n");
