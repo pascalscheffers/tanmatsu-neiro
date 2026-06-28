@@ -6,8 +6,8 @@
 //   Note        C C# D D# E F F# G G# A A# B C+1 ...
 //
 // z = octave down, x = octave up. Default octave 4 → 'a' = C4 = MIDI 60.
-// On device, key-up events may not arrive (badge BSP only fires presses);
-// notes release via the envelope naturally in that case.
+// Press and release both arrive on host (SDL) and device (BSP scancode events,
+// which carry make/break state — see platform/device/platform_device.c).
 #include "control/keyboard.h"
 #include "synth.h"
 #include <stdint.h>

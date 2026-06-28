@@ -228,16 +228,56 @@ void platform_audio_stop(void) {
     s_audio_task = NULL;
 }
 
+// Translate a (release-bit-masked) BSP scancode to the lowercase ASCII the
+// portable control layer expects. Only the musical-typing keys matter; anything
+// else returns 0 (filtered out by the caller). Scancodes carry press/release
+// state — unlike the ASCII KEYBOARD event, which only fires on press — so we
+// drive note on/off from these. See bsp/input.h.
+static int scancode_to_ascii(bsp_input_scancode_t sc) {
+    switch (sc) {
+        case BSP_INPUT_SCANCODE_A:         return 'a';
+        case BSP_INPUT_SCANCODE_W:         return 'w';
+        case BSP_INPUT_SCANCODE_S:         return 's';
+        case BSP_INPUT_SCANCODE_E:         return 'e';
+        case BSP_INPUT_SCANCODE_D:         return 'd';
+        case BSP_INPUT_SCANCODE_F:         return 'f';
+        case BSP_INPUT_SCANCODE_T:         return 't';
+        case BSP_INPUT_SCANCODE_G:         return 'g';
+        case BSP_INPUT_SCANCODE_Y:         return 'y';
+        case BSP_INPUT_SCANCODE_H:         return 'h';
+        case BSP_INPUT_SCANCODE_U:         return 'u';
+        case BSP_INPUT_SCANCODE_J:         return 'j';
+        case BSP_INPUT_SCANCODE_K:         return 'k';
+        case BSP_INPUT_SCANCODE_O:         return 'o';
+        case BSP_INPUT_SCANCODE_L:         return 'l';
+        case BSP_INPUT_SCANCODE_P:         return 'p';
+        case BSP_INPUT_SCANCODE_SEMICOLON: return ';';
+        case BSP_INPUT_SCANCODE_Z:         return 'z';
+        case BSP_INPUT_SCANCODE_X:         return 'x';
+        default:                           return 0;
+    }
+}
+
 bool platform_poll_event(platform_event_t* out) {
     if (!s_input_queue) return false;
     bsp_input_event_t ev;
     if (xQueueReceive(s_input_queue, &ev, 0) != pdTRUE) {
         return false;
     }
-    if (ev.type == INPUT_EVENT_TYPE_KEYBOARD) {
-        out->type    = PLATFORM_EV_KEY;
-        out->key     = ev.args_keyboard.ascii;
-        out->pressed = true;
+    // Drive keys from SCANCODE events: they carry make/break state (the high
+    // 0x80 bit = release). The BSP also emits a press-only ASCII KEYBOARD event
+    // per key — we ignore it here so a press isn't counted twice.
+    if (ev.type == INPUT_EVENT_TYPE_SCANCODE) {
+        bool                 released = (ev.args_scancode.scancode & BSP_INPUT_SCANCODE_RELEASE_MODIFIER) != 0;
+        bsp_input_scancode_t base = (bsp_input_scancode_t)(ev.args_scancode.scancode & ~BSP_INPUT_SCANCODE_RELEASE_MODIFIER);
+        int                  ascii = scancode_to_ascii(base);
+        if (ascii == 0) {
+            out->type = PLATFORM_EV_NONE;
+        } else {
+            out->type    = PLATFORM_EV_KEY;
+            out->key     = ascii;
+            out->pressed = !released;
+        }
     } else {
         out->type = PLATFORM_EV_NONE;
     }

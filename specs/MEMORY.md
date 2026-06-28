@@ -218,6 +218,23 @@ Newest at the bottom. One entry per stage/session. Lean — link to specs, don't
   `make test` green; render chain IRAM; membrane clean; per-voice cost recorded.
 - **Next:** Stage 2 — parameter table + full UI pages.
 
+## 2026-06-28 — Fix: device note-release (scancode events, not ASCII)
+
+- **Bug:** on device, notes never released (held forever). The Stage-1d note that
+  "badge BSP only fires key presses" was **wrong** — the BSP emits *two* events per
+  key: a press-only `INPUT_EVENT_TYPE_KEYBOARD` (ASCII, for text entry) **and** an
+  `INPUT_EVENT_TYPE_SCANCODE` carrying make/break state (high bit `0x80` =
+  release, `BSP_INPUT_SCANCODE_RELEASE_MODIFIER`). We were reading the ASCII one
+  and hardcoding `pressed = true`, so `engine_note_off` never fired.
+- **Fix** (`platform/device/platform_device.c`): consume SCANCODE events, translate
+  the masked scancode → lowercase ASCII (`scancode_to_ascii`, only the 19
+  musical-typing keys), set `pressed = !(raw & 0x80)`. The redundant KEYBOARD
+  event is now ignored so a press isn't double-counted. `keyboard.c` (portable
+  control layer) and the host path are untouched — both already handle
+  press+release correctly.
+- `make build DEVICE=tanmatsu` ✅ (0xe7340 ≈ 947 KB, 55% free). On-device confirm
+  pending Pascal. Host/tests unaffected (`platform_device.c` is device-only).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
