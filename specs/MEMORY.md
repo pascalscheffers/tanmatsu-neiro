@@ -145,6 +145,33 @@ Newest at the bottom. One entry per stage/session. Lean — link to specs, don't
 - **Next:** execute **Stage 0.5** on Sonnet (profiling harness), then return to Opus at the
   CPU-budget gate before Stage 1.
 
+## 2026-06-28 — Stage 0.5: CPU profiling harness (sub-stages 0.5a–0.5d)
+
+- **0.5a** — `platform_cycles_now()` / `platform_cycles_per_sec()` added to `platform/platform.h`.
+  Device: `esp_cpu_get_cycle_count()` + `CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ`. Host: `clock_gettime
+  (CLOCK_MONOTONIC)` as pseudo-1 GHz ns reference (host numbers are orientation only).
+- **0.5b** — `engine/bench.{h,c}`: 8 proxy kernels (baseline, sinf, expf, SVF 2-pole, biquad,
+  Moog ladder 4-pole, PolyBLEP saw, memcpy) + fused fake-voice render fn. `make bench` builds
+  the host bench binary and runs it. Host reference run confirms the harness works and prints
+  the full table (host values trivially fast — device UART is the budget).
+- **0.5c** — Device `BENCH=1` build path wired in `main/CMakeLists.txt` (adds `bench.c`,
+  sets `-DSYNTH_BENCH=1`). `app/app.c` `#ifdef SYNTH_BENCH` branch: calls `bench_run()`, then
+  returns before the normal UI loop. Bench code excluded from the shipping binary.
+- **0.5d** — `specs/stages/stage-0.5-results.md` template created (ready to fill from serial
+  capture after `make build BENCH=1` + flash). Gate pre-written in the file.
+- Both `make host` and `make build DEVICE=tanmatsu` green. Device size 0xe4880 (55% free, unchanged).
+- **Next:** flash `make build BENCH=1` to the Tanmatsu, capture UART output, fill in
+  `stage-0.5-results.md`, then raise the gate below.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
-Opus clears the entry when the gate is resolved. _Currently: none open._
+Opus clears the entry when the gate is resolved.
+
+🛑 Stage 0.5d — CPU budget & polyphony
+  Why Opus: CPU-budget / architecture (touches ADR 0003, sizes all of Stage 1).
+  Decision: What is the per-voice cycle budget, and does 8 voices + unison fit with
+            headroom for chorus + a future reverb? Keep, raise, or lower voice count?
+  Recommendation: keep ADR 0003 (8 + unison) if fake-voice ramp clears 8 voices at
+            ≤70% period with room to spare; otherwise amend ADR 0003 to the ceiling.
+  Blocked on: hardware serial capture — `stage-0.5-results.md` must be filled first.
+  Sonnet action: STOP — results template committed; gate raised here; waiting for Opus.
