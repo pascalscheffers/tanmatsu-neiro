@@ -210,3 +210,7 @@ First real AppFS bench run printed nothing. Two independent causes, both fixed:
   `long` on RV32). AppFS dev loop (`make install/run/bench-device`) + `.PORT` override added.
 - **Next:** still need the captured numbers — USB mode → `make sniff` (terminal A) +
   `make bench-device` (terminal B) → fill `stage-0.5-results.md`, then the Opus gate.
+- **Stuck-tone-on-exit fixed.** Bench's audio "crash loop" at the end was actually
+  `platform_audio_stop()` never disabling the I2S channel → DMA replayed its last buffer
+  forever. Fixed: task flushes silence + signals done; stop waits, disables channel, drops
+  amp. (Device membrane, our code — not upstream.) The ramp itself ran fine to completion.
