@@ -21,6 +21,13 @@ void synth_init(uint32_t sample_rate);
 // logging, no blocking (CLAUDE.md). `user` is unused in Stage 0.
 void synth_render(float* left, float* right, size_t n, void* user);
 
+// Note input API — called by control/ (musical typing, MIDI). Lock-free: these
+// mutate voice-allocator state from the UI thread; synth_render reads it. Safe
+// only because note_on/note_off are called from one writer thread (Stage 1c
+// single-threaded; Stage 5 adds a command ring buffer for true RT isolation).
+void engine_note_on(uint8_t pitch, uint8_t velocity);
+void engine_note_off(uint8_t pitch);
+
 #ifdef __cplusplus
 }
 #endif

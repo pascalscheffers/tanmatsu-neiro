@@ -14,10 +14,14 @@ add_executable(tanmatsu-tests
     main.cpp
     test_osc.cpp
     test_voice.cpp
+    test_alloc.cpp
     "${DAISYSP}/Source/Synthesis/oscillator.cpp"
     "${DAISYSP}/Source/Filters/svf.cpp"
     "${DAISYSP}/Source/Control/adsr.cpp"
+    "${DAISYSP}/Source/Effects/chorus.cpp"
     "${REPO_ROOT}/engine/juno_voice.cpp"
+    "${REPO_ROOT}/engine/juno_model.cpp"
+    "${REPO_ROOT}/engine/voice_alloc.cpp"
 )
 
 target_include_directories(tanmatsu-tests PRIVATE

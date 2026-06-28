@@ -32,13 +32,16 @@ idf_component_register(
 	SRCS
 		"main.c"
 		"../app/app.c"
-		# Stage 1b: synth.cpp replaces Stage 0 synth.c (JunoVoice + extern-C entry).
+		# Stage 1c: allocator + JunoModel + chorus; synth.cpp drives the pool.
 		"../engine/synth.cpp"
 		"../engine/juno_voice.cpp"
-		# DaisySP modules used by JunoVoice.
+		"../engine/juno_model.cpp"
+		"../engine/voice_alloc.cpp"
+		# DaisySP modules.
 		"${DAISYSP}/Source/Synthesis/oscillator.cpp"
 		"${DAISYSP}/Source/Filters/svf.cpp"
 		"${DAISYSP}/Source/Control/adsr.cpp"
+		"${DAISYSP}/Source/Effects/chorus.cpp"
 		"../ui/ui.c"
 		"../platform/device/platform_device.c"
 		${BENCH_SRCS}

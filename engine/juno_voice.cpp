@@ -1,6 +1,14 @@
 // engine/juno_voice.cpp — Juno-106-inspired voice implementation.
 // See juno_voice.h for architecture and param-table design note.
-// IRAM_ATTR placement: Stage 1c (wiring render chain into engine).
+// IRAM_ATTR (ADR 0013): render() placed in IRAM so it survives a flash write.
+#ifdef ESP_PLATFORM
+#include "esp_attr.h"
+#else
+#ifndef IRAM_ATTR
+#define IRAM_ATTR
+#endif
+#endif
+
 #include "juno_voice.h"
 #include "Utility/dsp.h"  // daisysp::mtof
 
@@ -90,7 +98,7 @@ void JunoVoice::set_param(int id, float value) {
     }
 }
 
-void JunoVoice::render(float* buf, size_t n) {
+IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
     // Early exit when envelope is idle (post-release or pre-first-note).
     if (!gate_ && env_.is_idle()) {
         return;

@@ -33,13 +33,16 @@ pkg_check_modules(SDL2 REQUIRED sdl2)
 option(SYNTH_BENCH "Build the Stage 0.5 CPU profiling harness" OFF)
 
 set(HOST_SRCS
-    # Stage 1b: synth.cpp replaces Stage 0 synth.c (JunoVoice + extern-C entry).
+    # Stage 1c: allocator + JunoModel + chorus added; synth.cpp drives the pool.
     "${REPO_ROOT}/engine/synth.cpp"
     "${REPO_ROOT}/engine/juno_voice.cpp"
-    # DaisySP modules used by JunoVoice (header-only: whitenoise, dsp wrappers).
+    "${REPO_ROOT}/engine/juno_model.cpp"
+    "${REPO_ROOT}/engine/voice_alloc.cpp"
+    # DaisySP modules (header-only: whitenoise, dsp wrappers).
     "${DAISYSP}/Source/Synthesis/oscillator.cpp"
     "${DAISYSP}/Source/Filters/svf.cpp"
     "${DAISYSP}/Source/Control/adsr.cpp"
+    "${DAISYSP}/Source/Effects/chorus.cpp"
     "${REPO_ROOT}/ui/ui.c"
     "${REPO_ROOT}/app/app.c"
     "${REPO_ROOT}/platform/host/platform_host.c"
