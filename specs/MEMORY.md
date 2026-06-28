@@ -273,5 +273,13 @@ First real AppFS bench run printed nothing. Two independent causes, both fixed:
   sized by one constant, never a literal `8`, O(n) allocator, runtime fat/thin mode later.
 - Remaining Stage 1 gate is data-dependent only: 🛑 per-voice cost > budget at end of 1c (on
   device) — fires only if measured > ~30 000 cyc/blk (unlikely given headroom).
+- **DaisySP pinned: `599511b740f8f3a9b8db72a0642aa45b8a23c3a3`** (master, 2025-05-29, MIT).
+  Chose master HEAD over tag `V1.0.0` (Jan 2024) because V1.0.0 **predates the Moog ladder
+  filter** (only fir/onepole/soap/svf in its `Filters/`) — we need it vendored-but-unwired for
+  the later A/B; and DaisySP only has 3 tags ever, developing on master. Path correction folded
+  into the runbook + ledger: the Moog file is **`Source/Filters/ladder.{h,cpp}` (class
+  `LadderFilter`)**, *not* `moogladder` (that path doesn't exist at the SHA). Other needed
+  paths verified present at the SHA: oscillator, svf, adsr, whitenoise, chorus.
 - **Next:** Sonnet executes Stage 1 sub-stages 1a→1d per `stages/README.md`. 1a vendors the
-  DaisySP slice (record commit hash here) + stands up `make test`.
+  DaisySP slice **at the pinned SHA above** (re-record it + keep upstream `LICENSE`) + stands
+  up `make test`.

@@ -14,12 +14,16 @@ PAX page. Stands up the **host DSP test harness** (spec 08). Render chain placed
 ## Reuse — pinned DSP source (Opus-cleared, ADR 0004 / ADR 0014)
 **DaisySP** (`electro-smith/DaisySP`, **MIT**), pure portable float C++ → satisfies `dsp/`
 purity (ADR 0007). Vendor a thin slice under `dsp/vendor/daisysp/`, **wrap don't edit**.
-Record the exact upstream commit hash in `MEMORY.md` at vendor time, and add a row to the
-dependency ledger in `specs/02`. Modules used this stage (confirmed present):
+**Pinned commit: `599511b740f8f3a9b8db72a0642aa45b8a23c3a3`** (master, 2025-05-29). Use this
+exact SHA — `V1.0.0` (Jan 2024) predates the Moog ladder filter and is 25 commits stale; the
+library effectively develops on master. Re-record the SHA in `MEMORY.md` at vendor time and
+add a row to the dependency ledger in `specs/02`. Modules used this stage (paths verified at
+the pinned SHA):
 - `Source/Synthesis/oscillator.{h,cpp}` — PolyBLEP saw/square/tri (the VA macro-osc mode + the sub).
 - `Source/Filters/svf.{h,cpp}` — **the voice filter (resolved: SVF 2-pole multimode)**.
-  Also vendor `Source/Filters/moogladder.{h,cpp}` but leave it unwired — kept to A/B for Juno
-  character later.
+  Also vendor `Source/Filters/ladder.{h,cpp}` (class `LadderFilter`, Huovilainen Moog model)
+  but leave it unwired — kept to A/B for Juno character later. _(Note: the file is `ladder`,
+  not `moogladder` — that path does not exist at the pinned SHA.)_
 - `Source/Control/adsr.{h,cpp}` — amp envelope / VCA.
 - `Source/Noise/whitenoise.h` — noise source.
 - `Source/Effects/chorus.{h,cpp}` — master chorus starting point.
@@ -47,8 +51,10 @@ is a minimal struct now (bend/pressure/slide fields, channel-filled), MPE wiring
 | 1d | Musical-typing input + minimal UI page (active voices) | play from the keyboard on host; device green |
 
 ### 1a — vendor + test harness
-- Vendor the DaisySP slice into `dsp/vendor/daisysp/`; add its sources to **both** builds
-  (`host/CMakeLists.txt` and `main/CMakeLists.txt`). Pin + record the commit in `MEMORY.md`.
+- Vendor the DaisySP slice into `dsp/vendor/daisysp/` at the **pinned SHA
+  `599511b740f8f3a9b8db72a0642aa45b8a23c3a3`**; add its sources to **both** builds
+  (`host/CMakeLists.txt` and `main/CMakeLists.txt`). Keep the upstream `LICENSE` alongside the
+  vendored slice. Re-record the SHA in `MEMORY.md`.
 - Stand up `tests/host/` — a tiny no-framework runner (assert helpers + a `main`) and a
   `make test` target that builds & runs it on the Mac (pure `dsp/`, no platform). FTZ-off
   (ADR 0012). This is the spec 08 host-DSP-test deliverable; keep it dependency-light.

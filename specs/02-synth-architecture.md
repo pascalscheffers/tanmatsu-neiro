@@ -152,7 +152,7 @@ waveform animation — over raw count: **ADR 0015**.
 | badge-bsp | ^0.9.9 | (verify) | board support |
 | pax-gfx | ^2.1.0 | MIT | UI (also built host-side via its non-ESP CMake path) |
 | tanmatsu-wifi | ^1.1.2 | (verify) | radio (optional; may drop) |
-| DaisySP (osc/svf/moogladder/adsr/noise/chorus) | (pin commit on vendor, Stage 1) | MIT | **primary MVP DSP** — pure float blocks (ADR 0014) |
+| DaisySP (osc/svf/ladder/adsr/noise/chorus) | `599511b` (master, 2025-05-29) | MIT | **primary MVP DSP** — pure float blocks (ADR 0014); vendor at Stage 1a |
 | MI eurorack (plaits/stmlib) | (pin on vendor, Stage 7) | MIT | hybrid macro-osc: wavetable/FM modes (later) |
 | miniaudio | 0.11.22 | MIT-0 / public-domain | **host-only** audio sink; vendored `platform/host/miniaudio.h` |
 | SDL2 | system (brew `sdl2`) | Zlib | **host-only** window/present/input; never shipped to device |
