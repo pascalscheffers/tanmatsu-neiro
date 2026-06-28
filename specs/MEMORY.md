@@ -370,6 +370,37 @@ Newest at the bottom. One entry per stage/session. Lean — link to specs, don't
 - **Next:** Stage 2d — preset save/load (gate: format ratification first, then
   platform storage seam + INIT + factory bank).
 
+## 2026-06-28 — Stage 2d: preset save/load + INIT + factory bank (COMPLETE)
+
+- **`engine/preset.h` + `engine/preset.cpp`** (new, pure C++, no engine/platform deps):
+  Wire format v1 — magic "TNMT", version byte, model_id byte, flags uint16, name[32],
+  count uint16, then N×(uint16 param_id + float physical_value) pairs. Explicit
+  byte-by-byte memcpy serialization avoids alignment UB. Total blob = 168 bytes for 14
+  Juno params. Forward-compat: unknown IDs on parse are silently skipped.
+- **4 factory presets**: INIT (table defaults), Bass (tight ADSR, sub 0.60, cutoff 800 Hz),
+  Pad (attack 0.80s, release 1.50s, lush chorus), Lead (cutoff 6000 Hz, res 0.60, bright).
+- **Platform storage seam** added to `platform/platform.h`: `platform_storage_save(key,
+  data, len)` / `platform_storage_load(key, buf, max_len)`. Host: POSIX stdio files in
+  `./presets/<key>.tnp`. Device: ESP-IDF NVS under namespace "synth_p" (keys ≤ 15 chars;
+  NVS already init'd in `platform_init()`). SD card skipped — BSP doesn't expose a mount
+  API and NVS is sufficient for 168-byte blobs. (SD may revisit in a later stage if a full
+  sample bank is needed.)
+- **UI integration** (`ui/ui.cpp`): `[`/`]` = cycle factory presets, `=` = save user slot
+  ("user" key), startup restores user slot if present. `ui_apply_params` helper pushes
+  `engine_set_param` + syncs `norms[]` shadow via `phys_to_norm` immediately (no lag).
+  Key-repeat enabled for `[`/`]` on host (SDLK_LEFTBRACKET/RIGHTBRACKET added to `is_nav`).
+  Device: `BSP_INPUT_SCANCODE_LEFTBRACE`/`RIGHTBRACE`/`EQUAL` added to `scancode_to_key`.
+- **ADR 0013 confirmed safe**: NVS write happens off the audio thread (UI task on event);
+  `synth_render` + `drain()` are already in IRAM_ATTR — no audio-thread stall risk.
+- **Host tests** (`tests/host/test_preset.cpp`, 10 new tests): factory count/name, INIT
+  values match table defaults, round-trip serialize/parse, undersized-buf error, bad-magic,
+  truncated-blob, name-length guard. `make test` ✅ 52/52.
+- `make host` ✅  `make build` ✅  membrane grep clean.
+  App: 961 KB / 2 MB (54% partition free).
+- **Manual on-device test needed**: save preset during playback to confirm no glitch
+  (ADR 0013 in practice — Pascal to verify after next `make install`).
+- **Next:** Stage 3 — MIDI in (USB host + device), CC mapping through the param table.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
