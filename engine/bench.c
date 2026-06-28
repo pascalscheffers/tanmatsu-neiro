@@ -232,6 +232,12 @@ static void bench_render_fn(float* left, float* right, size_t n, void* user) {
 // bench_run — public entry point
 // -------------------------------------------------------------------------
 void bench_run(uint32_t sample_rate, uint32_t block_size) {
+    // The device console is USB-Serial-JTAG, which isn't a TTY — so newlib
+    // block-buffers stdout and our small printf table never fills the buffer,
+    // staying invisible in the monitor (ESP_LOG bypasses stdio, so radio logs
+    // still show). Force unbuffered so the table streams live. No-op-ish on host.
+    setvbuf(stdout, NULL, _IONBF, 0);
+
     uint32_t cps          = platform_cycles_per_sec();
     uint32_t block_period = (uint32_t)((uint64_t)cps * block_size / sample_rate);
     float    block_us     = block_size * 1e6f / (float)sample_rate;
