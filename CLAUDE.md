@@ -218,6 +218,13 @@ it and you get clicks. These rules are not negotiable in the audio path:
 Local-only for now (prototyping). The template's origin is kept as `upstream-template`
 for reference; **there is no push remote** — don't add one without asking.
 
+**Auto-commit in logical chunks.** Don't wait to be asked. As soon as a coherent unit of
+work is complete and verifies (a sub-stage, a self-contained doc/spec change, a vendored
+component, a green refactor), commit it. Prefer several small atomic commits over one large
+one — each commit is one logical change that builds/passes on its own. Still **never push**
+(no remote) and never commit broken/unverified work or secrets. When several unrelated
+changes are staged together, split them into separate commits.
+
 Commit message format:
 
 ```
