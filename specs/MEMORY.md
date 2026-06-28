@@ -163,6 +163,36 @@ Newest at the bottom. One entry per stage/session. Lean — link to specs, don't
 - **Next:** flash `make build BENCH=1` to the Tanmatsu, capture UART output, fill in
   `stage-0.5-results.md`, then raise the gate below.
 
+## 2026-06-28 — Stage 1c: voice allocator + master chorus + IRAM_ATTR (COMPLETE)
+
+- **`engine/synth_config.h`**: `kNumVoices = 8` compile-time constant (ADR 0003/0015).
+  Never use a literal `8` in pool arrays or loops.
+- **`VoiceAlloc`** (`engine/voice_alloc.{h,cpp}`): model-agnostic fixed pool.
+  Steal policy: idle (oldest) → released/tail (oldest) → gated (oldest). O(n).
+  `note_on`/`note_off`/`reset_all`. Slots exposed read-only for the render loop.
+- **`JunoModel`** (`engine/juno_model.{h,cpp}`): concrete SynthModel; `make_voice()`
+  allocates + inits a `JunoVoice` and returns the pointer (caller owns).
+- **`engine/synth.cpp`** rewritten: `synth_init` creates JunoModel + VoiceAlloc +
+  DaisySP Chorus. `synth_render` sums active voices into a mono bus, runs the
+  chorus (stereo out). Chorus defaults: 0.5 Hz LFO, depth 0.7, delay 0.4.
+  Gain note: DaisySP Chorus has inherent −12 dB (×0.25) from its equal dry/wet
+  and `gain_frac=0.5`; Stage 2 adds a master-gain param for proper staging.
+- **IRAM_ATTR** (ADR 0013): `synth_render` + `JunoVoice::render` marked in IRAM.
+  Portable guard (`#ifdef ESP_PLATFORM / #include esp_attr.h / #else no-op`).
+  DaisySP vendor .cpp files remain in flash I-cache (edit-free policy); noted
+  in spec 02 placement table — full vendor IRAM coverage is a later optimisation.
+- **`engine_note_on` / `engine_note_off`** extern-C API added to `synth.h` (Stage 1d
+  musical typing will call these from `control/`).
+- **5 new allocator tests** (12/12 total): init idle, note_on produces output,
+  note_off + release tail drains, retrigger reuses slot, 9th note steals oldest.
+- `make test` ✅ (12/12) `make host` ✅ `make build` ✅ membrane grep clean.
+- Device image: 0xe6c30 ≈ 947 KB, 55% partition free (+11 KB from 1b).
+- **On-device per-voice cost measurement**: to be captured by Pascal via
+  `make bench-device` + `make sniff` after Stage 1d. The CPU budget gate
+  (🛑 end of 1c) fires only if measured > ~30 000 cyc/blk — very unlikely given
+  the proxy showed 8 voices = 6.2% period even without -O2.
+- **Next:** Stage 1d — musical-typing input + minimal PAX UI page.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
