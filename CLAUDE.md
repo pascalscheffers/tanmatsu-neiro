@@ -130,6 +130,13 @@ Licensing rules for anything vendored:
 When you vendor code: pin the source commit, note it, and keep local edits minimal and
 clearly marked so upstream updates stay tractable.
 
+**Upstream the platform, don't fork it.** We have PR access and personal ties to the core
+Tanmatsu software (Renze/Nicolai Electronics; PAX is by Pascal's kid). When we hit a bug,
+a small missing feature, or a real perf problem in PAX / badge-bsp / the launcher, the
+default is **fix it upstream and flag Pascal** — not a silent local workaround. Profile
+before claiming "slow"; discuss big/API-shaping changes with the author first. Policy,
+targets, and the live candidate list: `specs/07-upstream-contributions.md`.
+
 ---
 
 ## Real-Time Audio Rules
