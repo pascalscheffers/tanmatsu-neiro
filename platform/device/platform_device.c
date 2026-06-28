@@ -14,6 +14,7 @@
 #include "bsp/power.h"
 #include "driver/gpio.h"
 #include "driver/i2s_std.h"
+#include "esp_cpu.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -21,6 +22,7 @@
 #include "freertos/task.h"
 #include "nvs_flash.h"
 #include "platform.h"
+#include "sdkconfig.h"
 
 static const char TAG[] = "platform";
 
@@ -224,4 +226,21 @@ uint64_t platform_millis(void) {
 
 void platform_sleep_ms(uint32_t ms) {
     vTaskDelay(pdMS_TO_TICKS(ms));
+}
+
+// ---------------------------------------------------------------------------
+// Cycle counter (0.5a)
+// ---------------------------------------------------------------------------
+uint64_t platform_cycles_now(void) {
+    // esp_cpu_get_cycle_count() wraps at 2^32; callers must take differences
+    // within a few milliseconds to avoid wrap (a 64-sample block at 400 MHz is
+    // ~533 k cycles, safely within 32 bits).
+    return (uint64_t)esp_cpu_get_cycle_count();
+}
+
+uint32_t platform_cycles_per_sec(void) {
+    // CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ is set in sdkconfig for the P4 target
+    // (400 MHz by default). Using the compile-time constant avoids pulling in
+    // private clock headers and is correct for our fixed-frequency use case.
+    return (uint32_t)(CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ * 1000000UL);
 }

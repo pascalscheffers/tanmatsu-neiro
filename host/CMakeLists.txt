@@ -28,12 +28,25 @@ add_subdirectory(
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
 
-add_executable(tanmatsu-synth-host
+# Stage 0.5: bench mode. Pass -DSYNTH_BENCH=ON to cmake (done by `make bench`).
+option(SYNTH_BENCH "Build the Stage 0.5 CPU profiling harness" OFF)
+
+set(HOST_SRCS
     "${REPO_ROOT}/engine/synth.c"
     "${REPO_ROOT}/ui/ui.c"
     "${REPO_ROOT}/app/app.c"
     "${REPO_ROOT}/platform/host/platform_host.c"
     "${REPO_ROOT}/platform/host/miniaudio_impl.c")
+
+if(SYNTH_BENCH)
+    list(APPEND HOST_SRCS "${REPO_ROOT}/engine/bench.c")
+endif()
+
+add_executable(tanmatsu-synth-host ${HOST_SRCS})
+
+if(SYNTH_BENCH)
+    target_compile_definitions(tanmatsu-synth-host PRIVATE SYNTH_BENCH=1)
+endif()
 
 target_include_directories(tanmatsu-synth-host PRIVATE
     "${REPO_ROOT}/platform"

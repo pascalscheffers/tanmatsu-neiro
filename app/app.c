@@ -7,6 +7,9 @@
 #include "platform.h"
 #include "synth.h"
 #include "ui.h"
+#ifdef SYNTH_BENCH
+#include "bench.h"
+#endif
 
 // Audio format for Stage 0 (spec 02): 64-frame blocks at 48 kHz.
 #define SAMPLE_RATE 48000u
@@ -19,6 +22,14 @@ void app_run(void) {
     if (!platform_init()) {
         return;
     }
+
+#ifdef SYNTH_BENCH
+    // Profiling mode (Stage 0.5): run the kernel table + load ramp, then stop.
+    // Never enters the normal UI loop. The bench binary is built separately
+    // (make bench / BENCH=1); the shipping image never defines SYNTH_BENCH.
+    bench_run(SAMPLE_RATE, BLOCK_SIZE);
+    return;
+#endif
 
     synth_init(SAMPLE_RATE);
 

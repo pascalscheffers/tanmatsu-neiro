@@ -5,6 +5,7 @@
 // Nothing above the membrane sees either library — they live only here.
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
+#include <time.h>
 #include "miniaudio.h"
 #include "pax_internal.h"  // pax_get_index_conv: native-format pixel -> ARGB
 #include "platform.h"
@@ -196,6 +197,19 @@ uint64_t platform_millis(void) {
 
 void platform_sleep_ms(uint32_t ms) {
     SDL_Delay(ms);
+}
+
+// ---------------------------------------------------------------------------
+// Cycle counter (0.5a) — pseudo-1 GHz on host; device numbers are the budget
+// ---------------------------------------------------------------------------
+uint64_t platform_cycles_now(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+}
+
+uint32_t platform_cycles_per_sec(void) {
+    return 1000000000u;  // 1 GHz pseudo-clock matching the ns timebase above
 }
 
 // ---------------------------------------------------------------------------

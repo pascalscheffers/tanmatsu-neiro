@@ -82,6 +82,20 @@ bool platform_poll_event(platform_event_t* out);
 // derived from the audio sample counter, not from here (ADR 0010).
 uint64_t platform_millis(void);
 
+// ---------------------------------------------------------------------------
+// Cycle counter (platform-specific; Stage 0.5 profiling seam)
+// ---------------------------------------------------------------------------
+// Monotonic CPU-cycle counter. On device: RISC-V mcycle CSR (32-bit hardware,
+// returned as uint64_t for convenient difference arithmetic — callers must take
+// differences within a few milliseconds to avoid 32-bit wrap). On host: nanosec-
+// onds from CLOCK_MONOTONIC scaled to pseudo-1 GHz cycles (reference only; the
+// device numbers are the budget).
+uint64_t platform_cycles_now(void);
+
+// Nominal CPU cycles per second. On device: the configured CPU clock frequency.
+// On host: 1 000 000 000 (the 1 GHz pseudo-clock used by platform_cycles_now).
+uint32_t platform_cycles_per_sec(void);
+
 // Sleep/yield the calling (UI) thread for approximately `ms` milliseconds, so
 // the main loop paces the display without busy-spinning. Not for the audio path.
 void platform_sleep_ms(uint32_t ms);

@@ -167,6 +167,20 @@ host-run: host
 host-clean:
 	rm -rf $(HOST_BUILD)
 
+# Stage 0.5 CPU benchmark — builds the host binary with SYNTH_BENCH=1 and runs it.
+# Pass BENCH_BUILD=build-bench to keep it separate from the normal host build.
+BENCH_BUILD ?= build-bench
+
+.PHONY: bench
+bench: patches
+	cmake -S host -B $(BENCH_BUILD) -DSYNTH_BENCH=ON
+	cmake --build $(BENCH_BUILD) -j
+	./$(BENCH_BUILD)/tanmatsu-synth-host
+
+.PHONY: bench-clean
+bench-clean:
+	rm -rf $(BENCH_BUILD)
+
 # Hardware
 
 .PHONY: flash
