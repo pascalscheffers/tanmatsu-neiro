@@ -22,7 +22,7 @@ This is the gate that unblocks Stage 1's per-voice complexity target.
 |---|---|---|
 | 0.5a | `platform_cycles_*` seam (device + host) | both builds green; counter reads sanely |
 | 0.5b | `engine/bench.{h,c}` proxy kernels + fused fake-voice; `make bench` (host) | host prints a kernel-cost table |
-| 0.5c | Device bench (`BENCH=1` build) + serial readout; deadline-margin load ramp | numbers captured from hardware |
+| 0.5c | Device bench (`BENCH=1`) pushed via **AppFS** (`make bench-device`) + serial readout; deadline-margin load ramp | numbers captured from hardware |
 | 0.5d | Fill `stage-0.5-results.md`, seed cycles/block into spec 02 budget; **gate** | results committed; gate raised |
 
 ### 0.5a — cycle-count seam
@@ -60,6 +60,18 @@ the device. `make bench` builds the host with `-DSYNTH_BENCH` and runs it.
 - Build the device image with `BENCH=1` (sets `-DSYNTH_BENCH`); `app/app.c` gets an
   `#ifdef SYNTH_BENCH` branch: run `bench_run_kernels()` once at boot and `printf` the
   table over UART, then start the **load ramp**.
+- **Load it via AppFS, not a full reflash.** The bench is a throwaway diagnostic — there's
+  no reason to overwrite the launcher firmware for it. Push it into the launcher's AppFS
+  partition over USB and launch it; the launcher stays put and you drop back into it when
+  the bench reboots. One-time: `make badgelink` (clones the tool). Then, with the device in
+  the launcher:
+  - terminal A: `make monitor BENCH=1` — opens the UART; reconnects across the launch-reboot.
+  - terminal B: `make bench-device` — builds `BENCH=1`, uploads under the `synthbench`
+    AppFS slug (the synth app's own slot is untouched), and starts it.
+
+  The kernel table + ramp print into terminal A. `make flash` (full firmware overwrite) is
+  the fallback only if the launcher/AppFS path is unavailable. See AppFS dev loop in
+  `CLAUDE.md` → *Build, Flash, Run*.
 - **Load ramp (the real measurement):** install `bench_voice_proxy` as the audio render fn.
   Around the render call in the audio task, read `platform_cycles_now()` before/after and
   accumulate into a lock-free stat (the spec 08 "measure in the audio thread, report from a

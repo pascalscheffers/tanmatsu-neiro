@@ -246,9 +246,26 @@ From the repo root (`DEVICE=tanmatsu` is the default target):
 
 - `make prepare` — one-time: clone ESP-IDF v5.5.1 + toolchain into `./esp-idf(-tools)`.
 - `make build` — build the app.
-- `make flash PORT=/dev/tty.usbmodemXXXX` — flash over USB.
+- `make flash PORT=/dev/tty.usbmodemXXXX` — full firmware flash over USB (overwrites the
+  launcher; use for a clean image or when AppFS is unavailable).
 - `make flashmonitor PORT=…` — flash + serial monitor.
 - `make menuconfig` — sdkconfig editor.
+
+**Fast dev loop — AppFS, no firmware replace (prefer this).** The shipped launcher keeps a
+dedicated AppFS partition; [badgelink](https://docs.tanmatsu.cloud/software/badgelink/)
+uploads an app binary into it over USB and launches it, leaving the launcher firmware
+untouched (you drop back into the launcher when the app exits). Much faster than a full
+flash — the default for iterating. One-time: `make badgelink` (clones the tool; on Linux
+also install its udev rules). Then, with the device sitting in the launcher:
+- `make install` — build + upload the synth into AppFS (slug `synth`).
+- `make run` — launch it.
+- Override `APP_SLUG`/`APP_TITLE` to install variants side-by-side without clobbering a slot.
+
+badgelink does **not** capture the console — UART output (e.g. the bench table) still comes
+via `make monitor`. AppFS partition details: https://docs.tanmatsu.cloud/software/appfs/.
+
+- `make bench-device` — Stage 0.5: build `BENCH=1`, upload under the `synthbench` slug, and
+  launch the CPU bench via AppFS (synth slot untouched). Capture with `make monitor BENCH=1`.
 - `make size` / `make size-components` — track flash/RAM budget (do this often).
 - `make format` — clang-format the tree.
 

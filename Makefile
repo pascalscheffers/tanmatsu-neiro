@@ -11,7 +11,16 @@ MAKEFLAGS += --silent
 SHELL := /usr/bin/env bash
 
 DEVICE ?= tanmatsu
+# Stage 0.5: BENCH=1 compiles the CPU-profiling harness (engine/bench.c, -DSYNTH_BENCH)
+# into the image. It builds into a separate dir and define so it never overwrites the
+# shipping build, its cmake cache, or the normal app slot in AppFS.
+ifeq ($(BENCH),1)
+BUILD ?= build/$(DEVICE)-bench
+BENCH_DEFINE := -DBENCH=1
+else
 BUILD ?= build/$(DEVICE)
+BENCH_DEFINE :=
+endif
 FAT ?= 0
 SDKCONFIG_DEFAULTS ?= sdkconfigs/general;sdkconfigs/$(DEVICE)
 SDKCONFIG ?= sdkconfig_$(DEVICE)
@@ -39,7 +48,7 @@ $(warning "Unknown device, defaulting to ESP32 $(DEVICE)")
 IDF_TARGET ?= esp32
 endif
 
-IDF_PARAMS := -B $(BUILD) build -DDEVICE=$(DEVICE) -DSDKCONFIG_DEFAULTS="$(SDKCONFIG_DEFAULTS)" -DSDKCONFIG=$(SDKCONFIG) -DIDF_TARGET=$(IDF_TARGET) -DFAT=$(FAT)
+IDF_PARAMS := -B $(BUILD) build -DDEVICE=$(DEVICE) -DSDKCONFIG_DEFAULTS="$(SDKCONFIG_DEFAULTS)" -DSDKCONFIG=$(SDKCONFIG) -DIDF_TARGET=$(IDF_TARGET) -DFAT=$(FAT) $(BENCH_DEFINE)
 
 #####
 
@@ -51,21 +60,49 @@ export IDF_GITHUB_ASSETS
 .PHONY: all
 all: build
 
-# Badgelink
+# Badgelink — upload + launch an app over USB into the launcher's AppFS partition.
+# This is the fast dev loop: it does NOT replace the launcher firmware (cf. `make flash`).
+# Prereqs: run `make badgelink` once (clones the tool), and have the device sitting in
+# the launcher. Docs: https://docs.tanmatsu.cloud/software/badgelink/ and /software/appfs/.
 .PHONY: badgelink
 badgelink:
 	rm -rf badgelink
 	git clone https://github.com/badgeteam/esp32-component-badgelink.git badgelink
 	cd badgelink/tools; ./install.sh
 
+# AppFS app identity. Override APP_SLUG/APP_TITLE to install side-by-side variants
+# (e.g. the CPU bench below installs under its own slug so the synth app stays put).
+APP_SLUG  ?= synth
+APP_TITLE ?= Tanmatsu Synth
+APP_VER   ?= 0
+
 .PHONY: install
 install: build
-install:
-	cd badgelink/tools; ./badgelink.sh appfs upload application "template application" 0 ../../$(BUILD)/application.bin
+	cd badgelink/tools; ./badgelink.sh appfs upload $(APP_SLUG) "$(APP_TITLE)" $(APP_VER) ../../$(BUILD)/application.bin
 
 .PHONY: run
 run:
-	cd badgelink/tools; ./badgelink.sh start application
+	cd badgelink/tools; ./badgelink.sh start $(APP_SLUG)
+
+# Stage 0.5: build the CPU-profiling image, push it into AppFS, and launch it — all
+# without touching the launcher firmware. badgelink can't capture the console, so the
+# bench's printf table comes out over UART: run `make monitor BENCH=1` in another
+# terminal (started before `bench-run`, it reconnects across the launch-reboot).
+BENCH_SLUG  ?= synthbench
+BENCH_TITLE ?= Synth CPU bench
+
+.PHONY: bench-upload
+bench-upload:
+	$(MAKE) install BENCH=1 APP_SLUG=$(BENCH_SLUG) APP_TITLE="$(BENCH_TITLE)"
+
+.PHONY: bench-run
+bench-run:
+	$(MAKE) run APP_SLUG=$(BENCH_SLUG)
+
+.PHONY: bench-device
+bench-device: bench-upload bench-run
+	@echo ">>> Bench launched via AppFS — launcher firmware untouched."
+	@echo ">>> Capture the result table with:  make monitor BENCH=1"
 
 # Preparation
 

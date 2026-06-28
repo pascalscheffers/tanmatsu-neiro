@@ -175,3 +175,22 @@ Opus clears the entry when the gate is resolved.
             ≤70% period with room to spare; otherwise amend ADR 0003 to the ceiling.
   Blocked on: hardware serial capture — `stage-0.5-results.md` must be filled first.
   Sonnet action: STOP — results template committed; gate raised here; waiting for Opus.
+
+## 2026-06-28 — AppFS dev loop (flash without replacing firmware)
+- Adopted the launcher's **AppFS** path as the default device dev loop: badgelink uploads
+  an app binary into the launcher's AppFS partition over USB and launches it, **without
+  overwriting the launcher firmware** (drops back to launcher on exit). Much faster than a
+  full `idf.py flash`. Docs: tanmatsu badgelink + appfs pages.
+- Makefile: template `install`/`run` were unparameterized + `BENCH` was never forwarded to
+  the device cmake (latent: `make build BENCH=1` didn't compile the harness). Fixed:
+  - `BENCH=1` now sets `BUILD=build/$(DEVICE)-bench` + appends `-DBENCH=1` to `IDF_PARAMS`
+    (separate dir/cache; never clobbers the shipping build).
+  - `install`/`run` take `APP_SLUG`/`APP_TITLE`/`APP_VER` (default slug `synth`).
+  - New `make bench-device` (= `bench-upload` + `bench-run`): builds `BENCH=1`, uploads
+    under slug `synthbench`, launches it — synth app slot untouched. badgelink can't
+    capture console, so the bench table comes via `make monitor BENCH=1` (run it in a 2nd
+    terminal; reconnects across the launch-reboot).
+- Stage 0.5 runbook (0.5c) + results template + CLAUDE.md "Build, Flash, Run" updated to
+  use AppFS; `make flash` demoted to fallback. One-time prereq: `make badgelink`.
+- **Open Opus gate below is unchanged** — still blocked on hardware serial capture; the
+  capture method is now `make bench-device` + `make monitor BENCH=1` instead of full flash.

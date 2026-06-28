@@ -1,6 +1,6 @@
 # Stage 0.5 — CPU Benchmark Results
 
-**Status:** pending hardware run · **Fill in:** after `make build BENCH=1` + flash + serial capture
+**Status:** pending hardware run · **Fill in:** after `make bench-device` (AppFS launch, no firmware replace) + `make monitor BENCH=1` serial capture
 
 ---
 
