@@ -158,6 +158,29 @@ restate. When this passes ~200 lines, rotate older entries into the archive.
 - Folded into ADR 0017 (Decision), `stages/README.md` (dispatch step 1), CLAUDE.md (the loop).
 - **Next:** unchanged — dispatch **Stage 3a** as the first live worker run.
 
+## 2026-06-28 — Stage 3a: per-voice mod sources (ENV2 + LFO1/2) (COMPLETE)
+
+- **`dsp/lfo.h`** (new, pure header-only): phase-accumulator LFO, 5 waveforms
+  (SINE/TRI/SAW/SQUARE/S&H). Anti-denormal +1e-20f on continuous waves per ADR 0012.
+  Not band-limited (expected at this stage; BL LFO would be a separate sub-stage).
+- **`engine/juno_voice`** updated: `env2_` (second `dsp::Env` ADSR) + `lfo1_`/`lfo2_`
+  (`dsp::Lfo`) rendered per sample in `render()`; `env2_value()`/`lfo1_value()`/
+  `lfo2_value()` accessors expose last-sample outputs for the mod matrix (Stage 3b-i).
+- **`engine/param_id.h`**: ENV2 group 0x40–0x43, LFO1 0x70–0x72, LFO2 0x78–0x7A.
+  All new IDs < kParamIdMax=128; no param_store.h change needed.
+- **`engine/param_desc.h/cpp`**: GROUP_ENV2=8 added; 10 new param rows (ENV2 ADSR,
+  LFO1/2 rate+depth+shape). kJunoParamCount now 24.
+- **`engine/preset.cpp`**: FactoryPreset arrays widened to [32], all 4 presets updated
+  to 24 params with sensible ENV2/LFO defaults per preset character.
+- **`ui/ui.cpp`**: GROUP_ENV2 and GROUP_LFO added to `group_name()` so new pages
+  render automatically (page list is built dynamically from the table).
+- **9 new host tests** (61 total, all pass): ENV2 independence, gate tracking,
+  LFO oscillation, waveform shape, depth scaling, rate via set_param, S&H piecewise
+  constant, range bounds, per-voice independence.
+- `make test` ✅ (61/61) `make host` ✅ `make build` ✅ membrane clean.
+  App: 964 KB / 2 MB (54% partition free, +3 KB from Stage 2d).
+- **Next:** Stage 3b-i — mod-matrix engine (gated: matrix-shape ratification first).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
