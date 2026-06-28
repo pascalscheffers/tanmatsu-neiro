@@ -235,6 +235,19 @@ restate. When this passes ~200 lines, rotate older entries into the archive.
 - `make test` ✅ (79/79) `make host` ✅ `make build` ✅. Flash: **856 KB** / DIRAM: **148 KB** (54% free). No behavior change.
 - **Next:** Stage 3c-i — full Juno param set as table rows.
 
+## 2026-06-28 — Stage 3c-i: full Juno param set as table rows (COMPLETE)
+
+- **13 new param ids** added (all < kMax=0x80=128): OSC_PWM(0x13), OSC_WAVEFORM(0x14), OSC_RANGE(0x15); HPF_CUTOFF(0x23), VCF_ENV_DEPTH(0x24), VCF_ENV_POLARITY(0x25), VCF_KEY_TRACK(0x26), VCF_LFO_DEPTH(0x27); CHORUS_MODE(0x53); VCA_GATE_MODE(0x61), VCA_LEVEL(0x62); LFO1_DELAY(0x73), LFO2_DELAY(0x7B).
+- **kJunoParamCount: 24 → 37**. All ids unique, all < kParamIdMax=128.
+- **DSP hooks wired** in `JunoVoice::set_param` + `render()`: OSC_RANGE (freq multiplier), VCF_ENV_DEPTH/POLARITY (ENV2→cutoff ±8 kHz), VCF_KEY_TRACK (key-follow scaling), VCF_LFO_DEPTH (LFO1→cutoff panel mod), VCA_GATE_MODE (gate vs env), VCA_LEVEL (per-voice level), LFO1/2_DELAY (counter fade-in ramp), CHORUS_MODE (0=off mono, 1=I, 2=II).
+- **OSC_PWM now exists** (id 0x13, flag MOD_DEST). The `kPresetDestPwm=0xFFFD` sentinel in `preset.cpp` can now be unified — deliberate follow-up, not in scope here.
+- **HPF_CUTOFF row exists** (id 0x23, GROUP_HPF=9) — cached only. Split-if hit: adding a real HPF requires a second `dsp::Filter` object in JunoVoice (that's a separate sub-stage). `ui/ui.cpp` group_name() updated with GROUP_HPF="HPF".
+- **OSC_WAVEFORM** row exists (stepped, 0=SAW default) — cached only; `dsp/osc.h` supports only SAW; PULSE/TRI is a future osc sub-stage.
+- **Factory presets** widened to `[48]`, all 4 updated to 37 params. `test_preset.cpp` buffers widened to 64 for future growth.
+- **8 new host tests** in `tests/host/test_params.cpp` (85 total, all pass): table coverage, ID uniqueness+range, kJunoParamCount ≥ 37, OSC_PWM metadata, VCA_LEVEL=0 silences, OSC_RANGE shifts pitch, VCA_GATE_MODE=1 immediate output, VCF_ENV_DEPTH modulates filter.
+- `make test` ✅ (85/85) `make host` ✅ `make build` ✅ membrane clean. App: **968 KB / 2 MB (54% free, +2 KB)**.
+- **Next:** Stage 3c-ii — complete UI pages so every row is reachable. Also: unify `kPresetDestPwm` sentinel with `ParamId::OSC_PWM` (follow-up); HPF DSP block (separate sub-stage after HPF_CUTOFF row landed).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
