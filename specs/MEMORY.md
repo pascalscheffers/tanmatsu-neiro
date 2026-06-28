@@ -205,6 +205,26 @@ restate. When this passes ~200 lines, rotate older entries into the archive.
 - **Next:** Stage 3b-ii — Juno default-patch voicing (🛑 sonic gate) + preset format
   carries routings.
 
+## 2026-06-28 — Stage 3b-ii: Juno default patch + preset format carries routings (COMPLETE)
+
+- **Preset format bumped to v2.** Routings block appended after param pairs: `count:u16` + N × 8-byte
+  records (`source:u8 + dest_param_id:u16 + depth:f32 + curve:u8`, field-by-field, no struct memcpy).
+  `PRESET_BLOB_MAX` widened to 384 (was 256) to cover 16 routing slots + 24 params. v1 blobs still
+  parse (zero routings returned — back-compat). Unknown source ids skipped (forward-compat).
+- **"Clean 106" routings** (ADR 0009 RATIFIED) shipped in all 4 factory presets: `ENV2→FILTER_CUTOFF
+  +0.35 LIN`, `LFO1→0xFFFD (PWM sentinel) +0.20 LIN`. PWM dest stored as `kPresetDestPwm=0xFFFD`
+  (parallel to `kModDestPitch=0xFFFE`); promote to `mod_matrix.h` in Stage 3c when PWM param added.
+- **`engine_set_routings(routings, count)`** added to `synth.h`/`synth.cpp`: builds a `ModMatrix`
+  from the array and pushes it to all 8 JunoVoice instances. Called from control thread; audio thread
+  picks it up next block (no lock needed — per-voice matrix is written atomically as a struct copy).
+- **`ui.cpp`** wired: factory preset cycle loads routings via `preset_factory_routings` + `engine_set_routings`;
+  startup init loads INIT routings; save ('=') serializes routings via `preset_serialize` (v2).
+- **5 new host tests** (77 total): routing round-trip (all 4 fields), v1 back-compat, INIT Clean 106
+  content assertion, factory_routings OOB, zero-routings serialize/parse.
+- `make test` ✅ (77/77) `make host` ✅ `make build` ✅ membrane clean.
+  App: **966 KB / 2 MB (54% free)** (+1 KB from Stage 3b-i).
+- **Next:** Stage 3c-i — full Juno param set as table rows (OSC_PWM + remaining Juno params).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
