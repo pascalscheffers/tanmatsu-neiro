@@ -339,6 +339,37 @@ Newest at the bottom. One entry per stage/session. Lean — link to specs, don't
 - **Next:** Stage 2c — UI pages rendered from the param table (OSC/FILTER/ENV/FX/AMP),
   row select, nudge, Shift=coarse, status strip. Then 2d (preset save/load).
 
+## 2026-06-28 — Stage 2c: soft-clip + param-page UI + navigation (COMPLETE)
+
+- **`dsp/saturate.h`** (new): `soft_clip(x) = x − x³/6.75`, clamped to ±1 at ±1.5.
+  Applied post-master-gain in `synth_render` (ADR 0016). 4 host tests: transparent
+  near zero, monotone, bounded ±1, odd symmetry.
+- **`engine_get_param(id)`** added to `synth.h`/`synth.cpp`: control-thread read of
+  the current smoothed value for display (benign one-block lag, same pattern as
+  `engine_active_voices`).
+- **`platform/platform.h`**: `PLATFORM_KEY_{UP,DOWN,LEFT,RIGHT}` constants (0x100–0x103),
+  `PLATFORM_MOD_SHIFT` flag, and `uint8_t mods` field added to `platform_event_t`.
+- **Host platform** (`platform_host.c`): SDL arrows → PLATFORM_KEY_*, mods from
+  `SDL_GetModState()`, key-repeat allowed for nav keys (arrows/comma/dot), filtered
+  for musical keys.
+- **Device platform** (`platform_device.c`): `INPUT_EVENT_TYPE_NAVIGATION` handler for
+  arrow keys with modifier forwarding; comma/dot added to `scancode_to_key`; shift
+  state tracked via `s_shift_held` for SCANCODE events.
+- **`ui/ui.cpp`** (replaces `ui/ui.c`): full param-table-driven UI. Five page tabs
+  (OSC/FILTER/ENV/FX/AMP) derived from `JUNO_PARAM_TABLE` — no hardcoded params.
+  Each page shows param rows: `>` indicator, name, value bar (filled ∝ norm),
+  physical value text, unit label. Status strip: 8 voice dots, octave, preset name
+  placeholder "INIT", key-hint text. `UIState` holds page/row + `norms[128]` shadow.
+  `ui_state_init`: builds page list, inits norms via inverse-curve from table defaults.
+  `ui_handle_event`: arrows navigate pages/rows (wrapping); `,`/`.` = fine nudge 1%,
+  Shift+`,`/`.` = coarse 10%; STEPPED params advance one integer step.
+- **`app.c`**: `UIState` wired into main loop; both `keyboard_handle_event` and
+  `ui_handle_event` receive every event; `active_voices`/`octave` updated each frame.
+- `make test` ✅ (42/42)  `make host` ✅  `make build` ✅  membrane clean.
+  App: 0xe8920 ≈ 952 KB, 55% partition free.
+- **Next:** Stage 2d — preset save/load (gate: format ratification first, then
+  platform storage seam + INIT + factory bank).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
