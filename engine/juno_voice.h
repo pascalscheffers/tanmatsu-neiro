@@ -1,29 +1,15 @@
 // engine/juno_voice.h — Juno-106-inspired voice (ADR 0002, ADR 0008).
 // Signal chain: PolyBLEP saw + sub (−1 oct) + noise → SVF LP → ADSR VCA.
-// All params are hardcoded constants; Stage 2 lifts them into the param table.
+// set_param() uses ParamId::* values (see param_id.h) — the param store
+// pushes smoothed physical values from the table every block (Stage 2b).
 #pragma once
 
 #include "voice.h"
+#include "param_id.h"
 #include "dsp/osc.h"
 #include "dsp/filter.h"
 #include "dsp/env.h"
 #include "Noise/whitenoise.h"
-
-// Parameter IDs — Stage 2 maps param table entries to these. Keep sequential
-// so set_param can use a switch with no gaps.
-enum JunoParam {
-    JUNO_PARAM_OSC_LEVEL = 0,
-    JUNO_PARAM_SUB_LEVEL,
-    JUNO_PARAM_NOISE_LEVEL,
-    JUNO_PARAM_FILTER_CUTOFF,
-    JUNO_PARAM_FILTER_RES,
-    JUNO_PARAM_FILTER_MODE,   // 0=LP 1=BP 2=HP
-    JUNO_PARAM_ENV_ATTACK,
-    JUNO_PARAM_ENV_DECAY,
-    JUNO_PARAM_ENV_SUSTAIN,
-    JUNO_PARAM_ENV_RELEASE,
-    JUNO_PARAM_COUNT
-};
 
 class JunoVoice final : public IVoice {
 public:

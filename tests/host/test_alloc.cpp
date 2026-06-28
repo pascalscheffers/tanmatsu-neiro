@@ -13,6 +13,7 @@
 #include "runner.h"
 #include "engine/voice_alloc.h"
 #include "engine/juno_model.h"
+#include "engine/param_id.h"
 #include "engine/synth_config.h"
 #include <stdio.h>
 #include <string.h>
@@ -99,8 +100,7 @@ void test_alloc_note_off() {
         if (slots[i].gate) { gated_idx = i; break; }
     TEST_ASSERT(gated_idx >= 0, "must have found the gated slot");
 
-    // JUNO_PARAM_ENV_RELEASE = 9 (from JunoParam enum)
-    slots[gated_idx].voice->set_param(9, 0.05f);
+    slots[gated_idx].voice->set_param((int)ParamId::ENV_RELEASE, 0.05f);
 
     // Reach sustain (~200 blocks × 64 samples = ~0.27 s).
     float buf[64];

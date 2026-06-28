@@ -1,4 +1,12 @@
 // engine/param_store.cpp — ParamStore implementation (spec 05).
+#ifdef ESP_PLATFORM
+#include "esp_attr.h"
+#else
+#ifndef IRAM_ATTR
+#define IRAM_ATTR
+#endif
+#endif
+
 #include "param_store.h"
 #include <math.h>
 #include <string.h>
@@ -45,7 +53,7 @@ bool ParamStore::param_set(uint16_t id, float value, uint8_t source) {
     return ring_.push(ParamUpdate{id, v});
 }
 
-void ParamStore::drain() {
+IRAM_ATTR void ParamStore::drain() {
     // 1. Drain the ring: update targets (and snap instants immediately).
     ParamUpdate upd;
     while (ring_.pop(upd)) {

@@ -10,6 +10,7 @@
 #endif
 
 #include "juno_voice.h"
+#include "param_id.h"
 #include "Utility/dsp.h"  // daisysp::mtof
 
 void JunoVoice::init(float sample_rate) {
@@ -57,39 +58,39 @@ void JunoVoice::reset() {
 
 void JunoVoice::set_param(int id, float value) {
     switch (id) {
-        case JUNO_PARAM_OSC_LEVEL:
+        case ParamId::OSC_LEVEL:
             p_osc_level_ = value;
             break;
-        case JUNO_PARAM_SUB_LEVEL:
+        case ParamId::SUB_LEVEL:
             p_sub_level_ = value;
             break;
-        case JUNO_PARAM_NOISE_LEVEL:
+        case ParamId::NOISE_LEVEL:
             p_noise_level_ = value;
             break;
-        case JUNO_PARAM_FILTER_CUTOFF:
+        case ParamId::FILTER_CUTOFF:
             p_cutoff_ = value;
             filter_.set_freq(value);
             break;
-        case JUNO_PARAM_FILTER_RES:
+        case ParamId::FILTER_RES:
             p_res_ = value;
             filter_.set_res(value);
             break;
-        case JUNO_PARAM_FILTER_MODE:
+        case ParamId::FILTER_MODE:
             filter_.set_mode((dsp::FilterMode)(int)value);
             break;
-        case JUNO_PARAM_ENV_ATTACK:
+        case ParamId::ENV_ATTACK:
             p_attack_ = value;
             env_.set_attack(value);
             break;
-        case JUNO_PARAM_ENV_DECAY:
+        case ParamId::ENV_DECAY:
             p_decay_ = value;
             env_.set_decay(value);
             break;
-        case JUNO_PARAM_ENV_SUSTAIN:
+        case ParamId::ENV_SUSTAIN:
             p_sustain_ = value;
             env_.set_sustain(value);
             break;
-        case JUNO_PARAM_ENV_RELEASE:
+        case ParamId::ENV_RELEASE:
             p_release_ = value;
             env_.set_release(value);
             break;

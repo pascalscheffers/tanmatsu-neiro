@@ -12,9 +12,10 @@
 extern "C" {
 #endif
 
-// Prepare the engine for the given output sample rate. Call before the audio
-// sink starts. Allocation/setup is allowed here; the audio path is not.
-void synth_init(uint32_t sample_rate);
+// Prepare the engine for the given output sample rate and block size.
+// Call before the audio sink starts. Allocation/setup is allowed here.
+// block_size must match the platform_audio_config_t block_size used.
+void synth_init(uint32_t sample_rate, size_t block_size);
 
 // Render `n` frames of stereo audio. Matches platform_audio_render_fn so it can
 // be handed directly to platform_audio_start(). Real-time path: no alloc, no
@@ -31,6 +32,14 @@ void engine_note_off(uint8_t pitch);
 // Count of currently active voices (gate-on or envelope still running).
 // Called from the UI thread; may read a frame-stale value — display use only.
 int engine_active_voices(void);
+
+// Set a parameter from the control thread (UI, MIDI, preset load).
+// Lock-free: the update is enqueued in the param store and drained each block.
+// id: a ParamId::* constant. value: physical units, clamped to [min, max].
+void engine_set_param(uint16_t id, float value);
+
+// Set a parameter by normalised position [0, 1]; curve mapping applied.
+void engine_set_param_norm(uint16_t id, float norm);
 
 #ifdef __cplusplus
 }

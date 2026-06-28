@@ -77,7 +77,7 @@ void app_run(void) {
 #endif
 
     keyboard_init();
-    synth_init(SAMPLE_RATE);
+    synth_init(SAMPLE_RATE, BLOCK_SIZE);
 
     const platform_audio_config_t audio_cfg = {
         .sample_rate = SAMPLE_RATE,

@@ -14,6 +14,7 @@
 
 #include "runner.h"
 #include "juno_voice.h"
+#include "param_id.h"
 #include "dsp/filter.h"
 #include <math.h>
 #include <string.h>
@@ -73,7 +74,7 @@ void test_voice_silent_after_release() {
     // DaisySP ADSR uses an RC time constant; the envelope reaches ~0.014× of
     // sustain after ~4.26 × time_constant samples, which for 0.05 s at 48 kHz
     // is ~10 240 samples (~160 blocks).  Run 220 blocks to be safe.
-    v.set_param(JUNO_PARAM_ENV_RELEASE, 0.05f);
+    v.set_param((int)ParamId::ENV_RELEASE, 0.05f);
 
     NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
     v.note_on(69, 127, expr);
@@ -178,10 +179,76 @@ void test_filter_lp_attenuation() {
     test_pass();
 }
 
+/* --- 5. set_param via ParamId — zero levels → silence ------------------- */
+void test_voice_set_param_zero_levels() {
+    printf("--- JunoVoice set_param (Stage 2b) ---\n");
+    test_begin("set_param: zero all mix levels silences output");
+
+    // Set all mix levels to 0 BEFORE note_on so the filter input is always 0;
+    // that way the SVF accumulates no energy and the output stays near-zero
+    // throughout the sustain phase (tests the live set_param path).
+    JunoVoice v;
+    v.init(kSampleRate);
+    v.set_param((int)ParamId::OSC_LEVEL,   0.0f);
+    v.set_param((int)ParamId::SUB_LEVEL,   0.0f);
+    v.set_param((int)ParamId::NOISE_LEVEL, 0.0f);
+
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+    v.note_on(69, 127, expr);
+
+    float buf[64];
+    // Advance to sustain — filter input has always been 0, so no energy stored.
+    for (int b = 0; b < 200; b++) {
+        memset(buf, 0, sizeof(buf));
+        v.render(buf, 64);
+    }
+    memset(buf, 0, sizeof(buf));
+    v.render(buf, 64);
+    TEST_ASSERT(rms(buf, 64) < 0.0001f,
+                "all mix levels 0 → near-silent output");
+    test_pass();
+}
+
+/* --- 6. set_param via ParamId — cutoff change affects output RMS -------- */
+void test_voice_set_param_cutoff() {
+    test_begin("set_param: low cutoff attenuates output vs high cutoff");
+
+    // Measure RMS at sustain with different cutoff values.
+    // Sub and noise off so we only hear the saw; low cutoff attenuates even
+    // the fundamental (A4 = 440 Hz) when the cutoff is below 100 Hz.
+    auto measure_rms = [](float cutoff) -> float {
+        JunoVoice v;
+        v.init(kSampleRate);
+        v.set_param((int)ParamId::SUB_LEVEL,     0.0f);
+        v.set_param((int)ParamId::NOISE_LEVEL,   0.0f);
+        v.set_param((int)ParamId::FILTER_CUTOFF, cutoff);
+        v.set_param((int)ParamId::FILTER_RES,    0.0f);
+        NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+        v.note_on(69, 127, expr);  // A4 = 440 Hz
+        float buf[64];
+        for (int b = 0; b < 200; b++) {
+            memset(buf, 0, sizeof(buf));
+            v.render(buf, 64);
+        }
+        memset(buf, 0, sizeof(buf));
+        v.render(buf, 64);
+        return rms(buf, 64);
+    };
+
+    float rms_low  = measure_rms(80.0f);    // well below 440 Hz — strong LP attenuation
+    float rms_high = measure_rms(10000.0f); // above 440 Hz — fundamental passes cleanly
+
+    TEST_ASSERT(rms_high > rms_low * 3.0f,
+                "high cutoff (10kHz) must pass ≥3× more RMS than low cutoff (80Hz)");
+    test_pass();
+}
+
 /* Entry points declared in main.cpp */
 void test_voice_suite() {
     test_voice_adsr_shape();
     test_voice_silent_after_release();
     test_voice_reset_silences();
     test_filter_lp_attenuation();
+    test_voice_set_param_zero_levels();
+    test_voice_set_param_cutoff();
 }
