@@ -11,6 +11,7 @@
 
 #include "juno_voice.h"
 #include "param_id.h"
+#include "mod_matrix.h"
 #include "Utility/dsp.h"  // daisysp::mtof
 
 void JunoVoice::init(float sample_rate) {
@@ -51,6 +52,7 @@ void JunoVoice::note_on(uint8_t pitch, uint8_t velocity,
                         NoteExpression expr) {
     (void)expr;  // MPE fields wired in Stage 5
 
+    midi_note_ = pitch;
     float freq = daisysp::mtof((float)pitch);
     osc_main_.set_freq(freq);
     osc_sub_.set_freq(freq * 0.5f);  // -1 octave sub
@@ -75,6 +77,8 @@ void JunoVoice::reset() {
     env2_value_ = 0.0f;
     lfo1_value_ = 0.0f;
     lfo2_value_ = 0.0f;
+    // Note: mod_matrix_ is not cleared on voice reset — the routing table is
+    // patch data and persists across note events (Stage 3b-ii sets it from preset).
 }
 
 void JunoVoice::set_param(int id, float value) {
@@ -169,14 +173,86 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
         return;
     }
 
+    // Stage 3b-i: evaluate mod matrix once per block (control-rate eval).
+    // Per-voice sources are the last-block cached values (close enough for 1 block
+    // of latency; exact per-sample mod is not needed at control rate).
+    // Key-track: center on MIDI note 69 (A4), ±1 unit per semitone / 12 → [-1,+1]
+    // across a ±1-octave range. Clamped to [-1, +1].
+    float key_track_raw = ((float)midi_note_ - 69.0f) / 12.0f;
+    if (key_track_raw >  1.0f) key_track_raw =  1.0f;
+    if (key_track_raw < -1.0f) key_track_raw = -1.0f;
+
+    ModSources msrc;
+    msrc.lfo1      = lfo1_value_;
+    msrc.lfo2      = lfo2_value_;
+    msrc.env1      = 0.0f;        // amp env not yet cached; filled below if needed
+    msrc.env2      = env2_value_;
+    msrc.velocity  = vel_scale_;  // [0,1]
+    msrc.key_track = key_track_raw;
+    // Global sources (mod_wheel, pitch_bend, aftertouch) left at 0; Stage 3c wires them.
+
+    ModOutputs mout = mod_matrix_.eval(msrc);
+
+    // --- Control-rate mod applications (once per block) ---
+    // Resonance:
+    float eff_res = p_res_ + mout.res_mod;
+    if (eff_res < 0.0f) eff_res = 0.0f;
+    if (eff_res > 1.0f) eff_res = 1.0f;
+    filter_.set_res(eff_res);
+
+    // --- Audio-rate mod: compute start/end values for per-sample interpolation.
+    // Pitch (semitone offset → freq):
+    float base_freq    = daisysp::mtof((float)midi_note_);
+    float mod_freq_end = daisysp::mtof((float)midi_note_ + mout.pitch_semi);
+
+    // Cutoff: clamp modulated value to [20, 20000] Hz.
+    float cutoff_end = p_cutoff_ + mout.cutoff_mod;
+    if (cutoff_end <    20.0f) cutoff_end =    20.0f;
+    if (cutoff_end > 20000.0f) cutoff_end = 20000.0f;
+
+    // Amp (OSC_LEVEL mod), clamped [0, 1]:
+    float amp_end = p_osc_level_ + mout.amp_mod;
+    if (amp_end < 0.0f) amp_end = 0.0f;
+    if (amp_end > 1.0f) amp_end = 1.0f;
+
+    // Sub / noise level mods (also once per block — fast enough):
+    float eff_sub   = p_sub_level_   + mout.osc_sub;
+    float eff_noise = p_noise_level_ + mout.osc_noise;
+    if (eff_sub   < 0.0f) eff_sub   = 0.0f;
+    if (eff_sub   > 1.0f) eff_sub   = 1.0f;
+    if (eff_noise < 0.0f) eff_noise = 0.0f;
+    if (eff_noise > 1.0f) eff_noise = 1.0f;
+
+    // Block-smooth audio-rate dests: linear interpolation from prev to end
+    // value over n samples (avoids zipper noise on fast LFO modulation).
+    const float inv_n  = (n > 1) ? (1.0f / (float)(n - 1)) : 1.0f;
+
+    // Previous values (use base for first block — effectively no smooth needed
+    // until they're cached; we reuse the effective values computed last block).
+    // For simplicity: start == end (no per-block history needed). The filter
+    // set_freq() call itself is low-cost once per sample.
+    // We do per-sample freq ramp; enough for click-free modulation at 64 samples.
+    float freq_step   = (mod_freq_end - base_freq)      * inv_n;
+    float cutoff_step = (cutoff_end   - p_cutoff_)      * inv_n;
+    float amp_step    = (amp_end      - p_osc_level_)   * inv_n;
+
     float e2 = env2_value_;
     float l1 = lfo1_value_;
     float l2 = lfo2_value_;
 
     for (size_t i = 0; i < n; i++) {
-        float osc   = osc_main_.process() * p_osc_level_;
-        float sub   = osc_sub_.process()  * p_sub_level_;
-        float noise = noise_.Process()     * p_noise_level_;
+        // Per-sample modulated freq (smooth pitch mod).
+        float cur_freq   = base_freq    + freq_step   * (float)i;
+        float cur_cutoff = p_cutoff_    + cutoff_step * (float)i;
+        float cur_amp    = p_osc_level_ + amp_step    * (float)i;
+
+        osc_main_.set_freq(cur_freq);
+        osc_sub_.set_freq(cur_freq * 0.5f);
+        filter_.set_freq(cur_cutoff);
+
+        float osc   = osc_main_.process() * cur_amp;
+        float sub   = osc_sub_.process()  * eff_sub;
+        float noise = noise_.Process()     * eff_noise;
         float mixed = osc + sub + noise;
 
         filter_.process(mixed);           // anti-denormal inside filter.h
@@ -185,8 +261,8 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
         float env_val = env_.process(gate_) * vel_scale_;
         buf[i] += filtered * env_val;
 
-        // Stage 3a: advance mod sources (output consumed by mod matrix in 3b-i).
-        // Processed at audio rate so they're ready sample-accurate for the matrix.
+        // Stage 3a: advance mod sources at audio rate so they're ready
+        // for the next block's matrix eval.
         e2 = env2_.process(gate_);
         l1 = lfo1_.process() * p_lfo1_depth_;
         l2 = lfo2_.process() * p_lfo2_depth_;

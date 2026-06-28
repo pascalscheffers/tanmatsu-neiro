@@ -20,11 +20,13 @@ add_executable(tanmatsu-tests
     test_saturate.cpp
     test_preset.cpp
     test_mod_sources.cpp
+    test_mod_matrix.cpp
     "${DAISYSP}/Source/Synthesis/oscillator.cpp"
     "${DAISYSP}/Source/Filters/svf.cpp"
     "${DAISYSP}/Source/Control/adsr.cpp"
     "${DAISYSP}/Source/Effects/chorus.cpp"
     "${REPO_ROOT}/engine/juno_voice.cpp"
+    "${REPO_ROOT}/engine/mod_matrix.cpp"
     "${REPO_ROOT}/engine/juno_model.cpp"
     "${REPO_ROOT}/engine/voice_alloc.cpp"
     "${REPO_ROOT}/engine/param_desc.cpp"

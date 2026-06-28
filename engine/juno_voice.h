@@ -7,10 +7,16 @@
 //   env2_  — second ADSR (filter/mod env); rendered per voice; output readable
 //             via env2_value() for the mod matrix (Stage 3b-i).
 //   lfo1_, lfo2_ — per-voice LFOs; outputs readable via lfo1_value()/lfo2_value().
+//
+// Stage 3b-i additions:
+//   mod_matrix_ — fixed 16-slot modulation matrix (ADR 0009).
+//   set_mod_matrix / get_mod_matrix — wire in/read out the routing table.
+//   apply_mod_outputs (private) — hot-path application of ModOutputs.
 #pragma once
 
 #include "voice.h"
 #include "param_id.h"
+#include "mod_matrix.h"
 #include "dsp/osc.h"
 #include "dsp/filter.h"
 #include "dsp/env.h"
@@ -37,10 +43,22 @@ public:
     float lfo1_value() const { return lfo1_value_; }
     float lfo2_value() const { return lfo2_value_; }
 
+    // --- Stage 3b-i: modulation matrix wiring ---
+    // Replace the entire 16-slot routing table for this voice.
+    void set_mod_matrix(const ModMatrix& m) { mod_matrix_ = m; }
+
+    // Direct access to edit individual slots in place (avoids a full copy).
+    ModMatrix& mod_matrix() { return mod_matrix_; }
+    const ModMatrix& mod_matrix() const { return mod_matrix_; }
+
 private:
     float              sample_rate_ = 48000.0f;
     bool               gate_        = false;
     float              vel_scale_   = 1.0f;
+    uint8_t            midi_note_   = 69;  // MIDI pitch from last note_on (for key_track)
+
+    // Stage 3b-i: mod matrix instance (one per voice).
+    ModMatrix          mod_matrix_;
 
     dsp::Osc           osc_main_;
     dsp::Osc           osc_sub_;

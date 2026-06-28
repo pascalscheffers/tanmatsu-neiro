@@ -36,6 +36,7 @@ set(HOST_SRCS
     # Stage 1c: allocator + JunoModel + chorus added; synth.cpp drives the pool.
     "${REPO_ROOT}/engine/synth.cpp"
     "${REPO_ROOT}/engine/juno_voice.cpp"
+    "${REPO_ROOT}/engine/mod_matrix.cpp"
     "${REPO_ROOT}/engine/juno_model.cpp"
     "${REPO_ROOT}/engine/voice_alloc.cpp"
     # Stage 2a: parameter table + store.
