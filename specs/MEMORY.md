@@ -303,3 +303,29 @@ First real AppFS bench run printed nothing. Two independent causes, both fixed:
 - **FTZ-off** enforced in CMakeLists (`-fno-fast-math`, no `-ffast-math`), matching ADR 0012.
 - `make test` ✅  `make host` ✅  `make build` ✅  membrane grep clean.
 - **Next:** Stage 1b — `dsp/` wrappers + `SynthModel`/`IVoice` + `JunoVoice`.
+
+## 2026-06-28 — Stage 1b: dsp/ wrappers + IVoice boundary + JunoVoice (COMPLETE)
+
+- **`dsp/` wrappers** (header-only, pure, no vendor edits): `osc.h` (Oscillator +
+  MIDI `set_note()`), `filter.h` (SVF + 1e-18f anti-denormal, ADR 0012), `env.h`
+  (Adsr + `reset()` via re-init to IDLE).
+- **Engine interfaces**: `engine/voice.h` (`NoteExpression` + `IVoice` ABC, ADR 0008);
+  `engine/synth_model.h` (SynthModel factory stub — 1c adds JunoModel).
+- **`JunoVoice`**: PolyBLEP saw + sub (freq/2, −1 oct) + white noise → mix → SVF
+  LP filter → ADSR VCA. `render()` adds into mono buffer, early-exits when IDLE.
+  10 params via `JunoParam` enum (all hardcoded defaults; Stage 2 lifts to table).
+  `is_active()` = gate || envelope running.
+- **`engine/synth.cpp`** replaces Stage 0 `synth.c`; holds one static `JunoVoice`,
+  triggers A4 on init so `make host-run` is audible. Stage 1c/1d wire allocator
+  and musical typing. `kMaxBlock=256` static mono buffer — no RT allocation.
+- **Build**: DaisySP `oscillator/svf/adsr.cpp` added to host + device targets;
+  `Source/Utility` on include path for DaisySP's flat `"dsp.h"` includes.
+- **Host tests** (`tests/host/test_voice.cpp`, 4 new tests): ADSR attack ramps from
+  zero; silent after release (release=0.05f; DaisySP ADSR RC time-constant means
+  default 0.3s needs ~61k samples to idle — use 0.05f in test); reset() silences
+  immediately; SVF LP attenuates Nyquist-rate signal more at 200 Hz than 10 kHz.
+- `make test` ✅ (7/7)  `make host` ✅  `make build` ✅  membrane grep clean.
+- App size: 0xe6550 ≈ 937 KB, 55% partition free (unchanged from 1a).
+- **IRAM_ATTR**: render chain not yet marked — deferred to 1c per runbook.
+- **Next:** Stage 1c — voice allocator (8-voice pool, `kNumVoices`) + master
+  chorus + `synth_render` → engine wiring; on-device cost measurement.
