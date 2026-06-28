@@ -37,6 +37,9 @@ idf_component_register(
 		"../engine/juno_voice.cpp"
 		"../engine/juno_model.cpp"
 		"../engine/voice_alloc.cpp"
+		# Stage 2a: parameter table + store.
+		"../engine/param_desc.cpp"
+		"../engine/param_store.cpp"
 		# DaisySP modules.
 		"${DAISYSP}/Source/Synthesis/oscillator.cpp"
 		"${DAISYSP}/Source/Filters/svf.cpp"

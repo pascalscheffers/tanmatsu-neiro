@@ -38,6 +38,9 @@ set(HOST_SRCS
     "${REPO_ROOT}/engine/juno_voice.cpp"
     "${REPO_ROOT}/engine/juno_model.cpp"
     "${REPO_ROOT}/engine/voice_alloc.cpp"
+    # Stage 2a: parameter table + store.
+    "${REPO_ROOT}/engine/param_desc.cpp"
+    "${REPO_ROOT}/engine/param_store.cpp"
     # DaisySP modules (header-only: whitenoise, dsp wrappers).
     "${DAISYSP}/Source/Synthesis/oscillator.cpp"
     "${DAISYSP}/Source/Filters/svf.cpp"

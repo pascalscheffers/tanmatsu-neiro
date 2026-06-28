@@ -16,6 +16,7 @@ add_executable(tanmatsu-tests
     test_voice.cpp
     test_alloc.cpp
     test_command_queue.cpp
+    test_param_store.cpp
     "${DAISYSP}/Source/Synthesis/oscillator.cpp"
     "${DAISYSP}/Source/Filters/svf.cpp"
     "${DAISYSP}/Source/Control/adsr.cpp"
@@ -23,6 +24,8 @@ add_executable(tanmatsu-tests
     "${REPO_ROOT}/engine/juno_voice.cpp"
     "${REPO_ROOT}/engine/juno_model.cpp"
     "${REPO_ROOT}/engine/voice_alloc.cpp"
+    "${REPO_ROOT}/engine/param_desc.cpp"
+    "${REPO_ROOT}/engine/param_store.cpp"
 )
 
 target_include_directories(tanmatsu-tests PRIVATE
