@@ -126,3 +126,25 @@ Newest at the bottom. One entry per stage/session. Lean — link to specs, don't
 - **Stage 0 code fixes applied + device build re-verified clean** (0xe4880 ≈ 936 KB, 55%
   free): `to_i16` now guards NaN/Inf→0 before the DAC; `s_audio_run` is `_Atomic`
   (cross-core flag). `platform/device/platform_device.c` only — membrane intact.
+
+## 2026-06-28 — Stage runbooks for Opus-plans/Sonnet-executes (ADR 0014)
+- New workflow to save tokens: **Opus authors source-pinned, sub-staged runbooks; Sonnet
+  executes them; 🛑 OPUS GATEs hard-stop and ask to switch back to Opus.** Ratified as
+  **ADR 0014**; protocol + gate marker format in `specs/stages/README.md`.
+- Wrote detailed runbooks for **Stages 0.5–3** under `specs/stages/`:
+  - **0.5 — on-device profiling** (NEW, inserted before Stage 1 now that hardware is here):
+    `make bench` synthetic-proxy harness + I2S deadline-margin ramp → measured cycles/block
+    budget; a `platform_cycles_*` seam; gate to ratify the budget + ADR 0003 polyphony.
+  - **1 — one voice (MVP)**, **2 — param model + UI**, **3 — modulation + full Juno**, each
+    with a gate table, sub-stage table, file/reuse targets, and acceptance criteria.
+- **DSP source pinned (Opus decision):** MVP voice → **DaisySP** (`electro-smith/DaisySP`,
+  MIT — pure float blocks: PolyBLEP osc, SVF/MoogLadder, ADSR, WhiteNoise, Chorus). MI
+  `plaits`/`stmlib` reserved for the Stage 7 wavetable/FM macro-osc. Dependency ledger
+  (spec 02) updated; record the exact DaisySP commit in this log when vendored (Stage 1a).
+- Edited specs 00/02/06 + `decisions/README.md` + `CLAUDE.md` to point at the runbooks.
+- **Next:** execute **Stage 0.5** on Sonnet (profiling harness), then return to Opus at the
+  CPU-budget gate before Stage 1.
+
+## Open Opus gates
+Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
+Opus clears the entry when the gate is resolved. _Currently: none open._

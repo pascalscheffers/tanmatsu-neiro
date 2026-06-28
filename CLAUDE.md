@@ -6,6 +6,10 @@ An analog-modeling (virtual-analog) / hybrid synthesizer for the **Tanmatsu** ba
 > Read this file, then `specs/00-overview.md` and `specs/MEMORY.md` at the start of
 > every session. The specs are the source of truth for *what* we're building; this
 > file is the source of truth for *how* we build it.
+>
+> **Executing a stage?** Stages 0.5–3 have Sonnet-runnable runbooks in `specs/stages/`.
+> Read `specs/stages/README.md` (the per-sub-stage loop + the 🛑 OPUS GATE escalation
+> protocol) and your stage's doc. Model-tier workflow: ADR 0014.
 
 ---
 

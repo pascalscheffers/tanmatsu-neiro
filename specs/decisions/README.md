@@ -19,3 +19,4 @@ decision, and the consequence. Supersede rather than rewrite history.
 | [0011](0011-optimize-device-host-adapts.md) | Optimize base code for the P4; the host simulator pays the conversion tax |
 | [0012](0012-denormals-no-hardware-ftz.md) | Denormals killed in software (P4 has no hardware FTZ); host tests run FTZ-off |
 | [0013](0013-flash-write-audio-placement.md) | Audio render path placed in IRAM so flash writes (presets/SD) don't glitch it |
+| [0014](0014-model-tier-workflow.md) | Opus plans (source-pinned runbooks); Sonnet executes; 🛑 gates hard-stop to escalate |

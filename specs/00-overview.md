@@ -28,6 +28,7 @@ MIDI keyboard or a DAW, tweakable on the badge's screen + keyboard.
 - `07-upstream-contributions.md` — what we fix upstream (PAX/badge-bsp) vs work around.
 - `08-embedded-practices.md` — on-target measurement, CI-without-hardware, golden tests, safety nets.
 - `decisions/` — ratified design decisions (ADR-style), one per file.
+- `stages/` — Opus-authored, Sonnet-executable stage runbooks (0.5–3) + execution protocol.
 - `notes/` — working notes (e.g. `naming.md`).
 - `MEMORY.md` — running progress log (read at session start).
 
@@ -40,10 +41,13 @@ MIDI keyboard or a DAW, tweakable on the badge's screen + keyboard.
   plays a sine and renders a PAX screen on host (verified live on the Mac) and device
   (compile-verified, 936 KB / 55% partition free); only `platform/{host,device}/` differs.
   See `MEMORY.md`.
-- **Next:** Stage 1 — one Juno voice (MVP).
+- **Workflow:** Stages 0.5–3 are written up as source-pinned runbooks in `stages/` for
+  **Sonnet** to execute, escalating to **Opus** at 🛑 gates (ADR 0014). DSP pinned to
+  **DaisySP** (MIT) for the MVP voice.
+- **Next:** Stage 0.5 — on-device profiling (real CPU budget), then Stage 1 (one Juno voice).
 
 ## Roadmap
 Full staged roadmap + feature matrix in `06-feature-scope-and-roadmap.md`. In brief:
-Stage 0 hello-audio + platform HAL → Stage 1 one-voice MVP → Stage 2 param model + UI →
+Stage 0 hello-audio + platform HAL → Stage 0.5 on-device profiling → Stage 1 one-voice MVP → Stage 2 param model + UI →
 Stage 3 modulation + full Juno → Stage 4 timing/arp/sequencer/FX → Stage 5 MIDI I/O →
 Stage 6 library/capture/polish → Stage 7+ second engine (proves the boundary).

@@ -124,9 +124,13 @@ path touches mid-write stalls or crashes it. So placement is load-bearing, not a
 | I2S / future DMA buffers | **internal, DMA-capable, word-aligned** | `MALLOC_CAP_DMA\|MALLOC_CAP_INTERNAL`; `esp_cache_msync` for coherence |
 
 ### Running memory budget (update each stage, alongside `make size`)
-| Stage | Flash (app) | Internal IRAM | Internal DRAM | PSRAM | Notes |
-|---|---|---|---|---|---|
-| 0 | 936 KB (55% free) | — | audio scratch (`s_left/right/interleaved`) | framebuffer | sine engine; no IRAM placement yet |
+The **cycles/block** column is seeded by Stage 0.5 profiling (`stages/stage-0.5-profiling.md`)
+and tracked per stage thereafter against the ratified per-voice budget.
+
+| Stage | Flash (app) | Internal IRAM | Internal DRAM | PSRAM | Cycles/block | Notes |
+|---|---|---|---|---|---|---|
+| 0 | 936 KB (55% free) | — | audio scratch (`s_left/right/interleaved`) | framebuffer | — | sine engine; no IRAM placement yet |
+| 0.5 | (bench build only) | — | — | — | _measured here_ | proxy benchmarks; deadline margin @ 64/48k |
 
 ## Polyphony — 8 voices + unison (ADR 0003)
 Per-voice cost dominates the budget. **8 voices** with optional **unison** (stack/detune
@@ -146,7 +150,8 @@ upward only after the first voice is profiled on hardware.
 | badge-bsp | ^0.9.9 | (verify) | board support |
 | pax-gfx | ^2.1.0 | MIT | UI (also built host-side via its non-ESP CMake path) |
 | tanmatsu-wifi | ^1.1.2 | (verify) | radio (optional; may drop) |
-| MI eurorack (plaits/stmlib) | (pin on vendor) | MIT | oscillator/DSP |
+| DaisySP (osc/svf/moogladder/adsr/noise/chorus) | (pin commit on vendor, Stage 1) | MIT | **primary MVP DSP** — pure float blocks (ADR 0014) |
+| MI eurorack (plaits/stmlib) | (pin on vendor, Stage 7) | MIT | hybrid macro-osc: wavetable/FM modes (later) |
 | miniaudio | 0.11.22 | MIT-0 / public-domain | **host-only** audio sink; vendored `platform/host/miniaudio.h` |
 | SDL2 | system (brew `sdl2`) | Zlib | **host-only** window/present/input; never shipped to device |
 

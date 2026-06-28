@@ -28,13 +28,19 @@ hook left in the pitch path), sample/rompler engine, on-device audio input (no h
 
 ## Staged roadmap
 Each stage: spec → (plan) → implement → verify (host + device, host-side DSP tests) →
-commit → memorize. 5–15 files each (CLAUDE.md).
+commit → memorize. 5–15 files each (CLAUDE.md). Stages 0.5–3 have detailed,
+Sonnet-executable **runbooks** in [`stages/`](stages/) (Opus-authored, with 🛑 escalation
+gates — ADR 0014); later stages are re-planned with Opus when reached.
 
 - **Stage 0 — Hello audio + the membrane.** `platform/` HAL (audio sink, present, input,
   storage stubs); host backend (SDL2+miniaudio) and device backend (I2S); `synth_render`
   plays a sine on both; PAX renders+presents on both. *Proves ADR 0007.*
+- **Stage 0.5 — On-device profiling & CPU budget.** A `make bench` harness times synthetic
+  DSP proxies on real P4 silicon and measures the I2S deadline margin at 64@48k → an
+  empirical cycles/block budget + max-voice envelope that sizes Stage 1. *Profile before
+  optimizing (CLAUDE.md); grounds ADR 0003.* Runbook: `stages/stage-0.5-profiling.md`.
 - **Stage 1 — One voice (MVP).** `SynthModel`/`IVoice` boundary (ADR 0008); Juno voice via
-  MI macro-osc + VA filter + ADSR; mode-agnostic 8-voice allocator; master chorus;
+  DaisySP macro-osc (VA) + VA filter + ADSR; mode-agnostic 8-voice allocator; master chorus;
   musical-typing; a few params on a minimal page. Host DSP tests (spectra/aliasing/env).
 - **Stage 2 — Parameter model + UI framework.** Param table + single write path + ring +
   smoothing (ADR-data); hybrid panel+pages UI; presets save/load + INIT + factory bank.
