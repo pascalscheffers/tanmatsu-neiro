@@ -193,10 +193,217 @@ void test_alloc_steal() {
     test_pass();
 }
 
+/* --- 6. Mono: only one voice sounds; last-note priority -------------------- */
+void test_alloc_mono_single_voice() {
+    test_begin("mono: only one voice gated at a time");
+
+    JunoModel  model;
+    VoiceAlloc alloc;
+    model.init(kSr);
+    alloc.init(&model);
+    alloc.set_play_mode(PlayMode::kMono);
+
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+
+    // First note.
+    alloc.note_on(60, 100, expr);
+    TEST_ASSERT(count_gated_slots(alloc.slots()) == 1, "mono: exactly one gated after note_on");
+
+    // Second note while first is held — only one voice should be gated.
+    alloc.note_on(64, 100, expr);
+    TEST_ASSERT(count_gated_slots(alloc.slots()) == 1,
+                "mono: still exactly one gated with two held notes");
+
+    // The sounding pitch should be the last-pressed note.
+    int gated_idx = -1;
+    for (int i = 0; i < kNumVoices; i++)
+        if (alloc.slots()[i].gate) { gated_idx = i; break; }
+    TEST_ASSERT(gated_idx >= 0, "mono: must find the gated slot");
+    TEST_ASSERT(alloc.slots()[gated_idx].pitch == 64, "mono: last note is pitch 64");
+
+    test_pass();
+}
+
+/* --- 7. Mono: last-note priority (steal-back on release) ------------------- */
+void test_alloc_mono_steal_back() {
+    test_begin("mono: steal-back to previous note on release");
+
+    JunoModel  model;
+    VoiceAlloc alloc;
+    model.init(kSr);
+    alloc.init(&model);
+    alloc.set_play_mode(PlayMode::kMono);
+
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+
+    // Press C4, then E4 (hold both).
+    alloc.note_on(60, 100, expr);
+    alloc.note_on(64, 100, expr);
+    // Release E4 — should steal back to C4.
+    alloc.note_off(64);
+
+    int gated_idx = -1;
+    for (int i = 0; i < kNumVoices; i++)
+        if (alloc.slots()[i].gate) { gated_idx = i; break; }
+
+    TEST_ASSERT(gated_idx >= 0, "mono steal-back: voice must still be gated after release");
+    TEST_ASSERT(alloc.slots()[gated_idx].pitch == 60,
+                "mono steal-back: sounding pitch reverts to C4");
+
+    test_pass();
+}
+
+/* --- 8. Mono: all notes released gates the voice off ----------------------- */
+void test_alloc_mono_all_off() {
+    test_begin("mono: all notes released = gate off");
+
+    JunoModel  model;
+    VoiceAlloc alloc;
+    model.init(kSr);
+    alloc.init(&model);
+    alloc.set_play_mode(PlayMode::kMono);
+
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+    alloc.note_on(60, 100, expr);
+    alloc.note_off(60);
+
+    TEST_ASSERT(count_gated_slots(alloc.slots()) == 0,
+                "mono: no gated voices after sole note released");
+    test_pass();
+}
+
+/* --- 9. Portamento: pitch ramps from old to new over glide time ------------ */
+void test_alloc_portamento() {
+    test_begin("portamento: glide offset starts non-zero and ramps toward zero");
+
+    JunoModel  model;
+    VoiceAlloc alloc;
+    model.init(kSr);
+    alloc.init(&model);
+    alloc.set_play_mode(PlayMode::kMono);
+
+    // 0.5 s portamento time.
+    const float kPortaTime = 0.5f;
+    alloc.set_portamento_time(kPortaTime);
+
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+
+    // First note (no previous → no glide).
+    alloc.note_on(60, 100, expr);
+    TEST_ASSERT(alloc.glide_offset() == 0.0f,
+                "portamento: first note has zero glide offset");
+
+    // Second note (E4 = semitone +4 from C4) while C4 is held.
+    alloc.note_on(64, 100, expr);
+    // Initial offset must be -4 semitones (E4 sounds like C4 initially).
+    TEST_ASSERT(alloc.glide_offset() < -0.5f,
+                "portamento: initial offset is negative (old pitch below new)");
+
+    // Advance glide halfway through portamento time.
+    const float kBlockTime = 0.001f;  // 1 ms blocks
+    const int   kHalfSteps = (int)(kPortaTime * 0.5f / kBlockTime);
+    for (int b = 0; b < kHalfSteps; b++) {
+        alloc.advance_glide(kBlockTime);
+    }
+    float mid_offset = alloc.glide_offset();
+    TEST_ASSERT(mid_offset < 0.0f && mid_offset > -4.0f,
+                "portamento: mid-glide offset is between 0 and initial");
+
+    // Advance through the full portamento time.
+    for (int b = 0; b < kHalfSteps + 10; b++) {
+        alloc.advance_glide(kBlockTime);
+    }
+    TEST_ASSERT(alloc.glide_offset() == 0.0f,
+                "portamento: offset reaches zero after portamento time");
+
+    test_pass();
+}
+
+/* --- 10. Legato vs. retrigger: poly path unaffected ----------------------- */
+void test_alloc_poly_unchanged() {
+    test_begin("play mode: poly path unchanged after mono use");
+
+    JunoModel  model;
+    VoiceAlloc alloc;
+    model.init(kSr);
+    alloc.init(&model);
+
+    // Start in mono, then switch to poly — verify poly path works normally.
+    alloc.set_play_mode(PlayMode::kMono);
+    alloc.set_play_mode(PlayMode::kPoly);
+
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+    for (int i = 0; i < kNumVoices; i++) {
+        alloc.note_on((uint8_t)(60 + i), 100, expr);
+    }
+
+    TEST_ASSERT(count_gated_slots(alloc.slots()) == kNumVoices,
+                "poly: all kNumVoices gated after poly mode restored");
+    test_pass();
+}
+
+/* --- 11. Legato: no retrigger when note overlaps held note --------------- */
+void test_alloc_legato_no_retrigger() {
+    test_begin("legato: overlapping notes do not retrigger if a note was held");
+
+    JunoModel  model;
+    VoiceAlloc alloc;
+    model.init(kSr);
+    alloc.init(&model);
+    alloc.set_play_mode(PlayMode::kLegato);
+
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+
+    // First note — this is a fresh attack (no prior held note → retrigger expected).
+    alloc.note_on(60, 100, expr);
+
+    // Render enough to leave attack phase.
+    float buf[64];
+    int gated_idx = -1;
+    for (int i = 0; i < kNumVoices; i++)
+        if (alloc.slots()[i].gate) { gated_idx = i; break; }
+    TEST_ASSERT(gated_idx >= 0, "legato: must have a gated slot");
+
+    for (int b = 0; b < 200; b++) {
+        memset(buf, 0, sizeof(buf));
+        alloc.slots()[gated_idx].voice->render(buf, 64);
+    }
+
+    // While first note is still held, press a second note (legato transition).
+    // The slot pitch should change (legato detection worked).
+    alloc.note_on(64, 100, expr);
+    TEST_ASSERT(alloc.slots()[gated_idx].pitch == 64,
+                "legato: slot pitch changes to new note on legato transition");
+    TEST_ASSERT(alloc.slots()[gated_idx].gate,
+                "legato: gate stays true during legato transition");
+
+    // Release the new note — should steal back to 60.
+    alloc.note_off(64);
+    TEST_ASSERT(alloc.slots()[gated_idx].pitch == 60,
+                "legato: steal-back to first note when second released");
+    TEST_ASSERT(alloc.slots()[gated_idx].gate,
+                "legato: gate stays true after steal-back (first key still held)");
+
+    // Release the first note — now gate should drop.
+    alloc.note_off(60);
+    TEST_ASSERT(!alloc.slots()[gated_idx].gate,
+                "legato: gate drops after all notes released");
+
+    test_pass();
+}
+
 void test_alloc_suite() {
     test_alloc_init();
     test_alloc_note_on();
     test_alloc_note_off();
     test_alloc_retrigger();
     test_alloc_steal();
+    // Stage 3d-i: play mode tests.
+    printf("--- VoiceAlloc play modes ---\n");
+    test_alloc_mono_single_voice();
+    test_alloc_mono_steal_back();
+    test_alloc_mono_all_off();
+    test_alloc_portamento();
+    test_alloc_poly_unchanged();
+    test_alloc_legato_no_retrigger();
 }

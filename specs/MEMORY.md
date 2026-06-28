@@ -264,6 +264,34 @@ restate. When this passes ~200 lines, rotate older entries into the archive.
 - `make test` ✅ (85/85) `make host` ✅ `make build` ✅. Flash: **968 KB / 2 MB (54% free)**, DIRAM: **149 KB** (unchanged from 3c-i).
 - **Next:** Stage 3d-i — play modes (mono/portamento/legato) in the allocator.
 
+## 2026-06-28 — Stage 3d-i: play modes (mono/portamento/legato) in the allocator (COMPLETE)
+
+- **Play modes added to `VoiceAlloc`:** `PlayMode::kPoly` (unchanged), `kMono` (mono+retrigger),
+  `kLegato` (mono+legato). Set via `set_play_mode()` / `set_portamento_time()` called each block
+  from `synth_render()`. `advance_glide(block_time_secs)` steps the portamento ramp.
+- **Priority rule (mono):** last-note priority with steal-back. Fixed 8-slot stack tracks held notes;
+  `note_off` pops the released note and re-gates the previous held note (if any).
+- **Legato rule:** `kLegato` skips envelope retrigger when a new note arrives while at least one
+  note was already held; clean attacks (no held note) retrigger normally. `kMono` always retriggers.
+- **Portamento:** `glide_offset_` semitones applied to voice via new `IVoice::set_pitch_offset()`.
+  Ramps from `old_effective_pitch − new_pitch` toward 0 at `|offset| / portamento_time_` semi/s.
+  Values < 0.001 s treated as zero (snap). Applies on both note-on and steal-back.
+- **New `IVoice::set_pitch_offset(float semitones)` method** (8th file: `engine/voice.h`).
+  `JunoVoice` stores `p_pitch_offset_`; added to `range_semi` in `render()` so it shifts the base
+  freq (and mod ramp). Inline in `juno_voice.h` — no new cpp code.
+- **Two new param ids** (AMP group, IDs < kMax=0x80=128, not per-voice):
+  `PLAY_MODE = 0x63` (stepped 0=poly/1=mono/2=legato), `PORTAMENTO_TIME = 0x64` (0–2 s, CURVE_LOG).
+  Placed in `GROUP_AMP` — the table-driven UI shows them on the AMP page automatically without
+  touching `ui/`.
+- **kJunoParamCount: 37 → 39.**
+- **Factory presets updated** (count 37 → 39): INIT/Pad = poly, no glide; Bass = mono+retrigger,
+  0.06 s glide; Lead = mono+legato, 0.08 s glide.
+- **6 new host tests** (91 total, all pass): mono single-voice, steal-back, all-off, portamento
+  ramp, poly restored after mono, legato transition + gate tracking.
+- `make test` ✅ (91/91) `make host` ✅ `make build` ✅ membrane clean. App: **0xece90 ≈ 952 KB / 2 MB (54% free)**.
+- Tracked open items unchanged: HPF DSP wiring; `kPresetDestPwm=0xFFFD` sentinel unification.
+- **Next:** Stage 3d-ii — unison + on-device CPU gate (🛑 needs Opus + Pascal's hardware).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

@@ -38,4 +38,9 @@ public:
     virtual bool is_active() const = 0;
     // Install the per-voice modulation routings (control thread; not audio-path).
     virtual void set_mod_matrix(const ModMatrix& mat) = 0;
+
+    // Set a per-voice pitch offset in semitones (used by the allocator for
+    // portamento glide). Called once per block from VoiceAlloc::advance_glide().
+    // Must be allocation-free and audio-safe.
+    virtual void set_pitch_offset(float semitones) = 0;
 };

@@ -51,11 +51,15 @@ public:
     ModMatrix& mod_matrix() { return mod_matrix_; }
     const ModMatrix& mod_matrix() const { return mod_matrix_; }
 
+    // IVoice: per-block pitch offset for portamento glide (semitones).
+    void set_pitch_offset(float semitones) override { p_pitch_offset_ = semitones; }
+
 private:
-    float              sample_rate_ = 48000.0f;
-    bool               gate_        = false;
-    float              vel_scale_   = 1.0f;
-    uint8_t            midi_note_   = 69;  // MIDI pitch from last note_on (for key_track)
+    float              sample_rate_    = 48000.0f;
+    bool               gate_           = false;
+    float              vel_scale_      = 1.0f;
+    uint8_t            midi_note_      = 69;  // MIDI pitch from last note_on (for key_track)
+    float              p_pitch_offset_ = 0.0f; // portamento glide offset (semitones, from alloc)
 
     // Stage 3b-i: mod matrix instance (one per voice).
     ModMatrix          mod_matrix_;

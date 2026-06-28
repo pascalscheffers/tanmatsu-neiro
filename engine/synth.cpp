@@ -33,12 +33,14 @@ static JunoModel        s_juno_model;
 static VoiceAlloc       s_alloc;
 static daisysp::Chorus  s_chorus;
 static ParamStore       s_params;
+static float            s_sample_rate = 48000.0f;
 
 // Note events cross from the control thread (core 0) to the audio thread
 // (core 1) via this ring. 64 slots >> the few events a UI frame can produce.
 static CommandQueue<64> s_cmds;
 
 void synth_init(uint32_t sample_rate, size_t block_size) {
+    s_sample_rate = (float)sample_rate;
     s_juno_model.init((float)sample_rate);
     s_alloc.init(&s_juno_model);
 
@@ -77,6 +79,18 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
 
     // 2. Advance the param store smoothers and update targets from the ring.
     s_params.drain();
+
+    // 2a. Stage 3d-i: update play mode and portamento from the param store,
+    //     then advance the glide ramp by one block. Done after drain() so we
+    //     use the freshest smoothed values. block_time is exact for this block.
+    {
+        int   play_mode = (int)s_params.get(ParamId::PLAY_MODE);
+        float porto     = s_params.get(ParamId::PORTAMENTO_TIME);
+        s_alloc.set_play_mode(static_cast<PlayMode>(play_mode));
+        s_alloc.set_portamento_time(porto);
+        float block_time = (float)frames / s_sample_rate;
+        s_alloc.advance_glide(block_time);
+    }
 
     // 3. Push smoothed per-voice params to all voices (block-rate update).
     //    Idle voices receive the push too — negligible cost (8 voices × 10

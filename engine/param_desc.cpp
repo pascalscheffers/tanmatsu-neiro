@@ -99,6 +99,17 @@ const ParamDesc JUNO_PARAM_TABLE[] = {
     {ParamId::MASTER_GAIN,   GROUP_AMP, "Master Gain",  "Gain",   0.0f,   2.0f,   0.500f, CURVE_LIN,   UNIT_NONE,"%.2f",   7,   10.0f,  FLAG_AUDIO_RATE},
     {ParamId::VCA_GATE_MODE, GROUP_AMP, "VCA Gate Mode","VcaGt",  0.0f,   1.0f,   0.0f,  CURVE_STEPPED,UNIT_NONE,"%.0f",  0xFF,  0.0f,  FLAG_PER_VOICE},
     {ParamId::VCA_LEVEL,     GROUP_AMP, "VCA Level",    "VcaLvl", 0.0f,   1.0f,   1.0f,  CURVE_LIN,   UNIT_PCT, "%.2f",  7,     5.0f,  FLAG_AUDIO_RATE|FLAG_PER_VOICE|FLAG_MOD_DEST},
+
+    // --- Stage 3d-i: play modes (global, not per-voice) ---
+    // PLAY_MODE: 0=poly (default), 1=mono+retrigger, 2=mono+legato.
+    //   Retrigger: new note while one is held restarts envelopes.
+    //   Legato: new note while one is held continues envelopes (no retrigger).
+    //   Portamento applies in both mono modes when PORTAMENTO_TIME > 0.
+    // PORTAMENTO_TIME: glide time (seconds). 0 = snap; max 2 s. Log taper so
+    //   the bottom half of the knob covers short glide times (< 0.5 s). Values
+    //   below 0.001 s are treated as zero (off) in VoiceAlloc.
+    {ParamId::PLAY_MODE,       GROUP_AMP, "Play Mode",    "Mode",   0.0f,  2.0f,  0.0f,  CURVE_STEPPED,UNIT_NONE,"%.0f",  0xFF,  0.0f,  0},
+    {ParamId::PORTAMENTO_TIME, GROUP_AMP, "Portamento",   "Porto",  0.0f,  2.0f,  0.0f,  CURVE_LOG,    UNIT_SEC, "%.3f",  5,     0.0f,  0},
 };
 // NOLINTEND
 

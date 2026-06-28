@@ -49,10 +49,14 @@ static constexpr uint16_t CHORUS_DEPTH = 0x51;
 static constexpr uint16_t CHORUS_DELAY = 0x52;
 static constexpr uint16_t CHORUS_MODE  = 0x53;  // 0=off, 1=chorus I, 2=chorus II
 
-// AMP group (0x60-0x6F) — VCA / output stage
-static constexpr uint16_t MASTER_GAIN    = 0x60;  // global output gain
-static constexpr uint16_t VCA_GATE_MODE  = 0x61;  // VCA driver: 0=env, 1=gate
-static constexpr uint16_t VCA_LEVEL      = 0x62;  // per-voice VCA output level
+// AMP group (0x60-0x6F) — VCA / output stage + play-mode globals
+static constexpr uint16_t MASTER_GAIN     = 0x60;  // global output gain
+static constexpr uint16_t VCA_GATE_MODE   = 0x61;  // VCA driver: 0=env, 1=gate
+static constexpr uint16_t VCA_LEVEL       = 0x62;  // per-voice VCA output level
+// Stage 3d-i: play modes — allocated globally (not per-voice), in the AMP group
+// so the table-driven UI shows them on the existing AMP page without touching ui/.
+static constexpr uint16_t PLAY_MODE       = 0x63;  // 0=poly, 1=mono+retrigger, 2=mono+legato
+static constexpr uint16_t PORTAMENTO_TIME = 0x64;  // glide time in seconds (0=off, 2=max)
 
 // LFO1 group (0x70-0x77) — first per-voice LFO
 static constexpr uint16_t LFO1_RATE  = 0x70;

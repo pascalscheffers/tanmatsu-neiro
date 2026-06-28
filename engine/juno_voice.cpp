@@ -259,7 +259,9 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
 
     // --- Audio-rate mod: compute start/end values for per-sample interpolation.
     // Pitch (semitone offset → freq). OSC_RANGE adds a fixed offset in semitones.
-    float range_semi    = p_osc_range_semi_;
+    // p_pitch_offset_ is a portamento glide semitone offset set by VoiceAlloc each
+    // block; it is already block-rate-smoothed by the allocator.
+    float range_semi    = p_osc_range_semi_ + p_pitch_offset_;
     float base_freq     = daisysp::mtof((float)midi_note_ + range_semi);
     float mod_freq_end  = daisysp::mtof((float)midi_note_ + range_semi + mout.pitch_semi);
 
