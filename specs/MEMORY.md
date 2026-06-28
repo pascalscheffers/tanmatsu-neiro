@@ -311,6 +311,34 @@ Newest at the bottom. One entry per stage/session. Lean — link to specs, don't
   App: 0xe74c0 ≈ 947 KB, 55% free (unchanged — param code dead-stripped until 2b wires it).
 - **Next:** Stage 2b — route Stage 1's hardcoded voice params through the table.
 
+## 2026-06-28 — Stage 2b: voice params routed through the param store (COMPLETE)
+
+- **`JunoParam` internal enum removed.** `JunoVoice::set_param(int id, value)` now
+  switches on `ParamId::*` values (uint16_t constants) — one stable ID per knob for
+  UI, MIDI, mod matrix, and presets. `juno_voice.h` includes `param_id.h` directly.
+- **`synth_render` wired to `ParamStore`.** Flow per block:
+  1. Drain note commands (unchanged)
+  2. `s_params.drain()` — advance smoothers, apply any pending updates
+  3. Push all 10 per-voice params to all 8 voices via `set_param()` (80 calls/block,
+     negligible given 95% CPU headroom)
+  4. Update chorus (rate/depth/delay) from the store
+  5. Sum active voices → chorus → × `MASTER_GAIN` (default 0.5 = −6 dB) → output
+- **`synth_init` signature updated** to `(uint32_t sample_rate, size_t block_size)`;
+  `block_size` seeds the smoothing coefficients in the store (1.333 ms / block at 48k/64).
+- **Master gain wired.** Linear ×0.5 default. Soft-clip vs linear headroom is a
+  🛑 sonic gate — deferred deliberately; no saturator added.
+- **`engine_set_param(id, value)` / `engine_set_param_norm(id, norm)`** extern-C API
+  added to `synth.h` — control thread → param ring → audio thread. Stage 2c UI uses these.
+- **`param_store.cpp::drain()`** marked `IRAM_ATTR` (ADR 0013) — it's called from
+  the IRAM render path so it must survive a flash write.
+- **Tests updated:** `test_alloc.cpp` + `test_voice.cpp` updated from `JunoParam` enum
+  to `ParamId::*`. Two new Stage 2b tests: zero-levels → silence; low cutoff attenuates
+  output vs high cutoff. 38/38 host tests pass.
+- `make test` ✅ `make host` ✅ `make build` ✅ membrane clean.
+  App: 0xe7c30 ≈ 950 KB, 55% partition free (+3 KB from 2a).
+- **Next:** Stage 2c — UI pages rendered from the param table (OSC/FILTER/ENV/FX/AMP),
+  row select, nudge, Shift=coarse, status strip. Then 2d (preset save/load).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
