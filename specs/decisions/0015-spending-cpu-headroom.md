@@ -44,6 +44,14 @@ is a Juno-character instrument: fatter beats more-notes. Priority order:
 No single feature is pre-authorized to consume the budget. Each lands against a measured
 block cost and the 70% period ceiling, tracked in the spec 02 cycles/block budget row.
 
+**Confirmed sonic balance (Pascal, 2026-06-28): fatter sound, fewer voices.** This is the
+ratified default, not just a starting lean — spend goes to per-voice/FX richness first. The
+balance is not a one-way door: voice-count-vs-richness **variants are a config concern, not a
+rewrite** — a compile-time knob now (the single `kNumVoices` constant, ADR 0003), and a
+candidate **runtime** setting later (e.g. a "16 thin / 8 fat" performance mode), once the
+real-voice profile bounds what each variant costs. Design the voice pool and allocator so the
+count is read from config, not baked — which the ADR 0003 guardrails already require.
+
 ## Waveform animation — feasible, but profile the *video* path, not the audio path
 The likely cost of an oscilloscope/waveform view is **not** audio-thread cycles (copying a
 ring of samples out is trivial and lock-free). It is on the **UI core**: PAX draw time for a

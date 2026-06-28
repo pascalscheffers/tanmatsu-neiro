@@ -36,7 +36,9 @@ in. The honest reason to **hold at 8** is now **sonic, not CPU scarcity**:
   that allocation is its own decision (**ADR 0015**).
 
 Guardrails so the choice stays reversible (Stage 1 code hygiene, not architecture):
-one `kNumVoices` constant — never a literal `8`; voice pool stays genuinely state-only
+voice count is read from **one config-sourced `kNumVoices`** — never a literal `8`
+(compile-time knob now, a candidate runtime "fat/thin" mode later, ADR 0015); voice pool
+stays genuinely state-only
 (shared tables in PSRAM, no per-voice copies); allocator O(n) in voice count; **re-profile
 with the real DaisySP voice before banking any higher number** — the proxy omits ladder
 `tanh`, per-sample smoothing, multi-osc unison, and FX.
