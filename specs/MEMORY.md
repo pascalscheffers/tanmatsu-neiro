@@ -84,3 +84,26 @@ Newest at the bottom. One entry per stage/session. Lean — link to specs, don't
     ideal first upstream PR (author = robotman2412).
 - **Next:** Stage 1 — the SynthModel/IVoice boundary (ADR 0008) + Juno voice (MI macro-osc
   + VA filter + ADSR), 8-voice allocator, master chorus, musical typing, host DSP tests.
+
+## 2026-06-28 — Embedded-practices research → ADRs 0012/0013 + spec 08
+- Researched embedded/hardware-team practices vs the general-purpose-machine assumptions
+  baked into the early specs. Two findings high-impact enough to ratify; rest = workflow.
+- **ADR 0012 — no hardware FTZ on the P4.** RISC-V `RV32F` has no flush-to-zero bit (x86
+  host *and* the ARM/Daisy port of MI code do). → denormal suppression is **mandatory in
+  software** in every filter/feedback block; host offline-render tests run **FTZ-off** to
+  reproduce device behavior (corollary of ADR 0011). Fixed CLAUDE.md RT rule #7 (was
+  "flush-to-zero where available" — false on this chip). Audit MI stmlib guards on vendor.
+- **ADR 0013 — flash writes stall the audio path.** A flash write/erase disables the flash
+  cache on the P4; the render path lives in flash today, so a Stage 2 preset save (or SD
+  WAV/SMF later) would glitch/crash audio. Decision: place the render chain in **IRAM**
+  (`IRAM_ATTR`), its tables in DRAM/PSRAM (never flash `.rodata`); PSRAM stays reachable
+  during a flash write so shared wavetables are safe. Rejected auto-suspend (unsuitable for
+  real-time). `IRAM_ATTR` annotations land with Stage 1 DSP. Spec 02 now carries a memory-
+  **placement table** + a running IRAM/DRAM/PSRAM **budget** (Stage 0 row seeded).
+- **Spec 08 (new) — embedded practices**, hobby-sized: on-target audio stats (cycle %/
+  underruns/stack HWM, land Stage 1), CI-without-hardware (host+device build, format, host
+  DSP tests), golden-file render regression tests (FTZ-off), coredump+WDT+stack-overflow
+  safety nets, `dependencies.lock`. The big wins (pure core + dual build) are already done.
+- **Stage 0 code fixes applied + device build re-verified clean** (0xe4880 ≈ 936 KB, 55%
+  free): `to_i16` now guards NaN/Inf→0 before the DAC; `s_audio_run` is `_Atomic`
+  (cross-core flag). `platform/device/platform_device.c` only — membrane intact.

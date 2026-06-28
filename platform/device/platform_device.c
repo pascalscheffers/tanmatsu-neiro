@@ -4,6 +4,8 @@
 // BSP owns the display and input; we run a pinned high-priority task that pulls
 // stereo float from the engine and writes int16 to the I2S DAC. Nothing above
 // the membrane sees any of these headers — they live only here.
+#include <math.h>
+#include <stdatomic.h>
 #include <string.h>
 #include "bsp/audio.h"
 #include "bsp/device.h"
@@ -70,7 +72,7 @@ static QueueHandle_t s_input_queue = NULL;
 // ---------------------------------------------------------------------------
 static i2s_chan_handle_t        s_i2s         = NULL;
 static TaskHandle_t             s_audio_task  = NULL;
-static volatile bool            s_audio_run   = false;
+static _Atomic bool             s_audio_run   = false;
 static platform_audio_render_fn s_render      = NULL;
 static void*                    s_render_user = NULL;
 static size_t                   s_block       = 0;
@@ -80,6 +82,9 @@ static float   s_right[MAX_BLOCK];
 static int16_t s_interleaved[MAX_BLOCK * 2];
 
 static inline int16_t to_i16(float v) {
+    // A single NaN/Inf escaping upstream DSP must never reach the DAC (a loud
+    // pop, or garbage from the cast). Fail safe in the audio path (CLAUDE.md).
+    if (!isfinite(v)) v = 0.0f;
     if (v > 1.0f) v = 1.0f;
     if (v < -1.0f) v = -1.0f;
     return (int16_t)(v * 32767.0f);
@@ -88,7 +93,7 @@ static inline int16_t to_i16(float v) {
 static void audio_task(void* arg) {
     (void)arg;
     const size_t n = s_block;
-    while (s_audio_run) {
+    while (atomic_load(&s_audio_run)) {
         s_render(s_left, s_right, n, s_render_user);
         for (size_t i = 0; i < n; i++) {
             s_interleaved[i * 2 + 0] = to_i16(s_left[i]);
@@ -176,7 +181,7 @@ bool platform_audio_start(const platform_audio_config_t* cfg, platform_audio_ren
     s_render      = render;
     s_render_user = user;
     s_block       = cfg->block_size;
-    s_audio_run   = true;
+    atomic_store(&s_audio_run, true);
 
     // Pin to the app core (1), leaving core 0 for UI/MIDI/SD. High priority so
     // the DMA queue never starves.
@@ -184,14 +189,14 @@ bool platform_audio_start(const platform_audio_config_t* cfg, platform_audio_ren
         xTaskCreatePinnedToCore(audio_task, "audio", 4096, NULL, configMAX_PRIORITIES - 2, &s_audio_task, 1);
     if (ok != pdPASS) {
         ESP_LOGE(TAG, "audio task create failed");
-        s_audio_run = false;
+        atomic_store(&s_audio_run, false);
         return false;
     }
     return true;
 }
 
 void platform_audio_stop(void) {
-    s_audio_run = false;
+    atomic_store(&s_audio_run, false);
     // The task deletes itself once it observes the flag; give it a moment.
     vTaskDelay(pdMS_TO_TICKS(10));
     s_audio_task = NULL;

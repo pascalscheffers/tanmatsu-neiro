@@ -104,11 +104,29 @@ A single declarative table defines every tweakable once:
 - **Block size:** start at **64 samples @ 48 kHz** (~1.33 ms latency/block). Tune later.
 - **Voice pool:** fixed, preallocated. Voice = state only; **wavetables are shared
   read-only** (one copy in PSRAM, every voice indexes it).
-- **Placement:** per-voice state + working buffers in **internal SRAM**; wavetable/sample
-  banks + UI framebuffers in **PSRAM**.
 - **Cores:** audio render pinned to one core; UI/MIDI/SD on the other.
 - **No malloc/log/block in the audio path** (see CLAUDE.md Real-Time Audio Rules).
-- Track `make size` after every stage; keep a running RAM/flash budget here.
+- **Denormals:** no hardware FTZ on the P4 — suppress in software in every feedback block
+  (ADR 0012).
+- Track `make size` after every stage; keep a running RAM/flash budget below.
+
+### Memory placement (ADR 0013 — survives a flash-cache-disable)
+A flash write/erase disables the flash cache on the P4; anything in flash that the audio
+path touches mid-write stalls or crashes it. So placement is load-bearing, not advisory:
+
+| What | Where | Why |
+|---|---|---|
+| Audio render code (render chain) | **internal IRAM** (`IRAM_ATTR`) | executes through a flash cache-disable (preset save, SD I/O) |
+| Constant tables the render path reads | **DRAM or PSRAM**, never flash `.rodata` | a cache-disable must not strand them |
+| Per-voice state + working buffers | **internal DRAM** | hot, touched every block; fast, no cache risk |
+| Shared wavetables / samples | **PSRAM, read-only** | bulk; PSRAM stays reachable during a *flash* write |
+| UI framebuffers | **PSRAM** | large, UI-core cadence |
+| I2S / future DMA buffers | **internal, DMA-capable, word-aligned** | `MALLOC_CAP_DMA\|MALLOC_CAP_INTERNAL`; `esp_cache_msync` for coherence |
+
+### Running memory budget (update each stage, alongside `make size`)
+| Stage | Flash (app) | Internal IRAM | Internal DRAM | PSRAM | Notes |
+|---|---|---|---|---|---|
+| 0 | 936 KB (55% free) | — | audio scratch (`s_left/right/interleaved`) | framebuffer | sine engine; no IRAM placement yet |
 
 ## Polyphony — 8 voices + unison (ADR 0003)
 Per-voice cost dominates the budget. **8 voices** with optional **unison** (stack/detune

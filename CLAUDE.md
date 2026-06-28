@@ -159,8 +159,11 @@ it and you get clicks. These rules are not negotiable in the audio path:
 6. **Profile before optimizing.** Measure the actual block-time cost (cycle counter)
    before rewriting anything for speed. Intuition about hot paths is usually wrong.
    Vectorize / use lookup tables only *after* a profile pins the cost.
-7. **Denormals & NaNs kill.** Flush-to-zero where available; sanitize feedback paths
-   (filters, delays) with tiny DC offsets or explicit clamps.
+7. **Denormals & NaNs kill — and the P4 has no hardware flush-to-zero.** RISC-V `RV32F`
+   has no FTZ/DAZ bit, so denormal suppression is **mandatory in software**, not "where
+   available": sanitize every filter/feedback path (filters, delays, reverb) with a tiny
+   DC offset / `+1e-20f` or explicit clamps, and sanitize NaN/Inf before output. Host DSP
+   tests run with FTZ *disabled* to match the device. See ADR 0012.
 8. **Optimize for the P4; the simulator adapts.** When a representation (buffer/pixel
    format, layout, alignment, endianness, fixed vs float) favors one side, the shared code
    uses the P4-optimal form and `platform/host/` does any conversion. The device never

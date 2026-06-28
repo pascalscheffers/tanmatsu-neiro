@@ -25,6 +25,8 @@ MIDI keyboard or a DAW, tweakable on the badge's screen + keyboard.
 - `04-platform-and-simulator.md` — the host/device platform HAL (5 seams) and host stack.
 - `05-data-model.md` — parameter table, patches/presets, pattern/sequence model (dedup).
 - `06-feature-scope-and-roadmap.md` — MVP/v1/later feature matrix + staged roadmap.
+- `07-upstream-contributions.md` — what we fix upstream (PAX/badge-bsp) vs work around.
+- `08-embedded-practices.md` — on-target measurement, CI-without-hardware, golden tests, safety nets.
 - `decisions/` — ratified design decisions (ADR-style), one per file.
 - `notes/` — working notes (e.g. `naming.md`).
 - `MEMORY.md` — running progress log (read at session start).
