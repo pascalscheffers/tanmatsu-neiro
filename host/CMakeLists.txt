@@ -21,11 +21,8 @@ add_subdirectory(
     "${REPO_ROOT}/managed_components/robotman2412__pax-gfx"
     "${CMAKE_CURRENT_BINARY_DIR}/pax-gfx"
     EXCLUDE_FROM_ALL)
-
-# Darwin has no <endian.h>; feed PAX a shim so the vendored sources build as-is.
-if(APPLE)
-    target_include_directories(pax_gfx PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/compat")
-endif()
+# PAX's macOS/BSD host portability comes from upstream-patches/pax-graphics/
+# (applied by tools/apply-upstream-patches.sh, run via `make patches`/`make host`).
 
 # --- SDL2 (dev-host dependency; never shipped to the device) ---
 find_package(PkgConfig REQUIRED)

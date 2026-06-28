@@ -85,6 +85,25 @@ Newest at the bottom. One entry per stage/session. Lean — link to specs, don't
 - **Next:** Stage 1 — the SynthModel/IVoice boundary (ADR 0008) + Juno voice (MI macro-osc
   + VA filter + ADSR), 8-voice allocator, master chorus, musical typing, host DSP tests.
 
+## 2026-06-28 — Upstream contributions as tracked patches (new standard practice)
+- New practice (CLAUDE.md + spec 07 + `upstream-patches/README.md`): dependency fixes live
+  as **documented patch files in git** under `upstream-patches/<component>/`, re-applied to
+  gitignored `managed_components/` by `tools/apply-upstream-patches.sh` (`make patches`;
+  auto-run by `make host`/`make build`; idempotent). Each patch header explains the why +
+  upstream target, so the file *is* the future PR; others can iterate once pushed.
+- First patch: `upstream-patches/pax-graphics/0001-macos-bsd-host-portable-includes.patch` —
+  the real PAX host fix (`<malloc.h>`→`<stdlib.h>`; Apple `<machine/endian.h>` via `#if`).
+  **Replaces** the Stage-0 compat shims (`host/compat/` deleted; host CMake compat include
+  removed). Build-verified host + device.
+- IDF component-manager gotcha (cost an hour): do **not** delete a patched component's
+  `.component_hash` — the default (non-strict) integrity check compares the *lock* hash to
+  that file's stored value, not to file contents, so a patched component with its original
+  hash file passes and is never reverted. Deleting it makes the check *fatal*
+  (`InvalidComponentHashError`). Escape hatch if ever needed: env
+  `IDF_COMPONENT_OVERWRITE_MANAGED_COMPONENTS` / `STRICT_CHECKSUM` (default off).
+- macOS bash is 3.2 → no associative arrays; the applier uses a `case` map. `git`/`patch`
+  word-splitting: the Bash tool shell is **zsh** (no unquoted-var splitting — use arrays).
+
 ## 2026-06-28 — Embedded-practices research → ADRs 0012/0013 + spec 08
 - Researched embedded/hardware-team practices vs the general-purpose-machine assumptions
   baked into the early specs. Two findings high-impact enough to ratify; rest = workflow.

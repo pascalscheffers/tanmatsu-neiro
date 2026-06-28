@@ -137,6 +137,17 @@ default is **fix it upstream and flag Pascal** — not a silent local workaround
 before claiming "slow"; discuss big/API-shaping changes with the author first. Policy,
 targets, and the live candidate list: `specs/07-upstream-contributions.md`.
 
+**Collect upstream fixes as tracked patches.** A fix to a dependency lives as a documented
+patch under `upstream-patches/<component>/NNNN-*.patch`, **committed to git** — not as an
+ad-hoc local shim. The dependency sources are in gitignored `managed_components/`, so the
+patch is re-applied to the build tree by `tools/apply-upstream-patches.sh` (run by
+`make patches`, and automatically by `make host` / `make build`; idempotent). Each patch's
+header explains *why it exists* and names its upstream target, so the file **is** the future
+PR — and others can iterate once we push. Prefer this over a workaround in our own code: it
+keeps the fix build-verified and one `git am` from a PR. Log it in
+`specs/07-upstream-contributions.md` too; delete the patch when it merges. See
+`upstream-patches/README.md`.
+
 ---
 
 ## Real-Time Audio Rules

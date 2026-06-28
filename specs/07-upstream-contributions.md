@@ -30,6 +30,18 @@ attached to.
 **Never silently vendor-fork** a maintained dependency. If we must carry a local patch
 temporarily, track it (what, why, upstream PR link) so it stays tractable and gets retired.
 
+## How we carry patches (the mechanism)
+Local fixes are **tracked patch files**, not ad-hoc shims, so they're versioned, reviewable,
+and PR-ready (others can iterate once we push to GitHub):
+
+- Patches live in `upstream-patches/<component>/NNNN-*.patch`, each with a prose header
+  explaining *why it exists* + the upstream target — the file **is** the future PR.
+- Dependency sources are in gitignored `managed_components/`; `tools/apply-upstream-patches.sh`
+  (via `make patches`, and auto-run by `make host` / `make build`) re-applies them
+  idempotently. `.component_hash` is left intact so the IDF component manager doesn't revert.
+- Submit upstream with `git am` into a clone of the dep; **delete the patch on merge**.
+- Full details: `upstream-patches/README.md`.
+
 ## Contribution targets
 | Project | Repo / owner | What it gives us |
 |---|---|---|
@@ -53,11 +65,12 @@ Tiered by when it bites. Nothing here is committed-to yet — these are *needs t
      Darwin (use `<stdlib.h>` / `<machine/endian.h>`).
   2. The **gui** sources (`gui/src/elem/*.c`, `pax_gui.c`) have *unguarded* `esp_*` includes,
      so the `pax_gui` target won't compile off-ESP (we `EXCLUDE_FROM_ALL` it for now).
-  Local workaround in place: Apple-only compat shims `host/compat/{endian.h,malloc.h}` added
-  to PAX's include path (marked `TODO(upstream)`); gui excluded. No software-present fallback
-  needed — full PAX renders on host. **Ideal first upstream PR** (small, author is family):
-  swap the two glibc headers for portable ones and guard the gui esp includes. Surface to
-  Pascal calmly; retire the shims when it lands.
+  **Patch landed locally → `upstream-patches/pax-graphics/0001-macos-bsd-host-portable-includes.patch`**
+  (swaps `<malloc.h>`→`<stdlib.h>`, selects `<machine/endian.h>` on Apple via `#if`/`#else`;
+  ESP/Linux unchanged). Build-verified on host + device. The earlier compat-shim workaround
+  was removed in favor of the patch. **Ready to PR** to `robotman2412/pax-graphics` — surface
+  to Pascal; retire the patch on merge. *Still open:* the gui esp-include guards (we
+  `EXCLUDE_FROM_ALL` gui for now; not needed until we use PAX gui) — separate patch later.
 - **[soon] `bsp_audio` ergonomics — clarified (Stage 0).** Correction: `bsp_audio_set_rate`
   does **not** tear down/recreate — it calls `i2s_channel_reconfig_std_clock`, which requires
   the channel **disabled** first (the BSP enables it at init). So changing rate means

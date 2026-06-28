@@ -1,0 +1,92 @@
+Subject: [PATCH] pax: build on macOS/BSD hosts via portable malloc/endian includes
+
+PAX core does not compile on macOS/BSD because five sources pull glibc-only
+system headers:
+
+    core/src/pax_gfx.c                        #include <malloc.h>
+    core/src/pax_shapes.c                     #include <malloc.h>
+    core/src/pax_setters.c                    #include <endian.h>
+    core/src/renderer/pax_renderer_soft.c     #include "endian.h"
+    core/src/renderer/pax_renderer_softasync.c#include "endian.h"
+
+macOS/BSD have no <malloc.h> -- malloc/free/realloc are declared in <stdlib.h>,
+which is where the C standard puts them anyway -- and no <endian.h>; the
+BYTE_ORDER / LITTLE_ENDIAN macros these files use live in <machine/endian.h>.
+
+Fix: include <stdlib.h> for the allocator, and select the endian header per
+platform. ESP-IDF and Linux keep their existing <endian.h> via the #else branch,
+so this is a no-op on the device and on Linux CI.
+
+WHY WE CARRY THIS: tanmatsu-synth is developed host-first (its UI/engine compile
+on a Mac as well as the ESP32-P4; see specs/decisions/0007). PAX is the UI layer
+on both, so it must build on the host. This patch is applied over the pinned PAX
+managed component at build time (tools/apply-upstream-patches.sh) and is intended
+for upstream submission to robotman2412/pax-graphics. Retire it once merged.
+See specs/07-upstream-contributions.md.
+---
+--- a/core/src/pax_gfx.c
++++ b/core/src/pax_gfx.c
+@@ -3,7 +3,7 @@
+ 
+ #include "pax_internal.h"
+ 
+-#include <malloc.h>
++#include <stdlib.h>
+ #include <string.h>
+ 
+ 
+--- a/core/src/pax_shapes.c
++++ b/core/src/pax_shapes.c
+@@ -6,7 +6,7 @@
+ #include "pax_internal.h"
+ 
+ #include <assert.h>
+-#include <malloc.h>
++#include <stdlib.h>
+ #include <string.h>
+ 
+ static char const *TAG = "pax-shapes";
+--- a/core/src/pax_setters.c
++++ b/core/src/pax_setters.c
+@@ -4,7 +4,11 @@
+ #include "pax_internal.h"
+ #include "pax_shaders.h"
+ 
++#if defined(__APPLE__)
++#include <machine/endian.h>
++#else
+ #include <endian.h>
++#endif
+ 
+ static inline void __attribute__((always_inline))
+ getter_setter_bounds_check(pax_buf_t const *buf, int index, int length) {
+--- a/core/src/renderer/pax_renderer_soft.c
++++ b/core/src/renderer/pax_renderer_soft.c
+@@ -3,7 +3,11 @@
+ 
+ #include "renderer/pax_renderer_soft.h"
+ 
+-#include "endian.h"
++#if defined(__APPLE__)
++#include <machine/endian.h>
++#else
++#include <endian.h>
++#endif
+ #include "helpers/pax_drawing_helpers.h"
+ #include "pax_internal.h"
+ #include "pax_orientation.h"
+--- a/core/src/renderer/pax_renderer_softasync.c
++++ b/core/src/renderer/pax_renderer_softasync.c
+@@ -3,7 +3,11 @@
+ 
+ #include "renderer/pax_renderer_softasync.h"
+ 
+-#include "endian.h"
++#if defined(__APPLE__)
++#include <machine/endian.h>
++#else
++#include <endian.h>
++#endif
+ #include "helpers/pax_drawing_helpers.h"
+ #include "pax_types.h"
+ #include "ptq.h"

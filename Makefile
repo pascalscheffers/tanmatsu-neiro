@@ -139,8 +139,15 @@ checkbuildenv:
 # Building
 
 .PHONY: build
-build: icons checkbuildenv submodules
+build: icons checkbuildenv submodules patches
 	source "$(IDF_PATH)/export.sh" >/dev/null && idf.py $(IDF_PARAMS)
+
+# Upstream patches — fixes to dependencies (PAX, BSP, …) tracked in
+# upstream-patches/ and re-applied to the gitignored managed_components/ tree.
+# Idempotent; safe to run before every build. See specs/07-upstream-contributions.md.
+.PHONY: patches
+patches:
+	./tools/apply-upstream-patches.sh
 
 # Host (desktop simulator) build — same upper layers, SDL2 + miniaudio backend.
 # See host/CMakeLists.txt; configures into build-host/.
@@ -148,7 +155,7 @@ build: icons checkbuildenv submodules
 HOST_BUILD ?= build-host
 
 .PHONY: host
-host:
+host: patches
 	cmake -S host -B $(HOST_BUILD)
 	cmake --build $(HOST_BUILD) -j
 
