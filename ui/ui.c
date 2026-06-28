@@ -46,5 +46,5 @@ void ui_draw(pax_buf_t* fb, uint64_t millis, int active_voices, int octave) {
     snprintf(buf, sizeof(buf), "Oct %d", octave);
     pax_draw_text(fb, COL_DIM, pax_font_sky_mono, 20, 12, h - 48.0f, buf);
     pax_draw_text(fb, COL_DIM, pax_font_sky_mono, 16, 12, h - 24.0f,
-                  "a-; = notes   z/x = oct down/up");
+                  "a-; = notes   z/x = oct down/up   ESC = exit");
 }

@@ -270,13 +270,18 @@ bool platform_poll_event(platform_event_t* out) {
     if (ev.type == INPUT_EVENT_TYPE_SCANCODE) {
         bool                 released = (ev.args_scancode.scancode & BSP_INPUT_SCANCODE_RELEASE_MODIFIER) != 0;
         bsp_input_scancode_t base = (bsp_input_scancode_t)(ev.args_scancode.scancode & ~BSP_INPUT_SCANCODE_RELEASE_MODIFIER);
-        int                  ascii = scancode_to_ascii(base);
-        if (ascii == 0) {
-            out->type = PLATFORM_EV_NONE;
+        if (base == BSP_INPUT_SCANCODE_ESC && !released) {
+            // ESC quits to the launcher — symmetric with the host (SDL ESC).
+            out->type = PLATFORM_EV_QUIT;
         } else {
-            out->type    = PLATFORM_EV_KEY;
-            out->key     = ascii;
-            out->pressed = !released;
+            int ascii = scancode_to_ascii(base);
+            if (ascii == 0) {
+                out->type = PLATFORM_EV_NONE;
+            } else {
+                out->type    = PLATFORM_EV_KEY;
+                out->key     = ascii;
+                out->pressed = !released;
+            }
         }
     } else {
         out->type = PLATFORM_EV_NONE;

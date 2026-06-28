@@ -260,6 +260,16 @@ Newest at the bottom. One entry per stage/session. Lean — link to specs, don't
   `make host` ✅ `make build` ✅ (0xe7460 ≈ 947 KB, 55% free). On-device confirm
   pending Pascal.
 
+## 2026-06-28 — Feat: ESC exits synth app to launcher
+
+- **ESC quits to the launcher.** Host already mapped SDL ESC + window-close →
+  `PLATFORM_EV_QUIT`; device now maps the ESC scancode the same way
+  (`platform_device.c`). `app_run` calls `platform_exit_to_launcher()` after the
+  loop (host: `exit(0)`; device: `bsp_device_restart_to_launcher`) — without it
+  the device app sat idle after the loop instead of returning home. UI hint line
+  now reads "… ESC = exit". Bench path unaffected (returns before the new call).
+- `make host` ✅ `make build` ✅ (0xe74c0 ≈ 947 KB, 55% free).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

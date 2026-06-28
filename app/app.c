@@ -106,4 +106,8 @@ void app_run(void) {
     }
 
     platform_audio_stop();
+    // ESC / window-close ends the loop; hand control back to the launcher (on
+    // host this just exits the process). Without this the device app would sit
+    // idle after the loop instead of returning home.
+    platform_exit_to_launcher();
 }
