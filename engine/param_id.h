@@ -34,10 +34,27 @@ static constexpr uint16_t CHORUS_RATE  = 0x50;
 static constexpr uint16_t CHORUS_DEPTH = 0x51;
 static constexpr uint16_t CHORUS_DELAY = 0x52;
 
+// ENV2 group (0x40-0x4F) — filter/mod ADSR (second envelope)
+static constexpr uint16_t ENV2_ATTACK  = 0x40;
+static constexpr uint16_t ENV2_DECAY   = 0x41;
+static constexpr uint16_t ENV2_SUSTAIN = 0x42;
+static constexpr uint16_t ENV2_RELEASE = 0x43;
+
 // AMP group (0x60-0x6F) — output stage
 static constexpr uint16_t MASTER_GAIN = 0x60;
 
-// kMax: all Juno IDs are < this. Increase if the namespace grows beyond 0x7F.
+// LFO1 group (0x70-0x77) — first per-voice LFO
+static constexpr uint16_t LFO1_RATE  = 0x70;
+static constexpr uint16_t LFO1_DEPTH = 0x71;
+static constexpr uint16_t LFO1_SHAPE = 0x72;
+
+// LFO2 group (0x78-0x7F) — second per-voice LFO
+static constexpr uint16_t LFO2_RATE  = 0x78;
+static constexpr uint16_t LFO2_DEPTH = 0x79;
+static constexpr uint16_t LFO2_SHAPE = 0x7A;
+
+// kMax: all Juno IDs are < this. kParamIdMax in param_store.h must be >= kMax.
+// Current highest ID: LFO2_SHAPE = 0x7A; keep ceiling at 0x80 (= 128).
 static constexpr uint16_t kMax = 0x80;
 
 } // namespace ParamId

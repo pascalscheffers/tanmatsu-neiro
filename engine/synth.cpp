@@ -94,6 +94,17 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
         voice->set_param(ParamId::ENV_DECAY,     s_params.get(ParamId::ENV_DECAY));
         voice->set_param(ParamId::ENV_SUSTAIN,   s_params.get(ParamId::ENV_SUSTAIN));
         voice->set_param(ParamId::ENV_RELEASE,   s_params.get(ParamId::ENV_RELEASE));
+        // Stage 3a: ENV2 + LFO params.
+        voice->set_param(ParamId::ENV2_ATTACK,   s_params.get(ParamId::ENV2_ATTACK));
+        voice->set_param(ParamId::ENV2_DECAY,    s_params.get(ParamId::ENV2_DECAY));
+        voice->set_param(ParamId::ENV2_SUSTAIN,  s_params.get(ParamId::ENV2_SUSTAIN));
+        voice->set_param(ParamId::ENV2_RELEASE,  s_params.get(ParamId::ENV2_RELEASE));
+        voice->set_param(ParamId::LFO1_RATE,     s_params.get(ParamId::LFO1_RATE));
+        voice->set_param(ParamId::LFO1_DEPTH,    s_params.get(ParamId::LFO1_DEPTH));
+        voice->set_param(ParamId::LFO1_SHAPE,    s_params.get(ParamId::LFO1_SHAPE));
+        voice->set_param(ParamId::LFO2_RATE,     s_params.get(ParamId::LFO2_RATE));
+        voice->set_param(ParamId::LFO2_DEPTH,    s_params.get(ParamId::LFO2_DEPTH));
+        voice->set_param(ParamId::LFO2_SHAPE,    s_params.get(ParamId::LFO2_SHAPE));
     }
 
     // 4. Update chorus (non-per-voice) from the param store.

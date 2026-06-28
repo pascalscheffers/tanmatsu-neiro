@@ -13,11 +13,12 @@ enum ParamGroup : uint8_t {
     GROUP_OSC    = 0,
     GROUP_SUB    = 1,
     GROUP_FILTER = 2,
-    GROUP_ENV    = 3,
+    GROUP_ENV    = 3,   // ENV1 — amplitude ADSR
     GROUP_LFO    = 4,
     GROUP_FX     = 5,
     GROUP_AMP    = 6,
     GROUP_GLOBAL = 7,
+    GROUP_ENV2   = 8,   // ENV2 — filter/mod ADSR (Stage 3a)
 };
 
 // Value-curve: how a normalised [0,1] input maps to the physical [min,max] range.

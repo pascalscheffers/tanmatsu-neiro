@@ -33,6 +33,28 @@ const ParamDesc JUNO_PARAM_TABLE[] = {
     {ParamId::CHORUS_DEPTH, GROUP_FX, "Chorus Depth",      "ChoDep", 0.0f,   1.0f,   0.700f, CURVE_LIN,   UNIT_PCT, "%.2f",  93,   20.0f,  0},
     {ParamId::CHORUS_DELAY, GROUP_FX, "Chorus Delay",      "ChoDly", 0.0f,   1.0f,   0.400f, CURVE_LIN,   UNIT_PCT, "%.2f",  0xFF, 20.0f,  0},
 
+    // --- ENV2 (filter/mod envelope) ---
+    // A second ADSR used as a modulation source (Stage 3a). Not wired to any
+    // destination yet — the mod matrix (Stage 3b-i) routes it. Defaults mimic
+    // a typical Juno filter-env shape (fast attack, medium decay, no sustain).
+    {ParamId::ENV2_ATTACK,  GROUP_ENV2, "Env2 Attack",  "E2Atk", 0.001f,  5.0f,  0.005f, CURVE_EXP,   UNIT_SEC, "%.3f",  0xFF, 10.0f,  FLAG_PER_VOICE|FLAG_MOD_DEST},
+    {ParamId::ENV2_DECAY,   GROUP_ENV2, "Env2 Decay",   "E2Dec", 0.001f,  5.0f,  0.200f, CURVE_EXP,   UNIT_SEC, "%.3f",  0xFF, 10.0f,  FLAG_PER_VOICE|FLAG_MOD_DEST},
+    {ParamId::ENV2_SUSTAIN, GROUP_ENV2, "Env2 Sustain", "E2Sus", 0.0f,    1.0f,  0.000f, CURVE_LIN,   UNIT_PCT, "%.2f",  0xFF,  0.0f,  FLAG_PER_VOICE|FLAG_MOD_DEST},
+    {ParamId::ENV2_RELEASE, GROUP_ENV2, "Env2 Release", "E2Rel", 0.001f,  5.0f,  0.200f, CURVE_EXP,   UNIT_SEC, "%.3f",  0xFF, 10.0f,  FLAG_PER_VOICE|FLAG_MOD_DEST},
+
+    // --- LFO1 ---
+    // Per-voice LFO, sub-audio rate. Shape is a stepped int (see LfoWave enum
+    // in dsp/lfo.h: SINE=0, TRI=1, SAW=2, SQUARE=4, SH=5). Depth is a
+    // normalised scale factor; the mod matrix (Stage 3b-i) interprets it.
+    {ParamId::LFO1_RATE,  GROUP_LFO, "LFO1 Rate",  "L1Rt",  0.01f,  20.0f,  1.0f,  CURVE_EXP,    UNIT_HZ,  "%.2f",  0xFF,  5.0f,  FLAG_PER_VOICE|FLAG_MOD_DEST},
+    {ParamId::LFO1_DEPTH, GROUP_LFO, "LFO1 Depth", "L1Dep", 0.0f,   1.0f,   0.5f,  CURVE_LIN,    UNIT_PCT, "%.2f",  1,     5.0f,  FLAG_PER_VOICE|FLAG_MOD_DEST},
+    {ParamId::LFO1_SHAPE, GROUP_LFO, "LFO1 Shape", "L1Shp", 0.0f,   5.0f,   0.0f,  CURVE_STEPPED,UNIT_NONE,"%.0f",  0xFF,  0.0f,  FLAG_PER_VOICE},
+
+    // --- LFO2 ---
+    {ParamId::LFO2_RATE,  GROUP_LFO, "LFO2 Rate",  "L2Rt",  0.01f,  20.0f,  0.5f,  CURVE_EXP,    UNIT_HZ,  "%.2f",  0xFF,  5.0f,  FLAG_PER_VOICE|FLAG_MOD_DEST},
+    {ParamId::LFO2_DEPTH, GROUP_LFO, "LFO2 Depth", "L2Dep", 0.0f,   1.0f,   0.5f,  CURVE_LIN,    UNIT_PCT, "%.2f",  0xFF,  5.0f,  FLAG_PER_VOICE|FLAG_MOD_DEST},
+    {ParamId::LFO2_SHAPE, GROUP_LFO, "LFO2 Shape", "L2Shp", 0.0f,   5.0f,   0.0f,  CURVE_STEPPED,UNIT_NONE,"%.0f",  0xFF,  0.0f,  FLAG_PER_VOICE},
+
     // --- AMP / MIX ---
     // Master gain fixes the headroom issue noted in MEMORY.md (one voice peaks
     // ~1.05 pre-filter; held chords clip without attenuation). Default 0.5

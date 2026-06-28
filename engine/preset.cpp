@@ -38,12 +38,14 @@ static float apply_curve_local(const ParamDesc& d, float norm) {
 // ---------------------------------------------------------------------------
 struct FactoryPreset {
     const char* name;
-    uint16_t    ids[16];
-    float       vals[16];
+    uint16_t    ids[32];
+    float       vals[32];
     int         count;
 };
 
 // All values in physical units (the same space engine_set_param() expects).
+// Param ordering follows JUNO_PARAM_TABLE order (cosmetic — loader goes by id).
+// Stage 3a: added ENV2 (attack/decay/sustain/release) + LFO1/2 (rate/depth/shape).
 static const FactoryPreset k_factory[] = {
     // 0: INIT — all table defaults
     {
@@ -51,14 +53,20 @@ static const FactoryPreset k_factory[] = {
         {ParamId::OSC_LEVEL, ParamId::SUB_LEVEL,     ParamId::NOISE_LEVEL,
          ParamId::FILTER_CUTOFF, ParamId::FILTER_RES, ParamId::FILTER_MODE,
          ParamId::ENV_ATTACK,  ParamId::ENV_DECAY,   ParamId::ENV_SUSTAIN,  ParamId::ENV_RELEASE,
+         ParamId::ENV2_ATTACK, ParamId::ENV2_DECAY,  ParamId::ENV2_SUSTAIN, ParamId::ENV2_RELEASE,
+         ParamId::LFO1_RATE,  ParamId::LFO1_DEPTH,  ParamId::LFO1_SHAPE,
+         ParamId::LFO2_RATE,  ParamId::LFO2_DEPTH,  ParamId::LFO2_SHAPE,
          ParamId::CHORUS_RATE, ParamId::CHORUS_DEPTH, ParamId::CHORUS_DELAY,
          ParamId::MASTER_GAIN},
         {0.70f, 0.30f, 0.05f,
          2000.0f, 0.30f, 0.0f,
          0.010f, 0.100f, 0.700f, 0.300f,
+         0.005f, 0.200f, 0.000f, 0.200f,
+         1.0f,   0.5f,   0.0f,
+         0.5f,   0.5f,   0.0f,
          0.500f, 0.700f, 0.400f,
          0.500f},
-        14,
+        24,
     },
     // 1: Bass — thick sub, tight attack, dark filter
     {
@@ -66,14 +74,20 @@ static const FactoryPreset k_factory[] = {
         {ParamId::OSC_LEVEL, ParamId::SUB_LEVEL,     ParamId::NOISE_LEVEL,
          ParamId::FILTER_CUTOFF, ParamId::FILTER_RES, ParamId::FILTER_MODE,
          ParamId::ENV_ATTACK,  ParamId::ENV_DECAY,   ParamId::ENV_SUSTAIN,  ParamId::ENV_RELEASE,
+         ParamId::ENV2_ATTACK, ParamId::ENV2_DECAY,  ParamId::ENV2_SUSTAIN, ParamId::ENV2_RELEASE,
+         ParamId::LFO1_RATE,  ParamId::LFO1_DEPTH,  ParamId::LFO1_SHAPE,
+         ParamId::LFO2_RATE,  ParamId::LFO2_DEPTH,  ParamId::LFO2_SHAPE,
          ParamId::CHORUS_RATE, ParamId::CHORUS_DEPTH, ParamId::CHORUS_DELAY,
          ParamId::MASTER_GAIN},
         {0.85f, 0.60f, 0.00f,
          800.0f, 0.50f, 0.0f,
          0.002f, 0.15f, 0.50f, 0.08f,
+         0.002f, 0.10f, 0.00f, 0.08f,
+         0.5f,   0.3f,  0.0f,
+         0.5f,   0.3f,  0.0f,
          0.30f, 0.40f, 0.30f,
          0.60f},
-        14,
+        24,
     },
     // 2: Pad — slow attack, lush chorus, long release
     {
@@ -81,14 +95,20 @@ static const FactoryPreset k_factory[] = {
         {ParamId::OSC_LEVEL, ParamId::SUB_LEVEL,     ParamId::NOISE_LEVEL,
          ParamId::FILTER_CUTOFF, ParamId::FILTER_RES, ParamId::FILTER_MODE,
          ParamId::ENV_ATTACK,  ParamId::ENV_DECAY,   ParamId::ENV_SUSTAIN,  ParamId::ENV_RELEASE,
+         ParamId::ENV2_ATTACK, ParamId::ENV2_DECAY,  ParamId::ENV2_SUSTAIN, ParamId::ENV2_RELEASE,
+         ParamId::LFO1_RATE,  ParamId::LFO1_DEPTH,  ParamId::LFO1_SHAPE,
+         ParamId::LFO2_RATE,  ParamId::LFO2_DEPTH,  ParamId::LFO2_SHAPE,
          ParamId::CHORUS_RATE, ParamId::CHORUS_DEPTH, ParamId::CHORUS_DELAY,
          ParamId::MASTER_GAIN},
         {0.75f, 0.20f, 0.08f,
          3000.0f, 0.15f, 0.0f,
          0.80f, 0.50f, 0.80f, 1.50f,
+         0.50f, 0.80f, 0.00f, 0.80f,
+         0.3f,  0.6f,  0.0f,
+         0.2f,  0.4f,  1.0f,
          0.40f, 0.90f, 0.55f,
          0.50f},
-        14,
+        24,
     },
     // 3: Lead — bright, cutting, light chorus
     {
@@ -96,14 +116,20 @@ static const FactoryPreset k_factory[] = {
         {ParamId::OSC_LEVEL, ParamId::SUB_LEVEL,     ParamId::NOISE_LEVEL,
          ParamId::FILTER_CUTOFF, ParamId::FILTER_RES, ParamId::FILTER_MODE,
          ParamId::ENV_ATTACK,  ParamId::ENV_DECAY,   ParamId::ENV_SUSTAIN,  ParamId::ENV_RELEASE,
+         ParamId::ENV2_ATTACK, ParamId::ENV2_DECAY,  ParamId::ENV2_SUSTAIN, ParamId::ENV2_RELEASE,
+         ParamId::LFO1_RATE,  ParamId::LFO1_DEPTH,  ParamId::LFO1_SHAPE,
+         ParamId::LFO2_RATE,  ParamId::LFO2_DEPTH,  ParamId::LFO2_SHAPE,
          ParamId::CHORUS_RATE, ParamId::CHORUS_DEPTH, ParamId::CHORUS_DELAY,
          ParamId::MASTER_GAIN},
         {0.90f, 0.10f, 0.00f,
          6000.0f, 0.60f, 0.0f,
          0.005f, 0.20f, 0.65f, 0.12f,
+         0.003f, 0.15f, 0.00f, 0.10f,
+         5.0f,   0.4f,  0.0f,
+         3.0f,   0.2f,  0.0f,
          1.00f, 0.50f, 0.30f,
          0.50f},
-        14,
+        24,
     },
 };
 

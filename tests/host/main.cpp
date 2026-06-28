@@ -10,6 +10,7 @@ void test_command_queue_suite();
 void test_param_store_suite();
 void test_saturate_suite();
 void test_preset_suite();
+void test_mod_sources_suite();
 
 int main(void)
 {
@@ -21,6 +22,7 @@ int main(void)
     test_param_store_suite();
     test_saturate_suite();
     test_preset_suite();
+    test_mod_sources_suite();
     printf("All tests passed.\n");
     return 0;
 }
