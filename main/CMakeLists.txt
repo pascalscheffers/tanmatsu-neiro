@@ -47,7 +47,7 @@ idf_component_register(
 		"${DAISYSP}/Source/Effects/chorus.cpp"
 		# Stage 1d: musical-typing input.
 		"../control/keyboard.c"
-		"../ui/ui.c"
+		"../ui/ui.cpp"
 		"../platform/device/platform_device.c"
 		${BENCH_SRCS}
 	PRIV_REQUIRES

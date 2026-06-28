@@ -48,7 +48,7 @@ set(HOST_SRCS
     "${DAISYSP}/Source/Effects/chorus.cpp"
     # Stage 1d: musical-typing input.
     "${REPO_ROOT}/control/keyboard.c"
-    "${REPO_ROOT}/ui/ui.c"
+    "${REPO_ROOT}/ui/ui.cpp"
     "${REPO_ROOT}/app/app.c"
     "${REPO_ROOT}/platform/host/platform_host.c"
     "${REPO_ROOT}/platform/host/miniaudio_impl.c")

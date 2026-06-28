@@ -41,14 +41,24 @@ typedef struct {
 // ---------------------------------------------------------------------------
 typedef enum {
     PLATFORM_EV_NONE = 0,
-    PLATFORM_EV_KEY,   // a key changed state; see `key` + `pressed`
+    PLATFORM_EV_KEY,   // a key changed state; see `key` + `pressed` + `mods`
     PLATFORM_EV_QUIT,  // user asked to close the app (host window close, etc.)
 } platform_event_type_t;
 
+// Navigation key codes — above the ASCII range (> 0x7F), no conflict.
+#define PLATFORM_KEY_UP    0x0100
+#define PLATFORM_KEY_DOWN  0x0101
+#define PLATFORM_KEY_LEFT  0x0102
+#define PLATFORM_KEY_RIGHT 0x0103
+
+// Modifier flags for PLATFORM_EV_KEY events.
+#define PLATFORM_MOD_SHIFT (1u << 0)
+
 typedef struct {
     platform_event_type_t type;
-    int                   key;      // ASCII-ish code for PLATFORM_EV_KEY
+    int                   key;      // ASCII-ish code or PLATFORM_KEY_* for PLATFORM_EV_KEY
     bool                  pressed;  // true = down, false = up
+    uint8_t               mods;     // bit flags: PLATFORM_MOD_SHIFT
 } platform_event_t;
 
 // ---------------------------------------------------------------------------

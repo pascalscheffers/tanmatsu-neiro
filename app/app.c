@@ -79,6 +79,11 @@ void app_run(void) {
     keyboard_init();
     synth_init(SAMPLE_RATE, BLOCK_SIZE);
 
+    // Initialise UI state: builds page list and default norm values from the
+    // param table, sets preset_name to "INIT".
+    UIState ui_state;
+    ui_state_init(&ui_state);
+
     const platform_audio_config_t audio_cfg = {
         .sample_rate = SAMPLE_RATE,
         .block_size  = BLOCK_SIZE,
@@ -94,11 +99,15 @@ void app_run(void) {
                 running = false;
             }
             keyboard_handle_event(&ev);
+            ui_handle_event(&ui_state, &ev);
         }
 
+        // Update per-frame display data before drawing.
+        ui_state.active_voices = engine_active_voices();
+        ui_state.octave        = keyboard_octave();
+
         if (fb) {
-            ui_draw(fb, platform_millis(),
-                    engine_active_voices(), keyboard_octave());
+            ui_draw(fb, platform_millis(), &ui_state);
             platform_present();
         }
 

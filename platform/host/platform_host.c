@@ -174,6 +174,7 @@ bool platform_poll_event(platform_event_t* out) {
     if (!SDL_PollEvent(&e)) {
         return false;
     }
+    out->mods = 0;
     switch (e.type) {
         case SDL_QUIT:
             out->type = PLATFORM_EV_QUIT;
@@ -183,18 +184,40 @@ bool platform_poll_event(platform_event_t* out) {
             return true;
         case SDL_KEYDOWN:
         case SDL_KEYUP:
-            if (e.type == SDL_KEYDOWN && e.key.repeat) {
-                // Auto-repeat: key was already reported as pressed; skip.
-                out->type = PLATFORM_EV_NONE;
-                return true;
-            }
             if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) {
                 out->type = PLATFORM_EV_QUIT;
                 return true;
             }
-            out->type    = PLATFORM_EV_KEY;
-            out->key     = e.key.keysym.sym;
-            out->pressed = (e.type == SDL_KEYDOWN);
+            if (e.type == SDL_KEYDOWN && e.key.repeat) {
+                // Allow auto-repeat for navigation keys (arrows, comma, dot) so
+                // the user can hold them for continuous scroll/nudge. Filter
+                // everything else to prevent musical-key retriggering.
+                SDL_Keycode sym = e.key.keysym.sym;
+                int is_nav = (sym == SDLK_UP    || sym == SDLK_DOWN  ||
+                              sym == SDLK_LEFT   || sym == SDLK_RIGHT ||
+                              sym == SDLK_COMMA  || sym == SDLK_PERIOD);
+                if (!is_nav) {
+                    out->type = PLATFORM_EV_NONE;
+                    return true;
+                }
+            }
+            {
+                // Map SDL navigation keysyms to PLATFORM_KEY_* constants.
+                int key = e.key.keysym.sym;
+                switch (key) {
+                    case SDLK_UP:    key = PLATFORM_KEY_UP;    break;
+                    case SDLK_DOWN:  key = PLATFORM_KEY_DOWN;  break;
+                    case SDLK_LEFT:  key = PLATFORM_KEY_LEFT;  break;
+                    case SDLK_RIGHT: key = PLATFORM_KEY_RIGHT; break;
+                    default: break;
+                }
+                SDL_Keymod mod = SDL_GetModState();
+                out->type    = PLATFORM_EV_KEY;
+                out->key     = key;
+                out->pressed = (e.type == SDL_KEYDOWN);
+                out->mods    = ((mod & (KMOD_LSHIFT | KMOD_RSHIFT)) != 0)
+                               ? PLATFORM_MOD_SHIFT : 0;
+            }
             return true;
         default:
             out->type = PLATFORM_EV_NONE;

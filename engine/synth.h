@@ -41,6 +41,10 @@ void engine_set_param(uint16_t id, float value);
 // Set a parameter by normalised position [0, 1]; curve mapping applied.
 void engine_set_param_norm(uint16_t id, float norm);
 
+// Read the current smoothed value for a param (control-thread safe; may lag
+// the audio thread by one block — use for display only, not for audio logic).
+float engine_get_param(uint16_t id);
+
 #ifdef __cplusplus
 }
 #endif

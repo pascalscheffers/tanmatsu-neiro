@@ -20,6 +20,7 @@
 #include "param_id.h"
 #include "param_store.h"
 #include "synth_config.h"
+#include "dsp/saturate.h"
 #include "Effects/chorus.h"
 #include <string.h>
 
@@ -53,12 +54,11 @@ void synth_init(uint32_t sample_rate, size_t block_size) {
 // Render the full voice pool + chorus + master gain.
 // IRAM_ATTR: this function must survive a flash write/erase (ADR 0013).
 //
-// Gain pipeline:
+// Gain pipeline (ADR 0016):
 //   Voices → mono bus → DaisySP Chorus (~−12 dB from equal-wet gain_frac=0.5)
-//   → × MASTER_GAIN (default 0.5, ~−6 dB) → output.
-// At default gain (0.5) a full 8-voice chord has substantial headroom.
-// Soft-clip vs linear headroom is a 🛑 Stage-2 sonic gate (MEMORY.md);
-// for now the output is linear-scaled only — no saturator.
+//   → × MASTER_GAIN (default 0.5, ~−6 dB) → soft_clip → output.
+// soft_clip (dsp/saturate.h): cubic S-curve, unity slope at 0, ±1 ceiling at ±1.5.
+// Keeps loud chords from hard-clipping; subtle on normal playing.
 IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     (void)user;
     size_t frames = n < kMaxBlock ? n : kMaxBlock;
@@ -109,12 +109,12 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
         }
     }
 
-    // 6. Mono bus → stereo chorus → master gain → output.
+    // 6. Mono bus → stereo chorus → master gain → soft-clip → output (ADR 0016).
     float gain = s_params.get(ParamId::MASTER_GAIN);
     for (size_t i = 0; i < frames; i++) {
         s_chorus.Process(s_mono[i]);
-        left[i]  = s_chorus.GetLeft()  * gain;
-        right[i] = s_chorus.GetRight() * gain;
+        left[i]  = soft_clip(s_chorus.GetLeft()  * gain);
+        right[i] = soft_clip(s_chorus.GetRight() * gain);
     }
 }
 
@@ -144,4 +144,10 @@ int engine_active_voices(void) {
         if (slots[v].voice->is_active()) count++;
     }
     return count;
+}
+
+float engine_get_param(uint16_t id) {
+    // Control-thread read of the smoothed param value. May lag the audio thread
+    // by up to one block (~1.3 ms at 48k/64) — fine for display use only.
+    return s_params.get(id);
 }

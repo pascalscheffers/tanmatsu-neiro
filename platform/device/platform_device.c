@@ -228,12 +228,10 @@ void platform_audio_stop(void) {
     s_audio_task = NULL;
 }
 
-// Translate a (release-bit-masked) BSP scancode to the lowercase ASCII the
-// portable control layer expects. Only the musical-typing keys matter; anything
-// else returns 0 (filtered out by the caller). Scancodes carry press/release
-// state — unlike the ASCII KEYBOARD event, which only fires on press — so we
-// drive note on/off from these. See bsp/input.h.
-static int scancode_to_ascii(bsp_input_scancode_t sc) {
+// Translate a (release-bit-masked) BSP scancode to the key code the portable
+// control layer expects. Musical-typing keys return their lowercase ASCII value;
+// comma and dot return their ASCII values for UI nudge; anything else returns 0.
+static int scancode_to_key(bsp_input_scancode_t sc) {
     switch (sc) {
         case BSP_INPUT_SCANCODE_A:         return 'a';
         case BSP_INPUT_SCANCODE_W:         return 'w';
@@ -254,9 +252,15 @@ static int scancode_to_ascii(bsp_input_scancode_t sc) {
         case BSP_INPUT_SCANCODE_SEMICOLON: return ';';
         case BSP_INPUT_SCANCODE_Z:         return 'z';
         case BSP_INPUT_SCANCODE_X:         return 'x';
+        case BSP_INPUT_SCANCODE_COMMA:     return ',';
+        case BSP_INPUT_SCANCODE_DOT:       return '.';
         default:                           return 0;
     }
 }
+
+// Shift key held state — tracked from SCANCODE press/release events so that
+// comma/dot nudge events carry the correct modifier flag.
+static bool s_shift_held = false;
 
 bool platform_poll_event(platform_event_t* out) {
     if (!s_input_queue) return false;
@@ -264,25 +268,51 @@ bool platform_poll_event(platform_event_t* out) {
     if (xQueueReceive(s_input_queue, &ev, 0) != pdTRUE) {
         return false;
     }
-    // Drive keys from SCANCODE events: they carry make/break state (the high
-    // 0x80 bit = release). The BSP also emits a press-only ASCII KEYBOARD event
-    // per key — we ignore it here so a press isn't counted twice.
+    out->mods = 0;
+
     if (ev.type == INPUT_EVENT_TYPE_SCANCODE) {
+        // Drive keys from SCANCODE events: they carry make/break state (the high
+        // 0x80 bit = release). The BSP also emits a press-only ASCII KEYBOARD
+        // event per key — we ignore it here so a press isn't counted twice.
         bool                 released = (ev.args_scancode.scancode & BSP_INPUT_SCANCODE_RELEASE_MODIFIER) != 0;
         bsp_input_scancode_t base = (bsp_input_scancode_t)(ev.args_scancode.scancode & ~BSP_INPUT_SCANCODE_RELEASE_MODIFIER);
+
+        // Track shift key state for modifying comma/dot nudge.
+        if (base == BSP_INPUT_SCANCODE_LEFTSHIFT || base == BSP_INPUT_SCANCODE_RIGHTSHIFT) {
+            s_shift_held = !released;
+            out->type = PLATFORM_EV_NONE;
+            return true;
+        }
+
         if (base == BSP_INPUT_SCANCODE_ESC && !released) {
-            // ESC quits to the launcher — symmetric with the host (SDL ESC).
             out->type = PLATFORM_EV_QUIT;
         } else {
-            int ascii = scancode_to_ascii(base);
-            if (ascii == 0) {
+            int key = scancode_to_key(base);
+            if (key == 0) {
                 out->type = PLATFORM_EV_NONE;
             } else {
                 out->type    = PLATFORM_EV_KEY;
-                out->key     = ascii;
+                out->key     = key;
                 out->pressed = !released;
+                out->mods    = s_shift_held ? PLATFORM_MOD_SHIFT : 0;
             }
         }
+    } else if (ev.type == INPUT_EVENT_TYPE_NAVIGATION) {
+        // Navigation events carry arrow keys, modifiers, and press/release state.
+        const bsp_input_event_args_navigation_t* nav = &ev.args_navigation;
+        int mapped_key = 0;
+        switch (nav->key) {
+            case BSP_INPUT_NAVIGATION_KEY_UP:    mapped_key = PLATFORM_KEY_UP;    break;
+            case BSP_INPUT_NAVIGATION_KEY_DOWN:  mapped_key = PLATFORM_KEY_DOWN;  break;
+            case BSP_INPUT_NAVIGATION_KEY_LEFT:  mapped_key = PLATFORM_KEY_LEFT;  break;
+            case BSP_INPUT_NAVIGATION_KEY_RIGHT: mapped_key = PLATFORM_KEY_RIGHT; break;
+            default: out->type = PLATFORM_EV_NONE; return true;
+        }
+        out->type    = PLATFORM_EV_KEY;
+        out->key     = mapped_key;
+        out->pressed = nav->state;
+        out->mods    = ((nav->modifiers & BSP_INPUT_MODIFIER_SHIFT) != 0)
+                       ? PLATFORM_MOD_SHIFT : 0;
     } else {
         out->type = PLATFORM_EV_NONE;
     }
