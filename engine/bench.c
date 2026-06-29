@@ -520,6 +520,135 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
     printf("  Record these numbers in specs/stages/stage-0.5-results.md\n");
     printf("  (or a new stage-3d-ii-results.md) to close the 3d-ii gate.\n");
     printf("============================================================\n");
+    printf("\n");
+
+    // ----------------------------------------------------------------
+    // Section 4 — Fixed-overhead decomposition
+    //
+    // Isolates the cost of synth_render() with ALL voices idle (no active
+    // notes), so what we measure is:
+    //   - param-event drain (command ring)
+    //   - the 8-slot voice allocator loop (early-return in render())
+    //   - master chorus (on/off comparison)
+    //   - soft-clip + stereo bus accumulation
+    //
+    // Procedure:
+    //   4a) No notes, chorus off  → "idle render (chorus off)"
+    //   4b) No notes, chorus I    → "idle render (Chorus I)"
+    //       derived line          → "--> chorus I cost" = 4b − 4a
+    //   4c) No notes, chorus II   → "idle render (Chorus II)"
+    //
+    // The Section 3 ramp minus this idle overhead gives the pure per-voice
+    // DSP cost as a sanity check.
+    // ----------------------------------------------------------------
+    printf("  [Section 4] Fixed-overhead decomposition (idle render)\n");
+    printf("  Measures: param drain + allocator loop + master bus;\n");
+    printf("  chorus variants isolate BBD chorus cost.\n");
+    printf("  Timing: synth_render() direct call (REAL_REPEATS=%d blocks).\n",
+           REAL_REPEATS);
+    printf("  %-28s  %8s  %7s\n", "label", "cyc/blk", "%period");
+    printf("------------------------------------------------------------\n");
+
+    // Helper lambda-equivalent: time REAL_REPEATS idle renders and print a row.
+    // We keep the body inline so it stays pure C (no compound literals / closures).
+    uint32_t idle_chorus_off, idle_chorus_I, idle_chorus_II;
+
+    // 4a: clean init, no notes, chorus off (default after synth_init).
+    {
+        synth_init(sample_rate, block_size);
+        engine_set_routings((const struct Routing*)s_clean106_routings,
+                            (int)(sizeof(s_clean106_routings) /
+                                  sizeof(s_clean106_routings[0])));
+        // Warmup: drain any param events and let the engine settle.
+        for (int w = 0; w < 10; w++) synth_render(s_left, s_right, block_size, NULL);
+
+        uint64_t t0 = platform_cycles_now();
+        for (int r = 0; r < REAL_REPEATS; r++)
+            synth_render(s_left, s_right, block_size, NULL);
+        uint64_t t1 = platform_cycles_now();
+        idle_chorus_off = (uint32_t)((t1 - t0) / REAL_REPEATS);
+        float pct = 100.0f * (float)idle_chorus_off / (float)block_period;
+        printf("  %-28s  %8" PRIu32 "  %7.2f%%\n",
+               "idle render (chorus off)", idle_chorus_off, pct);
+    }
+
+    // 4b: same engine, enable Chorus I, flush with one render, then measure.
+    {
+        // Re-init to guarantee a clean state (chorus off at init).
+        synth_init(sample_rate, block_size);
+        engine_set_routings((const struct Routing*)s_clean106_routings,
+                            (int)(sizeof(s_clean106_routings) /
+                                  sizeof(s_clean106_routings[0])));
+        engine_set_param(BENCH_PARAM_CHORUS_MODE, 1.0f);
+        // Flush: one render drains the param event so chorus is active.
+        synth_render(s_left, s_right, block_size, NULL);
+        // Short warmup.
+        for (int w = 0; w < 9; w++) synth_render(s_left, s_right, block_size, NULL);
+
+        uint64_t t0 = platform_cycles_now();
+        for (int r = 0; r < REAL_REPEATS; r++)
+            synth_render(s_left, s_right, block_size, NULL);
+        uint64_t t1 = platform_cycles_now();
+        idle_chorus_I = (uint32_t)((t1 - t0) / REAL_REPEATS);
+        float pct = 100.0f * (float)idle_chorus_I / (float)block_period;
+        printf("  %-28s  %8" PRIu32 "  %7.2f%%\n",
+               "idle render (Chorus I)", idle_chorus_I, pct);
+
+        // Derived: chorus I cost = 4b − 4a.
+        uint32_t chorus_cost = (idle_chorus_I > idle_chorus_off)
+            ? (idle_chorus_I - idle_chorus_off) : 0u;
+        float chorus_pct = 100.0f * (float)chorus_cost / (float)block_period;
+        printf("  %-28s  %8" PRIu32 "  %7.2f%%\n",
+               "--> chorus I cost", chorus_cost, chorus_pct);
+    }
+
+    // 4c: Chorus II.
+    {
+        synth_init(sample_rate, block_size);
+        engine_set_routings((const struct Routing*)s_clean106_routings,
+                            (int)(sizeof(s_clean106_routings) /
+                                  sizeof(s_clean106_routings[0])));
+        engine_set_param(BENCH_PARAM_CHORUS_MODE, 2.0f);
+        synth_render(s_left, s_right, block_size, NULL);
+        for (int w = 0; w < 9; w++) synth_render(s_left, s_right, block_size, NULL);
+
+        uint64_t t0 = platform_cycles_now();
+        for (int r = 0; r < REAL_REPEATS; r++)
+            synth_render(s_left, s_right, block_size, NULL);
+        uint64_t t1 = platform_cycles_now();
+        idle_chorus_II = (uint32_t)((t1 - t0) / REAL_REPEATS);
+        float pct = 100.0f * (float)idle_chorus_II / (float)block_period;
+        printf("  %-28s  %8" PRIu32 "  %7.2f%%\n",
+               "idle render (Chorus II)", idle_chorus_II, pct);
+
+        uint32_t chorus_cost = (idle_chorus_II > idle_chorus_off)
+            ? (idle_chorus_II - idle_chorus_off) : 0u;
+        float chorus_pct = 100.0f * (float)chorus_cost / (float)block_period;
+        printf("  %-28s  %8" PRIu32 "  %7.2f%%\n",
+               "--> chorus II cost", chorus_cost, chorus_pct);
+    }
+
+    printf("============================================================\n");
+    printf("  Section 4 note: subtract idle_chorus_off from a Section-3\n");
+    printf("  N-voice row to get the pure per-voice DSP contribution.\n");
+    printf("============================================================\n");
+    printf("\n");
+
+    // ----------------------------------------------------------------
+    // Section 5 — Per-voice DSP-block micro-bench (C++ wrappers)
+    //
+    // Implemented in engine/bench_blocks.cpp to allow C++ header includes.
+    // bench_blocks_run() times each real building block in isolation.
+    // ----------------------------------------------------------------
+    printf("  [Section 5] Per-block DSP micro-bench (real wrappers, -O2)\n");
+    printf("  Measures each DSP building block at block size = %" PRIu32 " samples.\n",
+           block_size);
+    printf("  %-32s  %7s  %7s  %6s  %7s\n",
+           "label", "cyc/blk", "cyc/smp", "us/blk", "%period");
+    printf("------------------------------------------------------------\n");
+    bench_blocks_run(block_period, cps, block_size);
+    printf("============================================================\n");
+    printf("\n");
 
     // Hang so the serial monitor can capture the output before watchdog fires.
     // On host, exit normally after printing.

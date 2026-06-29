@@ -10,7 +10,7 @@ endif()
 # Stage 0.5: pass BENCH=1 on the cmake command line (done by `make build BENCH=1`)
 # to compile the profiling harness into the device image.
 if(BENCH)
-    set(BENCH_SRCS "../engine/bench.c")
+    set(BENCH_SRCS "../engine/bench.c" "../engine/bench_blocks.cpp")
     # INTERACTIVE: on device the console can't be attached at AppFS launch (USB-C
     # is muxed for badgelink), so the bench waits for a keypress and exits to the
     # launcher when done. The host bench (host/CMakeLists.txt) sets only

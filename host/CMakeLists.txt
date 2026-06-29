@@ -58,6 +58,7 @@ set(HOST_SRCS
 
 if(SYNTH_BENCH)
     list(APPEND HOST_SRCS "${REPO_ROOT}/engine/bench.c")
+    list(APPEND HOST_SRCS "${REPO_ROOT}/engine/bench_blocks.cpp")
 endif()
 
 add_executable(tanmatsu-synth-host ${HOST_SRCS})
