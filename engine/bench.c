@@ -390,8 +390,13 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
         return;
     }
 
+    // The proxy ramp is linear and far under budget (32 voices ≈ 17%), so a few
+    // coarse sample points convey its shape without the full 1→32 sweep (which
+    // cost ~64 s at 2 s/step). Endpoints + quartiles: 5 steps ≈ 10 s.
+    static const uint32_t kProxySteps[] = {1, 8, 16, 24, 32};
     uint32_t ceiling_voices = 0;
-    for (uint32_t nv = 1; nv <= (uint32_t)MAX_BENCH_VOICES; nv++) {
+    for (size_t si = 0; si < sizeof(kProxySteps) / sizeof(kProxySteps[0]); si++) {
+        uint32_t nv = kProxySteps[si];
         atomic_store_explicit(&s_n_voices, nv, memory_order_relaxed);
         // Wait 2 s for the audio thread to produce representative numbers.
         platform_sleep_ms(2000);
