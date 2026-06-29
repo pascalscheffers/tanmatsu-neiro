@@ -929,6 +929,22 @@ latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.*
 - `make host` ✅ `make build` ✅ `make test` ✅ (169/169) `make format` ✅ membrane clean.
 - **Next:** WO-2 (section sub-headers) or WO-3 (preset list page render).
 
+## 2026-06-29 — WO-4: shape buttons (F1–F6) plumbed through platform layer (COMPLETE)
+
+- **`platform/platform.h`**: added `PLATFORM_KEY_F1=0x0110 … PLATFORM_KEY_F6=0x0115` (contiguous
+  block after the arrow keys). Brief comment: badge shape buttons left→right (X/triangle/square/circle/
+  three-lobe/diamond).
+- **`platform/device/platform_device.c`**: six new `case` arms in the `INPUT_EVENT_TYPE_NAVIGATION`
+  switch map `BSP_INPUT_NAVIGATION_KEY_F1..F6 → PLATFORM_KEY_F1..F6`. Both press and release edges
+  are delivered because `nav->state` (bool, same field already used for arrow keys) carries the
+  press/release state — `out->pressed = nav->state`. This is the same BSP mechanism in use for UP/DOWN/LEFT/RIGHT.
+- **`platform/host/platform_host.c`**: six new `case` arms in the SDL `SDL_KEYDOWN/SDL_KEYUP` switch
+  map `SDLK_F1..F6 → PLATFORM_KEY_F1..F6`. Auto-repeat is already filtered for non-nav keys by the
+  existing `e.key.repeat` guard, so only real down/up edges reach these cases.
+- No existing key meanings changed. No handler consumes these yet (WO-5 wires actions).
+- `make host` ✅ `make build` ✅ `make format` ✅ membrane clean.
+- **Next:** WO-5 — wire shape button actions in the UI (F1–F6 → page-jump / preset-select / etc.).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
