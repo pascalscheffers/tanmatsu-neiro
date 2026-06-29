@@ -995,6 +995,32 @@ latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.*
   `ui.cpp` is 638 lines (was 609 before WO-3; split of new functionality done into two new files).
 - **Next:** WO-5 (shape button actions / F-button overlay), per Opus.
 
+## 2026-06-29 — WO-5: shape-button actions + hold-to-repeat nudge (COMPLETE)
+
+- **F-button map on PAGE_PARAMS pages:**
+  - F1 (X): nudge selected param DOWN (fine step = 0.01 norm / 1 stepped unit); begin hold-repeat.
+  - F2 (triangle): nudge UP; begin hold-repeat.
+  - F3 (square): back to PRESET page (s->page=0, s->row=0, snapshot called).
+  - F4 (circle): no-op (consume/ignore).
+  - F5 (three-lobe): left untouched (return false — reserved for key-guide overlay).
+  - F6 (diamond): save user preset (same logic as `=` key, which still works).
+- **Hold-to-repeat model (`ui_tick`, called from `app.c` each frame before `ui_draw`):**
+  - Initial delay: 250 ms.
+  - Continuous params: ramp rate 0.15 norm/s → 0.50 norm/s over 500 ms easing window.
+    Full 0→1 traverse ~2 s at full speed.
+  - Stepped params: one step every 150 ms, no acceleration.
+  - Release of F1/F2 stops repeat immediately; row/page change also clears held_dir.
+- **New `UIState` fields:** `held_dir` (0/±1), `held_row`, `held_since_ms`, `last_step_ms`, `repeat_accum`.
+- **Refactors:** `nudge_selected(s, dir, coarse)` helper extracted; `nudge_selected_norm(s, delta)` for tick;
+  `save_user_preset(s)` helper; comma/dot key handlers removed (retired). `=` key delegates to `save_user_preset`.
+- **`ui_handle_event` restructured:** F1/F2 release now observed before the press-only guard (not dropped).
+  Row-change navigation calls `hold_stop()` to cancel any active repeat.
+- **Status hint strip:** `"<>pg  ^v row  F1/F2 nudge  F3 back  F6 save  ESC"`.
+- No unit tests added (manual verification per WO spec — repeat model verified via manual `make host` run).
+- `make test` ✅ (169/169) `make host` ✅ `make build` ✅ `make format` ✅ membrane clean.
+  Binary: **0x110260 = 1,114,112 bytes (47% partition free)**; DIRAM 156 KB (26.99%).
+- **Next:** per Opus — Stage 4d (FX), WO-6 (key-guide overlay), or other.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
