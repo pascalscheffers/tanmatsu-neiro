@@ -253,6 +253,23 @@ Root-caused by Opus (bench showed ~131k cyc/blk/voice vs 2.6k for the Stage 0.5 
   substantially, but the actual device numbers require Pascal's `make bench-device` re-run.
   Opus clears the gate after the re-bench confirms the budget.
 
+## 2026-06-29 — Granular CPU bench: Section 4 (fixed-overhead) + Section 5 (per-block micro-bench) (COMPLETE)
+
+- **Section 4** (`engine/bench.c`) — isolates idle `synth_render` cost (param drain + 8-slot
+  allocator loop + stereo bus) with no active voices. Three rows: chorus off / Chorus I / Chorus II,
+  plus a derived "chorus I cost" diff line. Device run will show actual BBD chorus overhead.
+- **Section 5** (`engine/bench_blocks.cpp`, new C++ TU, C-ABI entry `bench_blocks_run()`) — times
+  each real DSP building block in isolation: `dsp::Osc`, `dsp::Filter` (block-rate `set_freq`),
+  `dsp::Env`, `dsp::Lfo SINE` vs `TRI` (sinf premium visible), `WhiteNoise`, `ModMatrix eval`
+  (per-block semantics). Both sections wired into `main/CMakeLists.txt` (BENCH_SRCS) and
+  `host/CMakeLists.txt` so `make bench` and `make build BENCH=1` both compile the new file.
+- Host Section 5 numbers (orientation only; host ≈ 1GHz ns, device @ 360 MHz matters):
+  Osc 616 cyc/blk · Filter(block-rate) 1579 · Env 468 · Lfo-SINE 466 · Lfo-TRI 375 ·
+  WhiteNoise 185 · ModMatrix eval 38 cyc/eval.
+- `make bench` ✅ `make host` ✅ `make test` ✅ (101/101) `make build` ✅ `make build BENCH=1` ✅.
+  App size **unchanged**: 1,000,970 bytes (~977 KiB, 52% free) — bench_blocks.cpp excluded by BENCH guard.
+- 🛑 3d-ii gate stays open — device numbers required: `make bench-device` + `make sniff`.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
