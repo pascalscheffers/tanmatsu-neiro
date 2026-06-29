@@ -850,6 +850,16 @@ latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.*
   Chip Arp with different LFO1 delay settings).
 - **Next:** per Opus's judgment — Stage 5c (expression/CC map) or Stage 4d (FX).
 
+## 2026-06-29 — Default boot patch is now "Solo Lead" (COMPLETE)
+- **`engine/preset.h/.cpp`**: new `preset_factory_default()` — resolves the boot patch by
+  **name** ("Solo Lead") so reordering the factory bank can't silently change the boot
+  sound; falls back to index 0 (INIT) if the name is missing.
+- **`ui/ui.cpp`** (`ui_state_init`): replaced the bare "load factory routings #0" baseline
+  with a full load of the default factory preset (params **and** routings) via
+  `ui_apply_params` + `engine_set_routings`. A stored user preset still overrides it.
+- Factory bank order unchanged (INIT stays index 0) — `test_preset.cpp`'s "factory preset 0
+  is INIT" assertions untouched. `make test` ✅ `make host` ✅ `make build` ✅.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
