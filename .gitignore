@@ -24,3 +24,7 @@ REPOLAYOUT.md
 components/badgeteam__badgelink/
 .vscode
 badgelink
+
+# Host build user-preset save slots (runtime data, not source — factory
+# presets are compiled into engine/preset.cpp). Written by save_user_preset().
+presets/*.tnp
