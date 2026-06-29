@@ -969,6 +969,32 @@ latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.*
   (acceptable per WO-2 scope note; split deferred to later WOs).
 - **Next:** WO-3 (preset list page render) or WO-5 (shape button actions), per Opus.
 
+## 2026-06-29 — WO-3: preset list page with audition-with-revert (COMPLETE)
+
+- **`ui/ui.h`**: `UIState` gains 4 new fields: `auditioning` (bool), `audition_snapshot[128]` (norms copy),
+  `audition_preset_name[33]`, `audition_preset_idx`. No existing fields moved/removed.
+- **`ui/ui_presets_state.cpp` / `ui_presets_state.h`** (new, no PAX dep): pure state machine —
+  `ui_presets_snapshot()` captures norms+name+idx into the audition fields, clears `auditioning`;
+  `ui_presets_handle_event()` dispatches: Up/Down auditions on first move (snapshot captured lazily);
+  F4/Enter confirms (snapshot refreshed, auditioning cleared); F3/Esc reverts (snapshot restored to engine
+  via `engine_set_param_norm` + UIState); Left/Right reverts then returns false (pass-through to page switch).
+- **`ui/ui_presets.cpp` / `ui_presets.h`** (new, PAX): drawing — scrollable list of factory presets +
+  "User" row; selection arrow; cyan dot = committed preset, magenta dot = committed-behind-audition;
+  "AUDITIONING" badge on highlighted row; alternating row stripe; hint strip at bottom.
+  Scroll logic: centred on cursor, clamped to content bounds, identical to `draw_rows`.
+- **`ui/ui.cpp`**: `#include "ui_presets.h"` added; `ui_state_init` calls `ui_presets_snapshot()` after
+  boot-preset load and positions cursor to the active preset row; `ui_handle_event` delegates page-0 events
+  to `ui_presets_handle_event` before the param-page switch/nudge path; `ui_draw` calls `ui_presets_draw`
+  on page-0, `draw_rows` otherwise.
+- **`tests/host/test_ui_presets.cpp`** (new): 6 tests with no-op engine stubs + no-storage stub:
+  snapshot captures state, revert restores norms/name/idx, confirm updates snapshot (no revert on back),
+  Esc alias, Enter alias, Left/Right reverts + returns false.
+- CMakeLists updated: `host/` + `main/` get `ui_presets.cpp` + `ui_presets_state.cpp`;
+  `tests/host/` gets `ui_presets_state.cpp` + `test_ui_presets.cpp` + PAX include path.
+- `make test` ✅ (175/175) `make host` ✅ `make format` ✅ membrane clean.
+  `ui.cpp` is 638 lines (was 609 before WO-3; split of new functionality done into two new files).
+- **Next:** WO-5 (shape button actions / F-button overlay), per Opus.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
