@@ -300,6 +300,37 @@ not the param table (per ADR 0021). Square-law taper `norm²`. No test needed up
 **What's next:** ADR 0021 Part 2 — master-bus peak limiter (`dsp/LimiterStereo`, feed-forward
 stereo-linked, THRESH=0.92, 1 ms attack, 120 ms release). See ADR 0021 §2.
 
+## 2026-06-29 — ADR 0021 Part 2: master-bus peak limiter (COMPLETE)
+
+ADR 0021 is now **fully implemented** (Parts 1+2 done).
+
+**What shipped:**
+- `dsp/limiter.h` (new, header-only): `dsp::LimiterStereo` — feed-forward, stereo-linked
+  peak limiter. Constants: THRESH=0.92, attack 1.0 ms (`a_att ≈ 0.0202 @ 48k`), release
+  120 ms (`a_rel ≈ 0.000174 @ 48k`). No libm in `process()`; `expf` in `init()` only.
+  Denormal strategy: unity-snap on recovery tail, finite floor (1e-6), NaN input guard.
+  Default-safe if `process()` called before `init()` (member initializers).
+- `engine/synth.cpp`: `s_limiter` added beside `s_chorus`; initialized in `synth_init`;
+  inserted in the per-frame loop (step 6) post-gain, pre-`soft_clip`, in **both** chorus-on
+  and chorus-off branches. `s_limiter.process()` called once per frame (continuous envelope).
+  Gain pipeline is now: gain → peak limiter (GR) → soft_clip (transient net) → output.
+- `tests/host/test_limiter.cpp` (new): `test_limiter_suite()`, 9 test cases covering
+  below-threshold transparency, sustained over-threshold convergence, attack timing (5 ms
+  catch), net safety (soft_clip(peak×gr) ≤ 1.0), release asymmetry (>>1k samples),
+  threshold boundary sweep, NaN/huge-peak robustness, and CC7-staged scenario.
+- `tests/host/main.cpp` + `tests/host/CMakeLists.txt`: suite registered alongside test_saturate.
+- `specs/02-synth-architecture.md`: limiter line item added to the cycles/block budget table.
+
+**Results:** `make test` ✅ (all pass, 9 new limiter cases) `make host` ✅ `make build` ✅
+  `make format` ✅. Image: 0x112370 B (46% partition free).
+
+**Note on release test:** the 120 ms one-pole release requires ~6.3 τ (≈36 k samples) to
+recover from strong gain reduction to 0.999; test window is 60 k samples (generous).
+The release-vs-attack asymmetry assertion (release > 1000 samples >> attack ~240 samples) confirms
+the asymmetry is present and correct.
+
+See [ADR 0021](decisions/0021-master-output-staging-and-limiter.md) for full rationale.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

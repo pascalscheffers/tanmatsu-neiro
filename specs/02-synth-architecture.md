@@ -131,6 +131,7 @@ and tracked per stage thereafter against the ratified per-voice budget.
 |---|---|---|---|---|---|---|
 | 0 | 936 KB (55% free) | — | audio scratch (`s_left/right/interleaved`) | framebuffer | — | sine engine; no IRAM placement yet |
 | 0.5 | (bench build only) | — | — | — | **480 000 cyc/blk @ 360 MHz** | measured on device (-O2); proxy voice ~2 610 cyc/blk; 8 voices = 4.4% period (`stages/stage-0.5-results.md`) |
+| ADR 0021 limiter | — | — | `s_limiter` (5 floats, ~20 B DRAM) | — | **~10 cyc/blk** (est.) | master-bus peak limiter; ~5 flops/frame × 64 frames; no libm in render path; inlines into IRAM via header-only `dsp/limiter.h` |
 
 ## Polyphony — 8 voices + unison (ADR 0003, rationale amended)
 **8 voices** with optional **unison** (stack/detune for fatness) rather than 16 thin voices.

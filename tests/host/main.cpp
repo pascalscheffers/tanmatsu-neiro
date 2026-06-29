@@ -10,6 +10,7 @@ void test_alloc_suite();
 void test_command_queue_suite();
 void test_param_store_suite();
 void test_saturate_suite();
+void test_limiter_suite();
 void test_preset_suite();
 void test_mod_sources_suite();
 void test_mod_matrix_suite();
@@ -32,6 +33,7 @@ int main(void) {
     test_command_queue_suite();
     test_param_store_suite();
     test_saturate_suite();
+    test_limiter_suite();
     test_preset_suite();
     test_mod_sources_suite();
     test_mod_matrix_suite();

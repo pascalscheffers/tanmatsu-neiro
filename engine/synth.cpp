@@ -21,6 +21,7 @@
 #include "clock.h"
 #include "command_queue.h"
 #include "dsp/lfo.h"
+#include "dsp/limiter.h"
 #include "dsp/saturate.h"
 #include "juno_model.h"
 #include "param_desc.h"
@@ -45,11 +46,12 @@ static inline float unison_gain(int count) {
 static const size_t kMaxBlock = 256;
 static float        s_mono[kMaxBlock];
 
-static JunoModel       s_juno_model;
-static VoiceAlloc      s_alloc;
-static daisysp::Chorus s_chorus;
-static ParamStore      s_params;
-static float           s_sample_rate = 48000.0f;
+static JunoModel          s_juno_model;
+static VoiceAlloc         s_alloc;
+static daisysp::Chorus    s_chorus;
+static dsp::LimiterStereo s_limiter;
+static ParamStore         s_params;
+static float              s_sample_rate = 48000.0f;
 
 // ADR 0018: shared free-running LFOs — one pair for the whole engine.
 // All voices receive the same block-end value (authentic Juno-106 behaviour:
@@ -98,6 +100,7 @@ void synth_init(uint32_t sample_rate, size_t block_size) {
     s_alloc.init(&s_juno_model);
 
     s_chorus.Init((float)sample_rate);
+    s_limiter.init((float)sample_rate);  // ADR 0021: master-bus peak limiter
 
     // ParamStore initialised with the Juno table. Smoothing coefficients are
     // block-rate (block_size / sample_rate per block). All params start at
@@ -401,21 +404,29 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
         }
     }
 
-    // 6. Mono bus → stereo chorus → master gain → soft-clip → output (ADR 0016 / ADR 0021).
+    // 6. Mono bus → stereo chorus → master gain → peak limiter → soft-clip → output
+    //    (ADR 0016 / ADR 0021).
     // Gain = MASTER_GAIN (manual trim) × channel_vol (CC7 attenuation, ADR 0021) × 1/√U.
     // channel_vol is 0..1 (unity at 1.0, square-law taper from CC7 in the router).
     // Apply equal-power unison compensation (1/√U) so U voices stacked on one note
     // do not sum louder than a single voice. Uses unison_count from step 2a above.
+    // Limiter (ADR 0021): feed-forward stereo-linked, THRESH=0.92, 1 ms attack, 120 ms release.
+    // Provides smooth gain reduction before soft_clip (the retained transient safety net, ADR 0016).
     float gain =
         s_params.get(ParamId::MASTER_GAIN) * s_channel_vol.load(std::memory_order_relaxed) * unison_gain(unison_count);
     for (size_t i = 0; i < frames; i++) {
         if (chorus_mode > 0) {
             s_chorus.Process(s_mono[i]);
-            left[i]  = soft_clip(s_chorus.GetLeft() * gain);
-            right[i] = soft_clip(s_chorus.GetRight() * gain);
+            float lg = s_chorus.GetLeft() * gain;
+            float rg = s_chorus.GetRight() * gain;
+            float gr = s_limiter.process(fmaxf(fabsf(lg), fabsf(rg)));
+            left[i]  = soft_clip(lg * gr);
+            right[i] = soft_clip(rg * gr);
         } else {
             // Chorus off: output mono signal to both channels (no stereo spread).
-            float v  = soft_clip(s_mono[i] * gain);
+            float m  = s_mono[i] * gain;
+            float gr = s_limiter.process(fabsf(m));
+            float v  = soft_clip(m * gr);
             left[i]  = v;
             right[i] = v;
         }
