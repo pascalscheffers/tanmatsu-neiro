@@ -568,9 +568,51 @@ void test_mod_wheel_feeds_matrix() {
     test_pass();
 }
 
+/* --- 13b. Mod-wheel hardwired to cutoff (Launchkey mapping, no routing) ----- */
+void test_mod_wheel_hardwired_cutoff() {
+    test_begin("Mod-wheel opens the filter via the built-in voice term (no mod-matrix route)");
+
+    // No mod-matrix routing at all — the brightening must come from the hardwired
+    // p_mod_wheel_ * kModWheelCutoffRange term in JunoVoice::render(). Low base cutoff
+    // so wheel-up has clear headroom to open.
+    auto measure_rms_with_wheel = [](float wheel) -> float {
+        JunoVoice v;
+        v.init(kSampleRate);
+        v.set_param((int)ParamId::OSC_LEVEL, 1.0f);
+        v.set_param((int)ParamId::FILTER_CUTOFF, 300.0f);  // low base cutoff
+        v.set_param((int)ParamId::FILTER_RES, 0.0f);
+        v.set_param((int)ParamId::ENV_ATTACK, 0.001f);
+        v.set_param((int)ParamId::ENV_DECAY, 0.001f);
+        v.set_param((int)ParamId::ENV_SUSTAIN, 1.0f);
+        v.set_param((int)ParamId::VCA_GATE_MODE, 1);
+
+        NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+        v.note_on(69, 127, expr);
+
+        float buf[64];
+        for (int b = 0; b < 50; b++) {
+            v.set_expression(wheel, 0.0f, 0.0f);
+            memset(buf, 0, sizeof(buf));
+            v.render(buf, 64);
+        }
+        memset(buf, 0, sizeof(buf));
+        v.set_expression(wheel, 0.0f, 0.0f);
+        v.render(buf, 64);
+        return rms(buf, 64);
+    };
+
+    float rms_wheel0 = measure_rms_with_wheel(0.0f);
+    float rms_wheel1 = measure_rms_with_wheel(1.0f);
+
+    // Wheel up opens the LPF → more high-frequency content passes → higher RMS.
+    TEST_ASSERT(rms_wheel1 > rms_wheel0,
+                "Mod-wheel at 1.0 must brighten output (open filter) vs wheel=0, with no routing");
+    test_pass();
+}
+
 /* --- 14. engine_cc_to_param: CC→ParamId lookup via JUNO_PARAM_TABLE -------- */
 void test_engine_cc_to_param() {
-    test_begin("CC→ParamId lookup: CC74→FILTER_CUTOFF, unassigned CC→0");
+    test_begin("CC→ParamId lookup: CC21→FILTER_CUTOFF, unassigned CC→0");
 
     // Replicate the engine_cc_to_param logic directly (synth.cpp not linked in
     // the host test build; JUNO_PARAM_TABLE and kJunoParamCount are available).
@@ -582,13 +624,16 @@ void test_engine_cc_to_param() {
         return 0;
     };
 
-    // CC74 = FILTER_CUTOFF (brightness, standard GM/MIDI assignment).
-    uint16_t id_74 = cc_to_param(74);
-    TEST_ASSERT(id_74 == ParamId::FILTER_CUTOFF, "CC74 must map to ParamId::FILTER_CUTOFF (0x20)");
+    // Launchkey 37 pots: CC21 = FILTER_CUTOFF, CC22 = FILTER_RES (repointed from GM 74/71).
+    uint16_t id_21 = cc_to_param(21);
+    TEST_ASSERT(id_21 == ParamId::FILTER_CUTOFF, "CC21 must map to ParamId::FILTER_CUTOFF (0x20)");
 
-    // CC71 = FILTER_RES (resonance, standard GM/MIDI assignment).
-    uint16_t id_71 = cc_to_param(71);
-    TEST_ASSERT(id_71 == ParamId::FILTER_RES, "CC71 must map to ParamId::FILTER_RES (0x21)");
+    uint16_t id_22 = cc_to_param(22);
+    TEST_ASSERT(id_22 == ParamId::FILTER_RES, "CC22 must map to ParamId::FILTER_RES (0x21)");
+
+    // CC74 was freed (no longer in the table) → 0.
+    uint16_t id_74 = cc_to_param(74);
+    TEST_ASSERT(id_74 == 0, "CC74 must now be unassigned (freed for the Launchkey pot map)");
 
     // Unassigned CC (0x7E = 126, not in the table) → 0.
     uint16_t id_unk = cc_to_param(0x7E);
@@ -664,6 +709,7 @@ void test_mod_sources_suite() {
     test_pitch_bend_shifts_pitch_up();
     test_pitch_bend_shifts_pitch_down();
     test_mod_wheel_feeds_matrix();
+    test_mod_wheel_hardwired_cutoff();
     test_engine_cc_to_param();
     test_panic_silences_voices();
 }

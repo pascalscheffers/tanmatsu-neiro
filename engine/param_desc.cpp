@@ -42,16 +42,17 @@ const ParamDesc JUNO_PARAM_TABLE[] = {
      0.0f, FLAG_PER_VOICE},
 
     // --- FILTER ---
+    // Launchkey 37 pots: cutoff=CC21, res=CC22 (was GM 74/71 — freed; controller sends 21-28).
     {ParamId::FILTER_CUTOFF, GROUP_FILTER, "Filter Cutoff", "Cutoff", 20.0f, 20000.0f, 2000.0f, CURVE_EXP, UNIT_HZ,
-     "%.0f", 74, 5.0f, FLAG_AUDIO_RATE | FLAG_PER_VOICE | FLAG_MOD_DEST},
-    {ParamId::FILTER_RES, GROUP_FILTER, "Filter Res", "Res", 0.0f, 1.0f, 0.30f, CURVE_LIN, UNIT_PCT, "%.2f", 71, 5.0f,
+     "%.0f", 21, 5.0f, FLAG_AUDIO_RATE | FLAG_PER_VOICE | FLAG_MOD_DEST},
+    {ParamId::FILTER_RES, GROUP_FILTER, "Filter Res", "Res", 0.0f, 1.0f, 0.30f, CURVE_LIN, UNIT_PCT, "%.2f", 22, 5.0f,
      FLAG_AUDIO_RATE | FLAG_PER_VOICE | FLAG_MOD_DEST},
     {ParamId::FILTER_MODE, GROUP_FILTER, "Filter Mode", "Mode", 0.0f, 2.0f, 0.0f, CURVE_STEPPED, UNIT_NONE, "%.0f",
      0xFF, 0.0f, FLAG_PER_VOICE},
     // VCF_ENV_DEPTH: scales ENV2 contribution to VCF cutoff (0=no mod, 1=full).
     // Applied in juno_voice render as: cutoff += env2_value * VCF_ENV_DEPTH * kEnvModRange.
     {ParamId::VCF_ENV_DEPTH, GROUP_FILTER, "VCF Env Depth", "EnvDep", 0.0f, 1.0f, 0.35f, CURVE_LIN, UNIT_PCT, "%.2f",
-     0xFF, 5.0f, FLAG_AUDIO_RATE | FLAG_PER_VOICE | FLAG_MOD_DEST},
+     23, 5.0f, FLAG_AUDIO_RATE | FLAG_PER_VOICE | FLAG_MOD_DEST},
     // VCF_ENV_POLARITY: 0=positive (env opens filter), 1=negative (env closes).
     {ParamId::VCF_ENV_POLARITY, GROUP_FILTER, "VCF Env Polarity", "EnvPol", 0.0f, 1.0f, 0.0f, CURVE_STEPPED, UNIT_NONE,
      "%.0f", 0xFF, 0.0f, FLAG_PER_VOICE},
@@ -61,8 +62,8 @@ const ParamDesc JUNO_PARAM_TABLE[] = {
     {ParamId::VCF_KEY_TRACK, GROUP_FILTER, "VCF Key Track", "KTrack", 0.0f, 1.0f, 0.50f, CURVE_LIN, UNIT_PCT, "%.2f",
      0xFF, 5.0f, FLAG_PER_VOICE},
     // VCF_LFO_DEPTH: scales LFO1 contribution to VCF cutoff (panel knob, not matrix).
-    {ParamId::VCF_LFO_DEPTH, GROUP_FILTER, "VCF LFO Depth", "LFODep", 0.0f, 1.0f, 0.0f, CURVE_LIN, UNIT_PCT, "%.2f",
-     0xFF, 5.0f, FLAG_AUDIO_RATE | FLAG_PER_VOICE | FLAG_MOD_DEST},
+    {ParamId::VCF_LFO_DEPTH, GROUP_FILTER, "VCF LFO Depth", "LFODep", 0.0f, 1.0f, 0.0f, CURVE_LIN, UNIT_PCT, "%.2f", 24,
+     5.0f, FLAG_AUDIO_RATE | FLAG_PER_VOICE | FLAG_MOD_DEST},
 
     // --- HPF ---
     // Juno-106 HPF: 4-position discrete switch on the original hardware; modeled
@@ -81,13 +82,13 @@ const ParamDesc JUNO_PARAM_TABLE[] = {
      FLAG_PER_VOICE | FLAG_MOD_DEST},
     {ParamId::ENV_SUSTAIN, GROUP_ENV, "Sustain", "Sus", 0.0f, 1.0f, 0.700f, CURVE_LIN, UNIT_PCT, "%.2f", 0xFF, 0.0f,
      FLAG_PER_VOICE | FLAG_MOD_DEST},
-    {ParamId::ENV_RELEASE, GROUP_ENV, "Release", "Rel", 0.001f, 5.0f, 0.300f, CURVE_EXP, UNIT_SEC, "%.3f", 72, 10.0f,
+    {ParamId::ENV_RELEASE, GROUP_ENV, "Release", "Rel", 0.001f, 5.0f, 0.300f, CURVE_EXP, UNIT_SEC, "%.3f", 28, 10.0f,
      FLAG_PER_VOICE | FLAG_MOD_DEST},
 
     // --- FX (Juno chorus) ---
     {ParamId::CHORUS_RATE, GROUP_FX, "Chorus Rate", "ChoRt", 0.05f, 5.0f, 0.500f, CURVE_EXP, UNIT_HZ, "%.2f", 0xFF,
      20.0f, 0},
-    {ParamId::CHORUS_DEPTH, GROUP_FX, "Chorus Depth", "ChoDep", 0.0f, 1.0f, 0.700f, CURVE_LIN, UNIT_PCT, "%.2f", 93,
+    {ParamId::CHORUS_DEPTH, GROUP_FX, "Chorus Depth", "ChoDep", 0.0f, 1.0f, 0.700f, CURVE_LIN, UNIT_PCT, "%.2f", 25,
      20.0f, 0},
     {ParamId::CHORUS_DELAY, GROUP_FX, "Chorus Delay", "ChoDly", 0.0f, 1.0f, 0.400f, CURVE_LIN, UNIT_PCT, "%.2f", 0xFF,
      20.0f, 0},
@@ -115,7 +116,7 @@ const ParamDesc JUNO_PARAM_TABLE[] = {
     // normalised scale factor; the mod matrix (Stage 3b-i) interprets it.
     // LFO1_DELAY: fade-in time after note_on; LFO ramps from 0 to full depth
     // over this many seconds (counter-based in render, no new DSP block needed).
-    {ParamId::LFO1_RATE, GROUP_LFO, "LFO1 Rate", "L1Rt", 0.01f, 20.0f, 1.0f, CURVE_EXP, UNIT_HZ, "%.2f", 0xFF, 5.0f,
+    {ParamId::LFO1_RATE, GROUP_LFO, "LFO1 Rate", "L1Rt", 0.01f, 20.0f, 1.0f, CURVE_EXP, UNIT_HZ, "%.2f", 27, 5.0f,
      FLAG_PER_VOICE | FLAG_MOD_DEST},
     {ParamId::LFO1_DEPTH, GROUP_LFO, "LFO1 Depth", "L1Dep", 0.0f, 1.0f, 0.5f, CURVE_LIN, UNIT_PCT, "%.2f", 0xFF, 5.0f,
      FLAG_PER_VOICE | FLAG_MOD_DEST},
@@ -168,8 +169,8 @@ const ParamDesc JUNO_PARAM_TABLE[] = {
     //   (or centre pair) is closest to 0. Converted to semitones internally.
     {ParamId::UNISON_COUNT, GROUP_AMP, "Unison Count", "UniCnt", 1.0f, 8.0f, 1.0f, CURVE_STEPPED, UNIT_NONE, "%.0f",
      0xFF, 0.0f, 0},
-    {ParamId::UNISON_DETUNE, GROUP_AMP, "Unison Detune", "UniDet", 0.0f, 50.0f, 7.0f, CURVE_LIN, UNIT_CENT, "%.1f",
-     0xFF, 5.0f, 0},
+    {ParamId::UNISON_DETUNE, GROUP_AMP, "Unison Detune", "UniDet", 0.0f, 50.0f, 7.0f, CURVE_LIN, UNIT_CENT, "%.1f", 26,
+     5.0f, 0},
 
     // --- ARP (arpeggiator control, Stage 4b-ii) ---
     // ARP_RATE stepped index 0..5 → {1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32} at 96 PPQN; default 3 = 1/16.

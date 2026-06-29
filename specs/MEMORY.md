@@ -173,6 +173,24 @@ Stage 4d FX (delay + ReverbSc). Next campaign: per Opus's judgment.
   Flash: DIRAM 156744 B (27.19%); total image 1,121,194 B. Commit: cd0a654.
 - **Next:** per Opus — Stage 4d (FX), or other.
 
+## 2026-06-29 — Launchkey 37 mapping: mod-wheel → filter + 8 pots → fun params (COMPLETE)
+
+- **Mod wheel → cutoff** (`engine/juno_voice.cpp` render only): added hardwired additive term
+  `+ p_mod_wheel_ * kModWheelCutoffRange` (8 kHz) beside the existing VCF_ENV/KEY/LFO panel mods.
+  NOT a mod-matrix route — the matrix treats `cutoff_mod` as raw Hz, so a ±1 depth adds ~1 Hz
+  (inaudible); the matrix ENV2→cutoff routes in presets are cosmetic no-ops (real filter env is
+  `VCF_ENV_DEPTH`×8000). Additive: wheel up brightens, wheel 0 = patch unchanged, every patch.
+  Mod wheel stays available as a `MOD_WHEEL` matrix source too. No preset/matrix change.
+- **8 pots → params** (`engine/param_desc.cpp` `midi_cc` edits): Launchkey pots send CC 21–28.
+  21→FILTER_CUTOFF, 22→FILTER_RES, 23→VCF_ENV_DEPTH, 24→VCF_LFO_DEPTH, 25→CHORUS_DEPTH,
+  26→UNISON_DETUNE, 27→LFO1_RATE, 28→ENV_RELEASE. GM CCs 74/71/93/72 freed (controller only
+  sends 21–28; per-controller remap is MIDI-learn's job, deferred). Routed via existing
+  `engine_cc_to_param`→`engine_set_param_norm` (5c-iii) — no router change.
+- **Tests** (`tests/host/test_mod_sources.cpp`): updated `test_engine_cc_to_param` (CC21→cutoff,
+  CC22→res, CC74→0); added `test_mod_wheel_hardwired_cutoff` (wheel up brightens, no routing).
+- `make test` ✅ (all pass) `make host` ✅ `make build` ✅ `make format` ✅. Image **1,121,584 B**.
+- **Hardware check (Pascal):** mod wheel opens filter on any patch; pots 1–8 sweep the params above.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

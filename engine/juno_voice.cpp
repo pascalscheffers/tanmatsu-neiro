@@ -269,15 +269,19 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
     // Cutoff: built-in panel mods (ENV depth, key-track, LFO) added on top of
     // the matrix cutoff_mod. kEnvModRange = 8000 Hz: ENV2 at depth=1 shifts
     // cutoff ±8 kHz (centered, so 2000 Hz + 8000 = 10 kHz full open).
-    static constexpr float kEnvModRange   = 8000.0f;
+    static constexpr float kEnvModRange         = 8000.0f;
     // ENV polarity: 1.0f = positive, -1.0f = negative.
-    float                  env_sign       = (p_vcf_env_polarity_ != 0) ? -1.0f : 1.0f;
+    float                  env_sign             = (p_vcf_env_polarity_ != 0) ? -1.0f : 1.0f;
     // Key-track mod: VCF_KEY_TRACK scales the key_track_raw contribution.
     // Full (1.0) = ±1-octave shift across key range; scaled linearly by knob.
-    static constexpr float kKeyTrackRange = 4000.0f;  // Hz per unit of key_track_raw
+    static constexpr float kKeyTrackRange       = 4000.0f;  // Hz per unit of key_track_raw
+    // Mod wheel → cutoff: hardwired additive brightener (like the panel mods above).
+    // p_mod_wheel_ [0,1] is injected each block by set_expression(); additive on top of
+    // the patch cutoff so wheel at 0 = patch unchanged. (Stage 5c Launchkey mapping.)
+    static constexpr float kModWheelCutoffRange = 8000.0f;  // wheel fully open adds +8 kHz
     float cutoff_end = p_cutoff_ + mout.cutoff_mod + env2_value_ * p_vcf_env_depth_ * env_sign * kEnvModRange +
                        key_track_raw * p_vcf_key_track_ * kKeyTrackRange +
-                       lfo1_value_ * p_vcf_lfo_depth_ * kEnvModRange;
+                       lfo1_value_ * p_vcf_lfo_depth_ * kEnvModRange + p_mod_wheel_ * kModWheelCutoffRange;
     if (cutoff_end < 20.0f) cutoff_end = 20.0f;
     if (cutoff_end > 20000.0f) cutoff_end = 20000.0f;
 
