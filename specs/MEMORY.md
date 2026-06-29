@@ -664,6 +664,55 @@ latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.*
 - `make build` ✅; generated config confirms `CONFIG_TINYUSB_RHPORT_FS=y`. Live enumeration is
   Pascal's hardware re-check.
 
+## 2026-06-29 — Stage 5b-i: USB-A host MIDI bring-up spike (COMPLETE — build-verified)
+
+- **`platform/device/midi_usb_host.h/c`** (new, CC0 vendored + adapted): USB Host Library
+  class driver spike for USB-A MIDI enumeration and raw-packet logging. SPDX:
+  `Unlicense OR CC0-1.0`; provenance: Wunderbaeumchen99817/esp-idf (PR #12566 fork),
+  retrieved 2026-06-29.
+- **MIDIStreaming interface matching:** `find_midi_interface()` walks the config descriptor
+  and matches `bInterfaceClass==0x01` (Audio) AND `bInterfaceSubClass==0x03`
+  (MIDIStreaming); claims its bulk IN endpoint. Named constants for both magic bytes.
+- **USB-A VBUS:** `bsp_power_set_usb_host_boost_enabled(true)` called first in
+  `midi_usb_host_init()` — without this nothing enumerates. Logs + continues if BSP call
+  fails (VBUS may be externally powered).
+- **P4 peripheral map:** `peripheral_map = 0` (default) → `USB_DWC_HS` = USB-A OTG HS
+  controller (confirmed via `USB_DWC_LL_GET_HW(0) → USB_DWC_HS` in
+  `hal/esp32p4/include/hal/usb_dwc_ll.h`). Independent of the USB-C Full-Speed PHY used
+  by Stage 5d TinyUSB. No `peripheral_map` special-casing needed.
+- **Task lifecycle:** host-lib daemon task (installs `usb_host_install`, pumps
+  `usb_host_lib_handle_events`) + class-driver task (registers client, pumps
+  `usb_host_client_handle_events`). Semaphore synchronization: class task blocks until
+  lib is installed. Both pinned to core 0, modest stack/priority (control-plane).
+- **Spike behaviour:** `ESP_LOGI` VID/PID on connect; hex-dump raw USB-MIDI 4-byte event
+  packets in transfer callback. Does NOT touch `platform_midi_read`, the parser, or the
+  engine — that is 5b-ii.
+- **`platform/device/platform_device.c`**: `#ifdef SYNTH_USB_HOST_DEBUG` →
+  `midi_usb_host_init()`; `#else` → `midi_usb_device_init()` (Stage 5d). Both headers
+  included unconditionally so both compile in all builds.
+- **`Makefile`**: `USBHOST_DEBUG=1` switch injects `-DSYNTH_USB_HOST_DEBUG=1` via
+  `IDF_PARAMS`; builds into separate `build/tanmatsu-usbhost/` dir (cmake cache isolation).
+- **`main/CMakeLists.txt`**: `midi_usb_host.c` added to device SRCS; `usb` added to
+  `PRIV_REQUIRES`; `if(SYNTH_USB_HOST_DEBUG)` propagates C macro via COMPILE_OPTIONS.
+- **Build results:**
+  - `make build USBHOST_DEBUG=1` ✅ spike build: 1,084,076 bytes (48% partition free)
+  - `make build` ✅ normal build: 1,032,792 bytes (51% free, unchanged path)
+  - `make test` ✅ (153/153 — touched no host/test/parser code)
+  - `make format` ✅ (only touch-list files affected)
+  - Flash delta (USB Host Library): **+51,284 bytes (~50 KB)** spike vs normal build.
+  - Membrane clean: no `usb_host*` symbols in `control/`, `engine/`, `ui/`, `app/`.
+- **Next:** 5b-ii — Pascal's hardware check (make sniff — see hardware steps below), then
+  de-packetize 4-byte USB-MIDI event packets → `platform_midi_read` coexistence with 5d
+  device. Also still open: 5c expression/CC map.
+
+**Hardware verification steps (Pascal):**
+1. `make build USBHOST_DEBUG=1 && make install USBHOST_DEBUG=1 APP_SLUG=synth-usbhost && make run APP_SLUG=synth-usbhost`
+2. In another terminal: `make sniff` (reads all USB-A modem ports)
+3. Plug a class-compliant USB-A MIDI controller into the Tanmatsu USB-A port
+4. Watch for `I (midi_usb_host): Device connected: VID=... PID=...` + `Found MIDIStreaming`
+5. Play some notes; watch for `I (midi_usb_host): MIDI rx [N bytes]: 09 90 3C 64 ...`
+   (4-byte USB-MIDI event packets in hex)
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

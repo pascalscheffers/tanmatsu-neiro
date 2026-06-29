@@ -24,6 +24,17 @@ else
 BUILD ?= build/$(DEVICE)
 BENCH_DEFINE :=
 endif
+# Stage 5b-i: USBHOST_DEBUG=1 injects -DSYNTH_USB_HOST_DEBUG, which swaps
+# platform_init() to call midi_usb_host_init() (USB-A host spike) instead of
+# midi_usb_device_init() (Stage 5d USB-C device). This keeps the USB-C Serial/JTAG
+# console alive so enumeration and packet logs are visible via `make sniff`.
+# Builds into a separate dir so it never overwrites the normal build cache.
+ifeq ($(USBHOST_DEBUG),1)
+override BUILD := build/$(DEVICE)-usbhost
+USBHOST_DEFINE := -DSYNTH_USB_HOST_DEBUG=1
+else
+USBHOST_DEFINE :=
+endif
 FAT ?= 0
 SDKCONFIG_DEFAULTS ?= sdkconfigs/general;sdkconfigs/$(DEVICE)
 SDKCONFIG ?= sdkconfig_$(DEVICE)
@@ -51,7 +62,7 @@ $(warning "Unknown device, defaulting to ESP32 $(DEVICE)")
 IDF_TARGET ?= esp32
 endif
 
-IDF_PARAMS := -B $(BUILD) build -DDEVICE=$(DEVICE) -DSDKCONFIG_DEFAULTS="$(SDKCONFIG_DEFAULTS)" -DSDKCONFIG=$(SDKCONFIG) -DIDF_TARGET=$(IDF_TARGET) -DFAT=$(FAT) $(BENCH_DEFINE)
+IDF_PARAMS := -B $(BUILD) build -DDEVICE=$(DEVICE) -DSDKCONFIG_DEFAULTS="$(SDKCONFIG_DEFAULTS)" -DSDKCONFIG=$(SDKCONFIG) -DIDF_TARGET=$(IDF_TARGET) -DFAT=$(FAT) $(BENCH_DEFINE) $(USBHOST_DEFINE)
 
 #####
 

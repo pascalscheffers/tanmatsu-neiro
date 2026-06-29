@@ -24,7 +24,9 @@
 #include "platform.h"
 #include "sdkconfig.h"
 // Stage 5d: USB-C MIDI device (PHY swap + TinyUSB); also provides platform_midi_read.
+// Stage 5b-i: USB-A host MIDI spike (SYNTH_USB_HOST_DEBUG build only).
 #include "midi_usb_device.h"
+#include "midi_usb_host.h"
 
 static const char TAG[] = "platform";
 
@@ -160,10 +162,17 @@ bool platform_init(void) {
         s_input_queue = NULL;
     }
 
-    // Stage 5d: swap USB-C PHY to OTG and install TinyUSB MIDI device.
+    // USB init — mutually exclusive:
+    //   SYNTH_USB_HOST_DEBUG (make build USBHOST_DEBUG=1): bring up USB-A host
+    //     MIDI spike only, keeping the USB-C console alive for debugging.
+    //   Normal build: Stage 5d USB-C device (TinyUSB MIDI out, console detached).
     // Done last so display/input/audio are already up before the 500 ms PHY
     // disconnect delay fires.
+#ifdef SYNTH_USB_HOST_DEBUG
+    midi_usb_host_init();
+#else
     midi_usb_device_init();
+#endif
 
     return true;
 }

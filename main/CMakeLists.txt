@@ -56,6 +56,7 @@ idf_component_register(
 		"../ui/ui.cpp"
 		"../platform/device/platform_device.c"
 		"../platform/device/midi_usb_device.c"
+		"../platform/device/midi_usb_host.c"
 		${BENCH_SRCS}
 	PRIV_REQUIRES
 		esp_lcd
@@ -66,6 +67,7 @@ idf_component_register(
 		bt
 		badge-bsp
 		tanmatsu-wifi
+		usb
 		${extra_requires}
 	INCLUDE_DIRS
 		"."
@@ -89,4 +91,11 @@ if(BENCH)
     foreach(flag ${BENCH_FLAGS})
         idf_build_set_property(COMPILE_OPTIONS "${flag}" APPEND)
     endforeach()
+endif()
+
+# Stage 5b-i: USBHOST_DEBUG=1 (make build USBHOST_DEBUG=1) — injects
+# -DSYNTH_USB_HOST_DEBUG so platform_init() routes to midi_usb_host_init()
+# instead of midi_usb_device_init(), keeping the USB-C console alive.
+if(SYNTH_USB_HOST_DEBUG)
+    idf_build_set_property(COMPILE_OPTIONS "-DSYNTH_USB_HOST_DEBUG=1" APPEND)
 endif()
