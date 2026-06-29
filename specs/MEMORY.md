@@ -339,6 +339,24 @@ restate. When this passes ~200 lines, rotate older entries into the archive.
 - Note: 1/√U is the standard equal-power default. If Pascal later prefers a different loudness
   curve (e.g. 1/U for maximum headroom), it's a one-line change to `unison_gain()`.
 
+## 2026-06-29 — bench.c now drives real `synth_render` (Stage 3d-ii harness) (COMPLETE)
+
+- **`engine/bench.c`** extended with **Section 3 — real-voice load ramp**. The bench now calls
+  `synth_init` + `engine_set_routings` (Clean 106: ENV2→cutoff + LFO1→PWM) and times
+  `synth_render()` directly (500-block loop, same t0/t1 cycle-counter as the proxy kernels) for
+  `nv=1..8` genuine Juno voices (PolyBLEP saw+sub+noise → SVF → 2×ADSR + 2×LFO + mod matrix).
+  A **worst-case line** measures all 8 voices detuned via UNISON_COUNT=8 + CHORUS_MODE=1 on a
+  single note. `engine_active_voices()` is printed per row to confirm the correct count is running.
+- **Proxy ramp (Section 2) kept** as a labelled comparison baseline; Section 3 is the deliverable.
+- `BenchRouting` (C-compatible layout mirror of `mod_matrix.h::Routing`) with `_Static_assert`
+  guards against drift; valid cast to `const struct Routing*` for `engine_set_routings`.
+  Param drain ordered correctly: one render call flushes UNISON_COUNT before note_on.
+- **To run on device:** `make bench-device` then `make sniff` — capture Section 3 rows.
+  Host run gives orientation numbers only (pseudo-1GHz ns); device numbers close the gate.
+- `make test` ✅ (101/101) `make host` ✅ `make bench` ✅ (host bench runs, Section 3 produces 8+worst-case rows).
+- **Next:** Pascal runs `make bench-device` + `make sniff` on the P4; captures real cyc/blk numbers
+  for the 🛑 3d-ii gate; Opus ratifies.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

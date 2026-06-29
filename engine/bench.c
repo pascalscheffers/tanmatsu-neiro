@@ -1,8 +1,15 @@
-// bench.c — CPU profiling harness (Stage 0.5).
+// bench.c — CPU profiling harness (Stage 0.5 + Stage 3d-ii).
 //
-// Proxy kernels time individual DSP primitives; the fused fake-voice render fn
-// drives the audio API's load ramp. printf is intentional here (bench is a
-// standalone diagnostic mode, not the audio path — CLAUDE.md allows it).
+// Section 1 — Proxy kernels: time individual DSP primitives.
+// Section 2 — Proxy voice load ramp: fused fake-voice render via audio callback
+//             (Stage 0.5 baseline; kept for comparison).
+// Section 3 — Real-voice load ramp: drives synth_render() directly, N=1..8
+//             genuine Juno voices with Clean 106 routings (ENV2+LFO active),
+//             plus a worst-case unison+chorus line. Answers the 🛑 Stage 3d-ii
+//             CPU gate: does the real voice fit the 480k cyc/blk budget?
+//
+// printf is intentional here (bench is a standalone diagnostic mode excluded
+// from the shipping image — CLAUDE.md allows it).
 //
 // All kernel state is module-static so the compiler cannot dead-store-eliminate
 // the loops. The buffer passed to each kernel is reused across kernels — its
@@ -11,6 +18,8 @@
 
 #include "bench.h"
 #include "platform.h"
+#include "synth.h"       // synth_init, synth_render, engine_note_on, engine_set_param,
+                         // engine_set_routings, engine_active_voices
 
 #include <inttypes.h>
 #include <math.h>
@@ -25,6 +34,51 @@
 
 // Maximum voices in the load ramp (far beyond any target; we stop when >95%).
 #define MAX_BENCH_VOICES 32
+
+// Real-voice ramp: how many synth_render calls per measurement step.
+// 500 blocks × 64 samples / 48 000 Hz ≈ 667 ms — enough to average jitter
+// and keep envelopes stable across the count.
+#define REAL_REPEATS 500
+
+// Warmup blocks before timing: enough to push envelopes through attack+decay
+// into sustain (at default INIT ADSR, attack ≈ 10 ms → ~7 blocks at 64/48k).
+// 200 blocks ≈ 267 ms — generous buffer for any default attack/decay.
+#define REAL_WARMUP  200
+
+// C-visible Routing struct layout — must exactly match engine/mod_matrix.h's
+// C++ Routing struct. Fields: source(u8) + 1-byte align pad + dest_param_id(u16)
+// + depth(f32) + curve(u8) + 3-byte tail pad = 12 bytes.
+// The _Static_assert below guards against layout drift.
+typedef struct {
+    uint8_t  source;
+    uint8_t  _pad1;
+    uint16_t dest_param_id;
+    float    depth;
+    uint8_t  curve;
+    uint8_t  _pad2[3];
+} BenchRouting;
+// ModSource::NONE=0, ModSource::LFO1=1, ModSource::ENV2=4, ModCurve::LIN=0
+// kPresetDestPwm=0xFFFD (PWM sentinel, same as in preset.cpp Stage 3b-ii).
+// We pass this array to engine_set_routings as 'const struct Routing*'; the
+// BenchRouting and Routing structs are layout-compatible by the assert above.
+// Verify size matches the C++ struct (12 bytes on both RV32 and x86-64).
+_Static_assert(sizeof(BenchRouting) == 12,
+               "BenchRouting size mismatch — update padding to match mod_matrix.h Routing");
+
+// "Clean 106" factory routings (same as the INIT preset in preset.cpp):
+//   slot 0: ENV2 → FILTER_CUTOFF, depth +0.35, LIN
+//   slot 1: LFO1 → OSC_PWM (sentinel 0xFFFD), depth +0.20, LIN
+// ModSource: NONE=0, LFO1=1, ENV2=4; dest: FILTER_CUTOFF=0x20, PWM=0xFFFD.
+static const BenchRouting s_clean106_routings[2] = {
+    { .source = 4, ._pad1 = 0, .dest_param_id = 0x20, .depth = 0.35f, .curve = 0, ._pad2 = {0,0,0} },
+    { .source = 1, ._pad1 = 0, .dest_param_id = 0xFFFD, .depth = 0.20f, .curve = 0, ._pad2 = {0,0,0} },
+};
+
+// ParamId values needed in bench (keep in sync with param_id.h — these are
+// stable IDs, never renumbered, so literals here are safe).
+#define BENCH_PARAM_CHORUS_MODE   0x53u   // 0=off, 1=chorus I, 2=chorus II
+#define BENCH_PARAM_UNISON_COUNT  0x65u   // stepped 1..8
+#define BENCH_PARAM_UNISON_DETUNE 0x66u   // cents 0..50
 
 // -------------------------------------------------------------------------
 // Kernel state (kept in module statics to survive across blocks and prevent
@@ -229,6 +283,37 @@ static void bench_render_fn(float* left, float* right, size_t n, void* user) {
 }
 
 // -------------------------------------------------------------------------
+// real_voice_row — time one synth_render call after nv voices are active.
+//
+// Reuses the same t0/t1 cycle-counter and table-format logic as the proxy
+// ramp.  Called from bench_run for each ramp step and the worst-case line.
+// -------------------------------------------------------------------------
+static void real_voice_row(uint32_t nv_label, uint32_t block_period, uint32_t cps,
+                           uint32_t block_size, float* left, float* right) {
+    // Warmup: drain note events into the engine + let envelopes settle.
+    for (int w = 0; w < REAL_WARMUP; w++) {
+        synth_render(left, right, block_size, NULL);
+    }
+
+    int active = engine_active_voices();
+
+    // Time REAL_REPEATS consecutive synth_render calls.
+    uint64_t t0 = platform_cycles_now();
+    for (int r = 0; r < REAL_REPEATS; r++) {
+        synth_render(left, right, block_size, NULL);
+    }
+    uint64_t t1 = platform_cycles_now();
+
+    uint32_t cyc_blk = (uint32_t)((t1 - t0) / REAL_REPEATS);
+    float    pct     = 100.0f * (float)cyc_blk / (float)block_period;
+    int32_t  mrg     = (int32_t)block_period - (int32_t)cyc_blk;
+    const char* verdict = (pct <= 70.0f) ? "OK" : (pct <= 85.0f) ? "WARN" : "OVER";
+
+    printf("  %6" PRIu32 "  %3d active  %8" PRIu32 "  %7.1f%%  %10" PRId32 "  %s\n",
+           nv_label, active, cyc_blk, pct, mrg, verdict);
+}
+
+// -------------------------------------------------------------------------
 // bench_run — public entry point
 // -------------------------------------------------------------------------
 void bench_run(uint32_t sample_rate, uint32_t block_size) {
@@ -244,7 +329,7 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
 
     printf("\n");
     printf("============================================================\n");
-    printf("  Tanmatsu Synth — Stage 0.5 CPU Benchmark\n");
+    printf("  Tanmatsu Synth — CPU Benchmark (Stage 0.5 + Stage 3d-ii)\n");
     printf("============================================================\n");
     printf("  Block : %" PRIu32 " samples @ %" PRIu32 " Hz (%.2f us/block)\n",
            block_size, sample_rate, block_us);
@@ -273,7 +358,9 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
     printf("\n");
 
     // ----------------------------------------------------------------
-    // Load ramp — fake voices through the real audio callback path
+    // Section 2 — Load ramp: proxy voice (Stage 0.5 baseline)
+    // Fake voice (PolyBLEP saw + SVF + env) via the real audio callback.
+    // Kept for comparison; the real-voice ramp in Section 3 is the deliverable.
     // ----------------------------------------------------------------
     for (int v = 0; v < MAX_BENCH_VOICES; v++) {
         s_voices[v].phase    = (float)v / (float)MAX_BENCH_VOICES;
@@ -284,7 +371,7 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
     atomic_store(&s_n_voices, 1u);
     atomic_store(&s_render_cycles, 0u);
 
-    printf("  Load ramp: fake voice (osc + SVF + env) via audio callback\n");
+    printf("  [Section 2] Proxy load ramp: fake voice (osc+SVF+env) via audio callback\n");
     printf("  Target ceiling: 70%% period (headroom for FX + UI jitter)\n");
     printf("  voices   cyc/blk   %%period  margin_cyc  verdict\n");
     printf("------------------------------------------------------------\n");
@@ -321,11 +408,110 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
 
     printf("============================================================\n");
     if (ceiling_voices) {
-        printf("  Safe voice ceiling (<=70%%): ~%" PRIu32 " voices\n",
+        printf("  Safe proxy ceiling (<=70%%): ~%" PRIu32 " voices\n",
                (ceiling_voices > 1) ? ceiling_voices - 1 : 1);
     }
+    printf("  (Proxy numbers for context — see Section 3 for real-voice cost.)\n");
+    printf("============================================================\n");
+    printf("\n");
+
+    // ----------------------------------------------------------------
+    // Section 3 — Real-voice load ramp (Stage 3d-ii CPU gate)
+    //
+    // Drives synth_render() directly (not through the audio callback) in
+    // a tight timing loop — the same t0/t1 cycle-counter pattern as the
+    // proxy kernels.  N=1..kNumVoices genuine Juno voices, each with the
+    // Clean 106 factory routings active (ENV2→cutoff + LFO1→PWM), so the
+    // mod matrix, two LFOs, and ENV2 are all running during measurement.
+    //
+    // After the ramp, a worst-case "unison ceiling" line measures all
+    // kNumVoices voices detuned on a single note with chorus ON.
+    //
+    // Results answer: does the real 8-voice Juno voice fit the budget?
+    //   Budget: 480 000 cyc/blk (360 MHz, 64 smp @ 48 kHz).
+    //   Safe ceiling: 70% = 336 000 cyc/blk.
+    //   Hard ceiling: 95% = 456 000 cyc/blk.
+    // ----------------------------------------------------------------
+
+    // Stereo output buffers for synth_render (static: no alloc in bench).
+    static float s_left[BENCH_BLOCK];
+    static float s_right[BENCH_BLOCK];
+
+    // Initialise the engine.  synth_init prepares the voice pool and param
+    // store; all params start at their JUNO_PARAM_TABLE defaults.
+    synth_init(sample_rate, block_size);
+
+    // Load the Clean 106 factory routings so ENV2→cutoff and LFO1→PWM are
+    // active during measurement (same as the INIT preset applied at startup).
+    // engine_set_routings takes 'const struct Routing*'; BenchRouting is
+    // layout-compatible (verified by _Static_assert above).
+    engine_set_routings((const struct Routing*)s_clean106_routings,
+                        (int)(sizeof(s_clean106_routings) / sizeof(s_clean106_routings[0])));
+
+    printf("  [Section 3] Real-voice load ramp (Stage 3d-ii gate)\n");
+    printf("  Engine: real Juno voice — PolyBLEP saw+sub+noise → SVF\n");
+    printf("  → 2×ADSR + 2×LFO + mod matrix (Clean 106 routings active).\n");
+    printf("  Timing: synth_render() direct call (REAL_REPEATS=%d blocks).\n", REAL_REPEATS);
+    printf("  Target ceiling: 70%% period (headroom for FX + UI jitter)\n");
+    printf("  Budget: block_period=%" PRIu32 " cyc  70%%=%" PRIu32 "  95%%=%" PRIu32 "\n",
+           block_period,
+           (uint32_t)(0.70f * (float)block_period),
+           (uint32_t)(0.95f * (float)block_period));
+    printf("  voices  active    cyc/blk   %%period  margin_cyc  verdict\n");
+    printf("------------------------------------------------------------\n");
+
+    // Ramp N=1..kNumVoices.  Pitches spread over a minor-seventh chord to
+    // avoid any voice-allocation degenerate case.
+    static const uint8_t kRampPitches[] = {48, 52, 55, 59, 60, 64, 67, 71};
+    _Static_assert(sizeof(kRampPitches) >= 8, "need at least kNumVoices pitches");
+
+    for (int nv = 1; nv <= 8 /*kNumVoices*/; nv++) {
+        // Re-init engine for a clean slate each ramp step.
+        synth_init(sample_rate, block_size);
+        engine_set_routings((const struct Routing*)s_clean106_routings,
+                            (int)(sizeof(s_clean106_routings) / sizeof(s_clean106_routings[0])));
+
+        // Trigger nv notes (one call per voice, distinct pitches).
+        for (int i = 0; i < nv; i++) {
+            engine_note_on(kRampPitches[i], 100);
+        }
+
+        real_voice_row((uint32_t)nv, block_period, cps, block_size, s_left, s_right);
+    }
+
+    printf("------------------------------------------------------------\n");
+
+    // Worst-case line: UNISON_COUNT=8 (all voices) on one note + Chorus I.
+    // This is the true CPU ceiling: full 8-voice pool, mod matrix active on
+    // every voice, detuned by UNISON_DETUNE, chorus BBD running.
+    printf("  Worst-case: UNISON_COUNT=8, CHORUS_MODE=1 (Chorus I)\n");
+    {
+        synth_init(sample_rate, block_size);
+        engine_set_routings((const struct Routing*)s_clean106_routings,
+                            (int)(sizeof(s_clean106_routings) / sizeof(s_clean106_routings[0])));
+        // Set unison stack to all 8 voices with 7-cent default detune.
+        engine_set_param(BENCH_PARAM_UNISON_COUNT,  8.0f);
+        engine_set_param(BENCH_PARAM_UNISON_DETUNE, 7.0f);
+        // Enable Chorus I.
+        engine_set_param(BENCH_PARAM_CHORUS_MODE, 1.0f);
+        // Drain params via one render call so UNISON_COUNT=8 is applied to
+        // the allocator BEFORE note_on — otherwise the note arrives when
+        // unison_count is still 1 (param drain happens after note drain
+        // inside synth_render, so we must flush params first).
+        synth_render(s_left, s_right, block_size, NULL);
+        // Single note now triggers U=8 voices (allocator already sees count=8).
+        engine_note_on(60, 100);   // middle C
+
+        real_voice_row(8u /*nv_label=8 voices in the pool*/, block_period, cps,
+                       block_size, s_left, s_right);
+    }
+
+    printf("============================================================\n");
+    printf("  Budget: 480 000 cyc/blk @ 360 MHz (64 smp / 48 kHz).\n");
+    printf("  Safe ceiling (<=70%%): 336 000 cyc/blk.\n");
+    printf("  Hard ceiling (<=95%%): 456 000 cyc/blk.\n");
     printf("  Record these numbers in specs/stages/stage-0.5-results.md\n");
-    printf("  then raise the Opus gate for budget ratification.\n");
+    printf("  (or a new stage-3d-ii-results.md) to close the 3d-ii gate.\n");
     printf("============================================================\n");
 
     // Hang so the serial monitor can capture the output before watchdog fires.
