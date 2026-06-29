@@ -6,7 +6,7 @@
 
 <p align="center"><em>An 8-voice Juno-106 in your pocket — running on a <a href="https://tanmatsu.cloud">Tanmatsu</a> badge.</em></p>
 
-> **Neiro** (音色) is Japanese for *tone-colour* — timbre, the one thing a synthesizer exists to shape. A fitting nod, too, to the Japanese heritage of the Roland Juno-106 it models.
+> **Neiro** (音色) is Japanese for *tone-colour* — timbre, the one thing a synthesizer exists to shape. A nod to the Japanese heritage of the Roland Juno-106 it models.
 
 ## What it is
 
