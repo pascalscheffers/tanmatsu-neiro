@@ -899,6 +899,26 @@ latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.*
 - **Next:** Stage 5c-iii — router wiring (bend/mod/AT/CC from `midi_router_poll` → new engine APIs +
   sustain + CC→param). The four APIs above are the handoff seam.
 
+## 2026-06-29 — Stage 5c-iii: MIDI router dispatch + sustain pedal + CC→param (COMPLETE)
+
+- **`control/sustain.{h,c}`** (new, pure module, no engine/platform deps): 128-bit bitmap
+  tracks deferred note-offs while the sustain pedal (CC64) is down. `sustain_note_on` cancels
+  any pending release (re-press); `sustain_note_off` returns `true`=defer or `false`=immediate;
+  `sustain_set_pedal(down, release_fn)` flushes all pending pitches via callback on the down→up
+  edge; `sustain_clear` wipes state for panic. Only `<stdint.h>/<stdbool.h>/<string.h>` — membrane clean.
+- **`control/midi_router.c`** updated: full switch dispatch on `MidiMsg.type`:
+  `MIDI_NOTE_ON/OFF` via sustain state machine; `MIDI_PITCH_BEND` → 14-bit→bipolar→`engine_set_pitch_bend`;
+  `MIDI_CHANNEL_PRESSURE` → `engine_set_aftertouch`; `MIDI_CC`: CC1→`engine_set_mod_wheel`,
+  CC64→`sustain_set_pedal`, CC120/123→`engine_all_notes_off`+`sustain_clear`, default→`engine_cc_to_param`+`engine_set_param_norm`.
+- **`engine/param_desc.cpp`**: `LFO1_DEPTH` `midi_cc` changed `1 → 0xFF` (unassigned). CC1 is
+  now the mod wheel (router special-case); CC1 no longer double-binds to LFO1_DEPTH in generic CC→param lookup.
+- **6 new host tests** in `tests/host/test_sustain.cpp` (163 → 169): pedal-up immediate, pedal-down deferred,
+  down→up flush of 3 pitches, re-press cancels deferred, empty-pedal-cycle no-callbacks, clear-wipes-pending.
+- `make test` ✅ (169/169) `make host` ✅ `make build` ✅ `make format` ✅ membrane clean.
+  `make size`: total image **1,109,064 bytes** (47% partition free). Delta ≈ +~650 bytes (sustain.c is tiny).
+- Device behaviour (real controller bend/CC/sustain) is Pascal's hardware check — same pattern as 5b/5d.
+- **Stage 5c COMPLETE — MIDI expression done.** Remaining Stage 5: 5e SMF player (reuses 4a scheduler), optional 5f MIDI-clock-in.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

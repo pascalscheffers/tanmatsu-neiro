@@ -117,7 +117,7 @@ const ParamDesc JUNO_PARAM_TABLE[] = {
     // over this many seconds (counter-based in render, no new DSP block needed).
     {ParamId::LFO1_RATE, GROUP_LFO, "LFO1 Rate", "L1Rt", 0.01f, 20.0f, 1.0f, CURVE_EXP, UNIT_HZ, "%.2f", 0xFF, 5.0f,
      FLAG_PER_VOICE | FLAG_MOD_DEST},
-    {ParamId::LFO1_DEPTH, GROUP_LFO, "LFO1 Depth", "L1Dep", 0.0f, 1.0f, 0.5f, CURVE_LIN, UNIT_PCT, "%.2f", 1, 5.0f,
+    {ParamId::LFO1_DEPTH, GROUP_LFO, "LFO1 Depth", "L1Dep", 0.0f, 1.0f, 0.5f, CURVE_LIN, UNIT_PCT, "%.2f", 0xFF, 5.0f,
      FLAG_PER_VOICE | FLAG_MOD_DEST},
     {ParamId::LFO1_SHAPE, GROUP_LFO, "LFO1 Shape", "L1Shp", 0.0f, 5.0f, 0.0f, CURVE_STEPPED, UNIT_NONE, "%.0f", 0xFF,
      0.0f, FLAG_PER_VOICE},

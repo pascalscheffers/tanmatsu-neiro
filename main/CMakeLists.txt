@@ -53,6 +53,7 @@ idf_component_register(
 		# Stage 5a: MIDI parser + router (device uses no-op platform_midi_read stub).
 		"../control/midi_in.c"
 		"../control/midi_router.c"
+		"../control/sustain.c"
 		"../ui/ui.cpp"
 		"../platform/device/platform_device.c"
 		"../platform/device/midi_usb_device.c"

@@ -1,17 +1,26 @@
-// control/midi_router.c — MIDI byte-stream → engine dispatch (Stage 5a-ii).
+// control/midi_router.c — MIDI byte-stream → engine dispatch (Stage 5c).
 //
 // Drains platform_midi_read() each frame, feeds raw bytes into the incremental
-// MidiParser, and dispatches completed note messages to the engine. Omni mode:
-// channel field is ignored. CC/expression handling arrives in Stage 5c.
+// MidiParser, and dispatches completed messages to the engine. Omni mode:
+// channel field is ignored. Sustain-pedal deferred note-off is handled by the
+// pure control/sustain module so it can be tested independently.
 #include "control/midi_router.h"
 #include "control/midi_in.h"
+#include "control/sustain.h"
 #include "platform.h"
 #include "synth.h"
 
-static MidiParser s_parser;
+static MidiParser   s_parser;
+static SustainPedal s_sustain;
+
+// Callback from sustain_set_pedal: release a deferred voice.
+static void router_release(uint8_t pitch) {
+    engine_note_off(pitch);
+}
 
 void midi_router_init(void) {
     midi_parser_init(&s_parser);
+    sustain_init(&s_sustain);
 }
 
 void midi_router_poll(void) {
@@ -21,12 +30,57 @@ void midi_router_poll(void) {
         for (size_t i = 0; i < n; i++) {
             MidiMsg m;
             if (midi_parse_byte(&s_parser, buf[i], &m)) {
-                if (m.type == MIDI_NOTE_ON) {
-                    engine_note_on(m.data1, m.data2);
-                } else if (m.type == MIDI_NOTE_OFF) {
-                    engine_note_off(m.data1);
+                switch (m.type) {
+                    case MIDI_NOTE_ON:
+                        sustain_note_on(&s_sustain, m.data1);
+                        engine_note_on(m.data1, m.data2);
+                        break;
+
+                    case MIDI_NOTE_OFF:
+                        if (!sustain_note_off(&s_sustain, m.data1)) {
+                            engine_note_off(m.data1);
+                        }
+                        break;
+
+                    case MIDI_PITCH_BEND: {
+                        // data1 = LSB (0-127), data2 = MSB (0-127); centre = 0x2000 = 8192.
+                        int   v14  = (int)m.data1 | ((int)m.data2 << 7);
+                        float bend = (float)(v14 - 8192) / 8192.0f;
+                        engine_set_pitch_bend(bend);
+                        break;
+                    }
+
+                    case MIDI_CHANNEL_PRESSURE:
+                        engine_set_aftertouch((float)m.data1 / 127.0f);
+                        break;
+
+                    case MIDI_CC:
+                        switch (m.data1) {
+                            case 1:  // Mod wheel
+                                engine_set_mod_wheel((float)m.data2 / 127.0f);
+                                break;
+                            case 64:  // Sustain pedal
+                                sustain_set_pedal(&s_sustain, m.data2 >= 64, router_release);
+                                break;
+                            case 120:  // All Sound Off / panic
+                            case 123:  // All Notes Off / panic
+                                engine_all_notes_off();
+                                sustain_clear(&s_sustain);
+                                break;
+                            default: {
+                                uint16_t id = engine_cc_to_param(m.data1);
+                                if (id) {
+                                    engine_set_param_norm(id, (float)m.data2 / 127.0f);
+                                }
+                                break;
+                            }
+                        }
+                        break;
+
+                    case MIDI_OTHER:
+                    default:
+                        break;
                 }
-                // MIDI_CC / MIDI_OTHER: deferred to Stage 5c.
             }
         }
         if (n < sizeof buf) break;

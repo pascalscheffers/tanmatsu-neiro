@@ -60,7 +60,8 @@ set(HOST_SRCS
     "${REPO_ROOT}/platform/host/miniaudio_impl.c"
     "${REPO_ROOT}/platform/host/midi_host.cpp"
     "${REPO_ROOT}/control/midi_in.c"
-    "${REPO_ROOT}/control/midi_router.c")
+    "${REPO_ROOT}/control/midi_router.c"
+    "${REPO_ROOT}/control/sustain.c")
 
 if(SYNTH_BENCH)
     list(APPEND HOST_SRCS "${REPO_ROOT}/engine/bench.c")
