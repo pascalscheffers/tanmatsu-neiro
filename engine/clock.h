@@ -13,9 +13,8 @@
 // Pattern mirrors NoteCmd (engine/command_queue.h).
 #pragma once
 
-#include <cstdint>
 #include <math.h>
-
+#include <cstdint>
 #include "spsc_ring.h"
 
 // ---------------------------------------------------------------------------
@@ -24,11 +23,11 @@
 // ---------------------------------------------------------------------------
 struct ClockCmd {
     enum Type : uint8_t {
-        kSetBpm    = 0,
-        kStart     = 1,
-        kStop      = 2,
-        kContinue  = 3,
-        kTap       = 4,
+        kSetBpm   = 0,
+        kStart    = 1,
+        kStop     = 2,
+        kContinue = 3,
+        kTap      = 4,
     };
     uint8_t type;
     float   arg;  // BPM for kSetBpm; unused (0) for others
@@ -39,23 +38,23 @@ struct ClockCmd {
 // ---------------------------------------------------------------------------
 class Clock {
 public:
-    static constexpr int   kPpqn        = 96;
-    static constexpr float kBpmMin      = 20.0f;
-    static constexpr float kBpmMax      = 300.0f;
-    static constexpr float kDefaultBpm  = 120.0f;
+    static constexpr int   kPpqn       = 96;
+    static constexpr float kBpmMin     = 20.0f;
+    static constexpr float kBpmMax     = 300.0f;
+    static constexpr float kDefaultBpm = 120.0f;
 
     // Initialise with the given sample rate. Stops the transport, zeros all
     // positions, sets BPM to 120. Safe to call on any thread before audio starts.
     void init(float sample_rate) {
-        sample_rate_      = sample_rate;
-        running_          = false;
-        bpm_              = kDefaultBpm;
-        tick_pos_         = 0;
-        sample_pos_       = 0;
-        free_pos_         = 0;
-        accum_            = 0.0;
-        last_tap_pos_     = 0;
-        has_prev_tap_     = false;
+        sample_rate_  = sample_rate;
+        running_      = false;
+        bpm_          = kDefaultBpm;
+        tick_pos_     = 0;
+        sample_pos_   = 0;
+        free_pos_     = 0;
+        accum_        = 0.0;
+        last_tap_pos_ = 0;
+        has_prev_tap_ = false;
         recompute_spt();
     }
 
@@ -83,14 +82,10 @@ public:
     }
 
     // Continue: resume from the current position (no reset).
-    void cont() {
-        running_ = true;
-    }
+    void cont() { running_ = true; }
 
     // Stop: halt transport; positions are preserved.
-    void stop() {
-        running_ = false;
-    }
+    void stop() { running_ = false; }
 
     bool running() const { return running_; }
 
@@ -109,7 +104,7 @@ public:
         }
 
         sample_pos_ += frames;
-        accum_ += (double)frames;
+        accum_      += (double)frames;
 
         int ticks = 0;
         while (accum_ >= samples_per_tick_) {
@@ -123,16 +118,16 @@ public:
     // --- Queries (control-thread safe; may be frame-stale) ------------------
 
     // Monotonic tick count since the last start().
-    uint64_t tick_pos()    const { return tick_pos_; }
+    uint64_t tick_pos() const { return tick_pos_; }
 
     // Monotonic sample count since the last start().
-    uint64_t sample_pos()  const { return sample_pos_; }
+    uint64_t sample_pos() const { return sample_pos_; }
 
     // Samples per tick (double for precision; used in tests).
-    double   samples_per_tick() const { return samples_per_tick_; }
+    double samples_per_tick() const { return samples_per_tick_; }
 
     // Free-running monotonic sample counter (never reset; unaffected by transport).
-    uint64_t free_pos()    const { return free_pos_; }
+    uint64_t free_pos() const { return free_pos_; }
 
     // --- Tap tempo ----------------------------------------------------------
 
@@ -181,18 +176,18 @@ private:
         samples_per_tick_ = (double)sample_rate_ * 60.0 / ((double)bpm_ * (double)kPpqn);
     }
 
-    float    sample_rate_      = 48000.0f;
-    float    bpm_              = kDefaultBpm;
-    double   samples_per_tick_ = 0.0;
-    double   accum_            = 0.0;   // fractional-sample tick accumulator
+    float  sample_rate_      = 48000.0f;
+    float  bpm_              = kDefaultBpm;
+    double samples_per_tick_ = 0.0;
+    double accum_            = 0.0;  // fractional-sample tick accumulator
 
-    uint64_t tick_pos_         = 0;     // ticks since last start()
-    uint64_t sample_pos_       = 0;     // samples since last start()
-    uint64_t free_pos_         = 0;     // monotonic, never reset
+    uint64_t tick_pos_   = 0;  // ticks since last start()
+    uint64_t sample_pos_ = 0;  // samples since last start()
+    uint64_t free_pos_   = 0;  // monotonic, never reset
 
-    bool     running_          = false;
+    bool running_ = false;
 
     // Tap tempo state
-    uint64_t last_tap_pos_     = 0;
-    bool     has_prev_tap_     = false;
+    uint64_t last_tap_pos_ = 0;
+    bool     has_prev_tap_ = false;
 };

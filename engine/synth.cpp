@@ -19,13 +19,13 @@
 #include "arp_clock.h"
 #include "clock.h"
 #include "command_queue.h"
-#include "scheduler.h"
 #include "dsp/lfo.h"
 #include "dsp/saturate.h"
 #include "juno_model.h"
 #include "param_desc.h"
 #include "param_id.h"
 #include "param_store.h"
+#include "scheduler.h"
 #include "synth.h"
 #include "synth_config.h"
 #include "voice_alloc.h"
@@ -72,14 +72,14 @@ static SpscRing<ClockCmd, 16> s_clock_cmds;
 // the audio thread drains them into s_sched and dispatches due events each block.
 // NOTE: free_pos() (not sample_pos()) is the scheduler time base so the arp
 // fires regardless of transport start/stop (ADR 0019 free-running convention).
-static Scheduler<64>               s_sched;
+static Scheduler<64>                s_sched;
 static SpscRing<ScheduledEvent, 64> s_sched_in;
 
 // Stage 4b-iii: arpeggiator statics (audio thread only).
 static Arp      s_arp;
-static double   s_arp_phase     = 0.0;   // samples until next step; 0 = fire now
+static double   s_arp_phase     = 0.0;  // samples until next step; 0 = fire now
 static bool     s_arp_had_notes = false;
-static uint32_t s_arp_step      = 0;     // step counter for swing parity
+static uint32_t s_arp_step      = 0;  // step counter for swing parity
 
 void synth_init(uint32_t sample_rate, size_t block_size) {
     s_sample_rate = (float)sample_rate;
@@ -136,7 +136,7 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     //    - arp_on=true:  feed the arp's held-note set; the arp's scheduled note-on/off
     //      commands reach s_alloc via the scheduler dispatch in step 1b.
     //    - arp_on=false: existing direct path to s_alloc (byte-identical to pre-arp).
-    bool arp_on = s_params.get(ParamId::ARP_ON) > 0.5f;
+    bool    arp_on = s_params.get(ParamId::ARP_ON) > 0.5f;
     NoteCmd cmd;
     while (s_cmds.pop(cmd)) {
         if (arp_on) {
@@ -172,11 +172,21 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
         ClockCmd cc;
         while (s_clock_cmds.pop(cc)) {
             switch (cc.type) {
-                case ClockCmd::kSetBpm:    s_clock.set_bpm(cc.arg); break;
-                case ClockCmd::kStart:     s_clock.start();         break;
-                case ClockCmd::kStop:      s_clock.stop();          break;
-                case ClockCmd::kContinue:  s_clock.cont();          break;
-                case ClockCmd::kTap:       s_clock.tap();           break;
+                case ClockCmd::kSetBpm:
+                    s_clock.set_bpm(cc.arg);
+                    break;
+                case ClockCmd::kStart:
+                    s_clock.start();
+                    break;
+                case ClockCmd::kStop:
+                    s_clock.stop();
+                    break;
+                case ClockCmd::kContinue:
+                    s_clock.cont();
+                    break;
+                case ClockCmd::kTap:
+                    s_clock.tap();
+                    break;
             }
         }
         block_start = s_clock.free_pos();  // free-running position at block start
@@ -196,18 +206,17 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
             s_sched.schedule(sev.sample_time, sev.cmd);
         }
 
-        s_sched.dispatch_due(block_start, (uint32_t)frames,
-            [](const NoteCmd& cmd, uint32_t offset) {
-                // offset: sample position within the block (deferred — ADR 0010).
-                (void)offset;  // sub-block splitting deferred per ADR 0010
+        s_sched.dispatch_due(block_start, (uint32_t)frames, [](const NoteCmd& cmd, uint32_t offset) {
+            // offset: sample position within the block (deferred — ADR 0010).
+            (void)offset;  // sub-block splitting deferred per ADR 0010
 
-                NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
-                if (cmd.type == NoteCmd::kNoteOn) {
-                    s_alloc.note_on(cmd.pitch, cmd.velocity, expr);
-                } else {
-                    s_alloc.note_off(cmd.pitch);
-                }
-            });
+            NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+            if (cmd.type == NoteCmd::kNoteOn) {
+                s_alloc.note_on(cmd.pitch, cmd.velocity, expr);
+            } else {
+                s_alloc.note_off(cmd.pitch);
+            }
+        });
     }
 
     // 2. Advance the param store smoothers and update targets from the ring.
@@ -265,17 +274,15 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
                     float swing = s_params.get(ParamId::ARP_SWING);
 
                     // Swing: delay odd steps by swing_fraction * 0.5 * step_period.
-                    uint64_t on = block_start + (uint64_t)r.offset
-                                  + ((s_arp_step & 1u)
-                                         ? (uint64_t)(swing * 0.5 * step_period)
-                                         : 0u);
+                    uint64_t on = block_start + (uint64_t)r.offset +
+                                  ((s_arp_step & 1u) ? (uint64_t)(swing * 0.5 * step_period) : 0u);
 
                     // Gate: fraction of the step period. Force at least 1 sample length.
                     uint64_t gate_len = (uint64_t)(gate * step_period);
                     if (gate_len == 0) gate_len = 1;
                     uint64_t off = on + gate_len;
 
-                    s_sched.schedule(on,  NoteCmd{NoteCmd::kNoteOn,  a.pitch, a.velocity});
+                    s_sched.schedule(on, NoteCmd{NoteCmd::kNoteOn, a.pitch, a.velocity});
                     s_sched.schedule(off, NoteCmd{NoteCmd::kNoteOff, a.pitch, 0});
 
                     s_arp_step++;

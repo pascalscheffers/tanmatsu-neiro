@@ -1,7 +1,6 @@
 /* tests/host/test_clock.cpp — unit tests for the master musical Clock */
 #include <math.h>
 #include <stdio.h>
-
 #include "engine/clock.h"
 #include "runner.h"
 
@@ -48,8 +47,7 @@ void test_clock_suite() {
             total_frames += 64;
         }
         uint64_t expected_ticks = total_frames / 250;
-        TEST_ASSERT(c.tick_pos() == expected_ticks,
-                    "tick_pos must equal floor(total_frames / 250)");
+        TEST_ASSERT(c.tick_pos() == expected_ticks, "tick_pos must equal floor(total_frames / 250)");
         test_pass();
     }
 
@@ -73,7 +71,7 @@ void test_clock_suite() {
         Clock c;
         c.init(48000.0f);
         c.set_bpm(120.0f);
-        c.advance(250);          // stopped — no ticks
+        c.advance(250);  // stopped — no ticks
         c.start();
         int ticks = c.advance(250);
         TEST_ASSERT(ticks == 1, "after start(), 250 frames must produce 1 tick");
@@ -107,8 +105,7 @@ void test_clock_suite() {
         uint64_t pos_before_cont = c.tick_pos();
         c.cont();
         c.advance(250);  // should add 1 more tick
-        TEST_ASSERT(c.tick_pos() == pos_before_cont + 1,
-                    "cont() must resume without resetting tick_pos");
+        TEST_ASSERT(c.tick_pos() == pos_before_cont + 1, "cont() must resume without resetting tick_pos");
         test_pass();
     }
 
@@ -121,7 +118,7 @@ void test_clock_suite() {
         c.start();
         c.advance(500);  // tick_pos > 0
         TEST_ASSERT(c.tick_pos() > 0, "pre-condition: tick_pos > 0 after advance");
-        c.start();       // restart
+        c.start();  // restart
         TEST_ASSERT(c.tick_pos() == 0, "start() must reset tick_pos to 0");
         TEST_ASSERT(c.sample_pos() == 0, "start() must reset sample_pos to 0");
         test_pass();
@@ -185,8 +182,7 @@ void test_clock_suite() {
         // A subsequent tap at 24000 samples later should now compute 120 BPM.
         c.advance(24000);
         c.tap();
-        TEST_ASSERT(fabs((double)c.bpm() - 120.0) < 0.01,
-                    "after restart, correct interval must set BPM");
+        TEST_ASSERT(fabs((double)c.bpm() - 120.0) < 0.01, "after restart, correct interval must set BPM");
         test_pass();
     }
 }

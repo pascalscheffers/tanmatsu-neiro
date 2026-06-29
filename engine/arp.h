@@ -79,7 +79,7 @@ public:
     // notes stop. Turning it ON with keys held keeps them.
     void set_latch(bool on) {
         bool was_on = latch_;
-        latch_ = on;
+        latch_      = on;
         // latch off → drop latched notes if no physical key is currently down
         if (was_on && !on && physical_count_ == 0) {
             held_count_ = 0;
@@ -219,15 +219,15 @@ public:
         // (out-of-range octave stacking simply clamps — e.g. G9 + octave → 127)
         int final_pitch = base_pitch + 12 * octave_off;
         if (final_pitch > 127) final_pitch = 127;
-        if (final_pitch < 0)   final_pitch = 0;
+        if (final_pitch < 0) final_pitch = 0;
 
         return {(uint8_t)final_pitch, (uint8_t)base_velocity, true};
     }
 
     // --- Queries -----------------------------------------------------------
 
-    int  held_count()     const { return held_count_; }
-    bool has_notes()      const { return held_count_ > 0; }
+    int  held_count() const { return held_count_; }
+    bool has_notes() const { return held_count_ > 0; }
     int  physical_count() const { return physical_count_; }
 
 private:

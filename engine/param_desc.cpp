@@ -176,20 +176,17 @@ const ParamDesc JUNO_PARAM_TABLE[] = {
     // ARP_RATE stepped index 0..5 → {1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32} at 96 PPQN; default 3 = 1/16.
     // Gate/Swing are continuous [0..1]-range scalars; index-to-ticks mapping wired in Stage 4b-iii.
     // All ARP params: midi_cc=0xFF (unassigned), smoothing=0 (instant), flags=0 (global, not per-voice).
-    {ParamId::ARP_ON,      GROUP_ARP, "Arp On",   "ARP",   0.0f,  1.0f, 0.0f, CURVE_STEPPED, UNIT_NONE, "%.0f", 0xFF,
-     0.0f, 0},
-    {ParamId::ARP_MODE,    GROUP_ARP, "Arp Mode", "MODE",  0.0f,  4.0f, 0.0f, CURVE_STEPPED, UNIT_NONE, "%.0f", 0xFF,
-     0.0f, 0},
-    {ParamId::ARP_RATE,    GROUP_ARP, "Arp Rate", "RATE",  0.0f,  5.0f, 3.0f, CURVE_STEPPED, UNIT_NONE, "%.0f", 0xFF,
-     0.0f, 0},
-    {ParamId::ARP_OCTAVES, GROUP_ARP, "Octaves",  "OCT",   1.0f,  4.0f, 1.0f, CURVE_STEPPED, UNIT_NONE, "%.0f", 0xFF,
-     0.0f, 0},
-    {ParamId::ARP_GATE,    GROUP_ARP, "Gate",     "GATE",  0.05f, 1.0f, 0.5f, CURVE_LIN,     UNIT_PCT,  "%.2f", 0xFF,
-     0.0f, 0},
-    {ParamId::ARP_SWING,   GROUP_ARP, "Swing",    "SWING", 0.0f,  0.75f, 0.0f, CURVE_LIN,    UNIT_PCT,  "%.2f", 0xFF,
-     0.0f, 0},
-    {ParamId::ARP_LATCH,   GROUP_ARP, "Latch",    "LATCH", 0.0f,  1.0f, 0.0f, CURVE_STEPPED, UNIT_NONE, "%.0f", 0xFF,
-     0.0f, 0},
+    {ParamId::ARP_ON, GROUP_ARP, "Arp On", "ARP", 0.0f, 1.0f, 0.0f, CURVE_STEPPED, UNIT_NONE, "%.0f", 0xFF, 0.0f, 0},
+    {ParamId::ARP_MODE, GROUP_ARP, "Arp Mode", "MODE", 0.0f, 4.0f, 0.0f, CURVE_STEPPED, UNIT_NONE, "%.0f", 0xFF, 0.0f,
+     0},
+    {ParamId::ARP_RATE, GROUP_ARP, "Arp Rate", "RATE", 0.0f, 5.0f, 3.0f, CURVE_STEPPED, UNIT_NONE, "%.0f", 0xFF, 0.0f,
+     0},
+    {ParamId::ARP_OCTAVES, GROUP_ARP, "Octaves", "OCT", 1.0f, 4.0f, 1.0f, CURVE_STEPPED, UNIT_NONE, "%.0f", 0xFF, 0.0f,
+     0},
+    {ParamId::ARP_GATE, GROUP_ARP, "Gate", "GATE", 0.05f, 1.0f, 0.5f, CURVE_LIN, UNIT_PCT, "%.2f", 0xFF, 0.0f, 0},
+    {ParamId::ARP_SWING, GROUP_ARP, "Swing", "SWING", 0.0f, 0.75f, 0.0f, CURVE_LIN, UNIT_PCT, "%.2f", 0xFF, 0.0f, 0},
+    {ParamId::ARP_LATCH, GROUP_ARP, "Latch", "LATCH", 0.0f, 1.0f, 0.0f, CURVE_STEPPED, UNIT_NONE, "%.0f", 0xFF, 0.0f,
+     0},
 };
 // NOLINTEND
 

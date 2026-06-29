@@ -55,9 +55,7 @@ struct ArpPhaseResult {
 // (e.g. 1/16 @ 120 BPM = ~6000 samples >> 64-frame block), so at most one
 // step fires per block. Guard: step_period_samples <= 0 → never fire.
 // ---------------------------------------------------------------------------
-inline ArpPhaseResult arp_advance_phase(double* phase_samples,
-                                         uint32_t frames,
-                                         double   step_period_samples) {
+inline ArpPhaseResult arp_advance_phase(double* phase_samples, uint32_t frames, double step_period_samples) {
     if (step_period_samples <= 0.0) {
         return {false, 0};
     }
@@ -68,9 +66,7 @@ inline ArpPhaseResult arp_advance_phase(double* phase_samples,
     if (rem <= 0.0) {
         // A step crosses zero in this block.
         // offset: where within the block the step falls.
-        uint32_t offset = (p0 >= 0.0 && p0 < (double)frames)
-                              ? (uint32_t)p0
-                              : 0u;
+        uint32_t offset = (p0 >= 0.0 && p0 < (double)frames) ? (uint32_t)p0 : 0u;
         *phase_samples  = rem + step_period_samples;
         return {true, offset};
     } else {

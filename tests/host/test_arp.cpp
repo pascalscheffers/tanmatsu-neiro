@@ -306,8 +306,8 @@ void test_arp_suite() {
 
         for (int i = 0; i < 4; ++i) {
             ArpNote n = a.next();
-            TEST_ASSERT(n.valid,        "kUpDown L=1 valid");
-            TEST_ASSERT(n.pitch == 60,  "kUpDown L=1 pitch");
+            TEST_ASSERT(n.valid, "kUpDown L=1 valid");
+            TEST_ASSERT(n.pitch == 60, "kUpDown L=1 pitch");
         }
         test_pass();
     }
@@ -330,8 +330,8 @@ void test_arp_suite() {
         ArpNote n1 = a.next();
         ArpNote n2 = a.next();
         TEST_ASSERT(n0.pitch == 60 && n0.velocity == 100, "velocity 60");
-        TEST_ASSERT(n1.pitch == 64 && n1.velocity == 50,  "velocity 64");
-        TEST_ASSERT(n2.pitch == 67 && n2.velocity == 75,  "velocity 67");
+        TEST_ASSERT(n1.pitch == 64 && n1.velocity == 50, "velocity 64");
+        TEST_ASSERT(n2.pitch == 67 && n2.velocity == 75, "velocity 67");
         test_pass();
     }
 

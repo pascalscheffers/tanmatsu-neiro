@@ -82,9 +82,9 @@ void engine_transport_continue(void);
 void engine_tap_tempo(void);
 
 // Read-only clock queries — control-thread safe; frame-stale, display use only.
-int      engine_clock_running(void);      // 1 if transport is running, 0 if stopped
-uint64_t engine_clock_tick_pos(void);     // ticks elapsed since last start()
-float    engine_clock_bpm(void);          // current BPM
+int      engine_clock_running(void);   // 1 if transport is running, 0 if stopped
+uint64_t engine_clock_tick_pos(void);  // ticks elapsed since last start()
+float    engine_clock_bpm(void);       // current BPM
 
 // --- Event scheduler (ADR 0010, Stage 4a-ii) --------------------------------
 // Schedule a note event to fire at a specific sample-time. Lock-free:

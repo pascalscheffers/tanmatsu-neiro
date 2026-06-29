@@ -38,9 +38,7 @@ class Scheduler {
 
 public:
     // Drop all pending events.
-    void clear() {
-        count_ = 0;
-    }
+    void clear() { count_ = 0; }
 
     // Store an event. Returns false (and discards) if Cap is already reached.
     bool schedule(uint64_t sample_time, const NoteCmd& cmd) {
@@ -70,7 +68,7 @@ public:
     // worst-case — correct and simple; Cap is small (64).
     template <class Fn>
     int dispatch_due(uint64_t now, uint32_t frames, Fn&& fn) {
-        int dispatched = 0;
+        int      dispatched = 0;
         uint64_t window_end = now + (uint64_t)frames;  // exclusive upper bound
 
         // Keep looping until no due event remains in the window.
@@ -79,8 +77,7 @@ public:
             int earliest = -1;
             for (int i = 0; i < count_; i++) {
                 if (events_[i].sample_time < window_end) {
-                    if (earliest == -1 ||
-                        events_[i].sample_time < events_[earliest].sample_time) {
+                    if (earliest == -1 || events_[i].sample_time < events_[earliest].sample_time) {
                         earliest = i;
                     }
                 }
@@ -94,7 +91,7 @@ public:
             uint32_t offset;
             if (events_[earliest].sample_time > now) {
                 uint64_t delta = events_[earliest].sample_time - now;
-                offset = (delta < (uint64_t)frames) ? (uint32_t)delta : frames - 1u;
+                offset         = (delta < (uint64_t)frames) ? (uint32_t)delta : frames - 1u;
             } else {
                 // Late event (sample_time <= now): fire at the block start.
                 offset = 0;

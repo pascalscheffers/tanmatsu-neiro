@@ -181,8 +181,8 @@ static void test_capacity() {
     bool ok4 = sched.schedule(50, n);  // must fail — cap is 4
 
     TEST_ASSERT(ok0 && ok1 && ok2 && ok3, "cap: first 4 schedule calls succeed");
-    TEST_ASSERT(!ok4,                      "cap: 5th schedule call returns false");
-    TEST_ASSERT(sched.pending() == 4,      "cap: still 4 pending (not 5)");
+    TEST_ASSERT(!ok4, "cap: 5th schedule call returns false");
+    TEST_ASSERT(sched.pending() == 4, "cap: still 4 pending (not 5)");
 
     // Dispatch all 4 — should fire in order 10/20/30/40.
     reset_calls();
@@ -219,7 +219,8 @@ static void test_clear() {
     // dispatch_due should fire nothing.
     reset_calls();
     int fired = sched.dispatch_due(0, 100, [](const NoteCmd& cmd, uint32_t offset) {
-        (void)cmd; (void)offset;
+        (void)cmd;
+        (void)offset;
         s_call_count++;
     });
     TEST_ASSERT(fired == 0, "clear: dispatch after clear fires 0");
@@ -242,7 +243,8 @@ static void test_removal() {
     // First dispatch over [0, 128): both fire.
     reset_calls();
     int fired1 = sched.dispatch_due(0, 128, [](const NoteCmd& cmd, uint32_t offset) {
-        (void)cmd; (void)offset;
+        (void)cmd;
+        (void)offset;
         s_call_count++;
     });
     TEST_ASSERT(fired1 == 2, "removal: first dispatch fires 2");
@@ -251,7 +253,8 @@ static void test_removal() {
     // Second dispatch over the SAME window: fires nothing.
     reset_calls();
     int fired2 = sched.dispatch_due(0, 128, [](const NoteCmd& cmd, uint32_t offset) {
-        (void)cmd; (void)offset;
+        (void)cmd;
+        (void)offset;
         s_call_count++;
     });
     TEST_ASSERT(fired2 == 0, "removal: second dispatch fires 0");
