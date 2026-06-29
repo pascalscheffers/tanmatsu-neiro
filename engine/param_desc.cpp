@@ -110,6 +110,17 @@ const ParamDesc JUNO_PARAM_TABLE[] = {
     //   below 0.001 s are treated as zero (off) in VoiceAlloc.
     {ParamId::PLAY_MODE,       GROUP_AMP, "Play Mode",    "Mode",   0.0f,  2.0f,  0.0f,  CURVE_STEPPED,UNIT_NONE,"%.0f",  0xFF,  0.0f,  0},
     {ParamId::PORTAMENTO_TIME, GROUP_AMP, "Portamento",   "Porto",  0.0f,  2.0f,  0.0f,  CURVE_LOG,    UNIT_SEC, "%.3f",  5,     0.0f,  0},
+
+    // --- Stage 3d-ii: unison (global, not per-voice) ---
+    // UNISON_COUNT: number of voices stacked per note (1 = off, up to kNumVoices = 8).
+    //   Stepped int. U=1 is identical to the existing poly/mono path (no change).
+    //   Effective polyphony = floor(kNumVoices / UNISON_COUNT). Pool exhaustion falls
+    //   back to the normal steal policy; no allocation beyond the fixed pool.
+    // UNISON_DETUNE: total spread of the detuned voices in cents (0 = unison/no detune,
+    //   50 = ±25 cents across the stack). Voices are spread evenly; the centre voice
+    //   (or centre pair) is closest to 0. Converted to semitones internally.
+    {ParamId::UNISON_COUNT,  GROUP_AMP, "Unison Count",  "UniCnt", 1.0f, 8.0f,  1.0f,  CURVE_STEPPED,UNIT_NONE,"%.0f",  0xFF,  0.0f,  0},
+    {ParamId::UNISON_DETUNE, GROUP_AMP, "Unison Detune", "UniDet", 0.0f, 50.0f, 7.0f,  CURVE_LIN,    UNIT_CENT,"%.1f",  0xFF,  5.0f,  0},
 };
 // NOLINTEND
 

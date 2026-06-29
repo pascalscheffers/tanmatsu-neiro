@@ -80,7 +80,7 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     // 2. Advance the param store smoothers and update targets from the ring.
     s_params.drain();
 
-    // 2a. Stage 3d-i: update play mode and portamento from the param store,
+    // 2a. Stage 3d-i/ii: update play mode, portamento, and unison from the param store,
     //     then advance the glide ramp by one block. Done after drain() so we
     //     use the freshest smoothed values. block_time is exact for this block.
     {
@@ -88,6 +88,12 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
         float porto     = s_params.get(ParamId::PORTAMENTO_TIME);
         s_alloc.set_play_mode(static_cast<PlayMode>(play_mode));
         s_alloc.set_portamento_time(porto);
+        // Stage 3d-ii: unison (UNISON_COUNT and UNISON_DETUNE are CURVE_STEPPED/LIN;
+        // block-rate update here matches the same pattern as play_mode/portamento).
+        int   unison_count  = (int)s_params.get(ParamId::UNISON_COUNT);
+        float unison_detune = s_params.get(ParamId::UNISON_DETUNE);
+        s_alloc.set_unison_count(unison_count);
+        s_alloc.set_unison_detune(unison_detune);
         float block_time = (float)frames / s_sample_rate;
         s_alloc.advance_glide(block_time);
     }

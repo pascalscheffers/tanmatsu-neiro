@@ -57,6 +57,9 @@ static constexpr uint16_t VCA_LEVEL       = 0x62;  // per-voice VCA output level
 // so the table-driven UI shows them on the existing AMP page without touching ui/.
 static constexpr uint16_t PLAY_MODE       = 0x63;  // 0=poly, 1=mono+retrigger, 2=mono+legato
 static constexpr uint16_t PORTAMENTO_TIME = 0x64;  // glide time in seconds (0=off, 2=max)
+// Stage 3d-ii: unison — global, AMP group (same table-driven UI logic as play modes).
+static constexpr uint16_t UNISON_COUNT    = 0x65;  // voice stack depth 1..kNumVoices (stepped)
+static constexpr uint16_t UNISON_DETUNE   = 0x66;  // total detune spread in cents (0..50)
 
 // LFO1 group (0x70-0x77) — first per-voice LFO
 static constexpr uint16_t LFO1_RATE  = 0x70;

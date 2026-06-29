@@ -22,6 +22,16 @@
 //   Note stack (mono): overlap detection uses a fixed 8-slot last-note list. When
 //   note_off is called for a held note, the list pops back to the previous sounding
 //   note — classic "note steal back" mono behaviour.
+//
+// Stage 3d-ii additions — unison (voice stacking + detune):
+//   set_unison_count(U): U voices allocated per note_on (U=1 = no change).
+//   set_unison_detune(cents): symmetric spread across ±cents/2 applied via
+//   IVoice::set_pitch_offset(). Draws from the existing fixed pool; effective
+//   polyphony = floor(kNumVoices / U). Pool exhaustion handled by the normal
+//   steal policy. note_off releases all U voices for the note together.
+//   Mono + unison: U detuned voices for the single held note (steal-back rebuilds
+//   the full group). Portamento applies to the group's centre (index 0) voice;
+//   all group members share the same base pitch.
 #pragma once
 
 #include "voice.h"
@@ -56,6 +66,15 @@ public:
     // Set portamento glide time in seconds (0 = snap, no glide).
     // RT-safe: called from synth_render() at block boundary.
     void set_portamento_time(float seconds);
+
+    // Set unison voice count (1 = off / no unison, 2..kNumVoices = stacked).
+    // RT-safe: called from synth_render() at block boundary.
+    void set_unison_count(int count);
+
+    // Set unison detune spread in cents (total spread; 0 = no detune).
+    // Voices are distributed evenly across ±(detune/2) cents.
+    // RT-safe: called from synth_render() at block boundary.
+    void set_unison_detune(float cents);
 
     // Advance the portamento glide by one block_time seconds.
     // Must be called once per audio block (before note events are drained is fine).
@@ -102,10 +121,29 @@ private:
     uint8_t  mono_stack_[kMonoStackMax] = {};
     int      mono_stack_top_  = 0;
 
+    // Unison state.
+    // Each slot carries a group tag (the pitch of the note it belongs to, or 0xFF =
+    // ungrouped). tag 0xFF is safe because MIDI pitch 0xFF is out of range.
+    static constexpr uint8_t kNoGroup = 0xFF;
+    static constexpr int     kMaxUnison = kNumVoices;
+
+    int   unison_count_  = 1;     // U voices per note; 1 = off (unchanged behaviour)
+    float unison_detune_ = 0.0f;  // total spread in cents (0 = no detune)
+    uint8_t unison_tag_[kNumVoices] = {};  // group tag per slot (kNoGroup = no group)
+
     // Internal helpers.
     int find_slot_for_pitch(uint8_t pitch) const;
     int find_free_slot() const;
     int find_steal_slot() const;
+
+    // Unison helpers.
+    // Allocate up to unison_count_ slots for a note (fewer if pool is lean),
+    // call voice->note_on + spread detune offsets.
+    void note_on_unison(uint8_t pitch, uint8_t velocity, NoteExpression expr);
+    // Release all slots tagged with pitch (if U=1 falls through to the slot tagged pitch).
+    void note_off_unison(uint8_t pitch);
+    // Apply symmetric detune offsets to slots with the given tag.
+    void apply_detune(uint8_t tag, int slot_count, int first_slot_idx);
 
     // Mono-specific note_on / note_off.
     void note_on_mono(uint8_t pitch, uint8_t velocity, NoteExpression expr);

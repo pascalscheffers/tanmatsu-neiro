@@ -39,6 +39,7 @@ enum ParamUnit : uint8_t {
     UNIT_SEMI = 4,
     UNIT_SEC  = 5,
     UNIT_MS   = 6,
+    UNIT_CENT = 7,  // cents (1/100 of a semitone); e.g. for unison detune spread
 };
 
 // Bit flags describing parameter behaviour.

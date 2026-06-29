@@ -70,6 +70,7 @@ struct FactoryPreset {
 // Stage 3c-i: added OSC_PWM/WAVEFORM/RANGE, HPF_CUTOFF, VCF_ENV_DEPTH/POLARITY/
 //             KEY_TRACK/LFO_DEPTH, LFO1/2_DELAY, CHORUS_MODE, VCA_GATE_MODE/LEVEL.
 // Stage 3d-i: added PLAY_MODE and PORTAMENTO_TIME.
+// Stage 3d-ii: added UNISON_COUNT and UNISON_DETUNE.
 static const FactoryPreset k_factory[] = {
     // 0: INIT — all table defaults + "Clean 106" routings (ADR 0009 RATIFIED)
     {
@@ -85,7 +86,8 @@ static const FactoryPreset k_factory[] = {
          ParamId::LFO2_RATE,    ParamId::LFO2_DEPTH,   ParamId::LFO2_SHAPE,   ParamId::LFO2_DELAY,
          ParamId::CHORUS_RATE,  ParamId::CHORUS_DEPTH, ParamId::CHORUS_DELAY, ParamId::CHORUS_MODE,
          ParamId::MASTER_GAIN,  ParamId::VCA_GATE_MODE, ParamId::VCA_LEVEL,
-         ParamId::PLAY_MODE,    ParamId::PORTAMENTO_TIME},
+         ParamId::PLAY_MODE,    ParamId::PORTAMENTO_TIME,
+         ParamId::UNISON_COUNT, ParamId::UNISON_DETUNE},
         {0.70f, 0.30f, 0.05f,
          0.50f, 0.0f, 0.0f,
          2000.0f, 0.30f, 0.0f,
@@ -97,8 +99,9 @@ static const FactoryPreset k_factory[] = {
          0.5f,   0.5f,   0.0f,   0.0f,
          0.500f, 0.700f, 0.400f, 1.0f,
          0.500f, 0.0f,   1.0f,
-         0.0f,   0.0f},   /* poly, no glide */
-        39,
+         0.0f,   0.0f,       /* poly, no glide */
+         1.0f,   7.0f},      /* U=1 (no unison), 7 cents ready (table default) */
+        41,
         k_clean_106_routings, k_clean_106_count,
     },
     // 1: Bass — thick sub, tight attack, dark filter + mono retrigger + subtle glide
@@ -115,7 +118,8 @@ static const FactoryPreset k_factory[] = {
          ParamId::LFO2_RATE,    ParamId::LFO2_DEPTH,   ParamId::LFO2_SHAPE,   ParamId::LFO2_DELAY,
          ParamId::CHORUS_RATE,  ParamId::CHORUS_DEPTH, ParamId::CHORUS_DELAY, ParamId::CHORUS_MODE,
          ParamId::MASTER_GAIN,  ParamId::VCA_GATE_MODE, ParamId::VCA_LEVEL,
-         ParamId::PLAY_MODE,    ParamId::PORTAMENTO_TIME},
+         ParamId::PLAY_MODE,    ParamId::PORTAMENTO_TIME,
+         ParamId::UNISON_COUNT, ParamId::UNISON_DETUNE},
         {0.85f, 0.60f, 0.00f,
          0.50f, 0.0f, -12.0f,    /* bass: 1 oct down */
          800.0f, 0.50f, 0.0f,
@@ -127,11 +131,12 @@ static const FactoryPreset k_factory[] = {
          0.5f,   0.3f,  0.0f,  0.0f,
          0.30f, 0.40f, 0.30f, 1.0f,
          0.60f, 0.0f,  1.0f,
-         1.0f,  0.06f},   /* mono+retrigger, 60 ms glide */
-        39,
+         1.0f,  0.06f,              /* mono+retrigger, 60 ms glide */
+         1.0f,  0.0f},              /* U=1 (no unison — bass lines stay tight) */
+        41,
         k_clean_106_routings, k_clean_106_count,
     },
-    // 2: Pad — slow attack, lush chorus, long release, poly + no glide
+    // 2: Pad — slow attack, lush chorus, long release, poly + unison 2 + 7 cents
     {
         "Pad",
         {ParamId::OSC_LEVEL,    ParamId::SUB_LEVEL,    ParamId::NOISE_LEVEL,
@@ -145,7 +150,8 @@ static const FactoryPreset k_factory[] = {
          ParamId::LFO2_RATE,    ParamId::LFO2_DEPTH,   ParamId::LFO2_SHAPE,   ParamId::LFO2_DELAY,
          ParamId::CHORUS_RATE,  ParamId::CHORUS_DEPTH, ParamId::CHORUS_DELAY, ParamId::CHORUS_MODE,
          ParamId::MASTER_GAIN,  ParamId::VCA_GATE_MODE, ParamId::VCA_LEVEL,
-         ParamId::PLAY_MODE,    ParamId::PORTAMENTO_TIME},
+         ParamId::PLAY_MODE,    ParamId::PORTAMENTO_TIME,
+         ParamId::UNISON_COUNT, ParamId::UNISON_DETUNE},
         {0.75f, 0.20f, 0.08f,
          0.60f, 0.0f, 0.0f,         /* wider PWM for pad shimmer */
          3000.0f, 0.15f, 0.0f,
@@ -157,11 +163,12 @@ static const FactoryPreset k_factory[] = {
          0.2f,  0.4f,  1.0f,  0.0f,
          0.40f, 0.90f, 0.55f, 2.0f,  /* Chorus II for wider stereo spread */
          0.50f, 0.0f,  1.0f,
-         0.0f,  0.0f},   /* poly, no glide */
-        39,
+         0.0f,  0.0f,               /* poly, no glide */
+         2.0f,  7.0f},              /* U=2, 7 cents spread — fat pad shimmer */
+        41,
         k_clean_106_routings, k_clean_106_count,
     },
-    // 3: Lead — bright, cutting, legato mono + short glide for expressive lines
+    // 3: Lead — bright, cutting, legato mono + short glide + unison 2 + 10 cents
     {
         "Lead",
         {ParamId::OSC_LEVEL,    ParamId::SUB_LEVEL,    ParamId::NOISE_LEVEL,
@@ -175,7 +182,8 @@ static const FactoryPreset k_factory[] = {
          ParamId::LFO2_RATE,    ParamId::LFO2_DEPTH,   ParamId::LFO2_SHAPE,   ParamId::LFO2_DELAY,
          ParamId::CHORUS_RATE,  ParamId::CHORUS_DEPTH, ParamId::CHORUS_DELAY, ParamId::CHORUS_MODE,
          ParamId::MASTER_GAIN,  ParamId::VCA_GATE_MODE, ParamId::VCA_LEVEL,
-         ParamId::PLAY_MODE,    ParamId::PORTAMENTO_TIME},
+         ParamId::PLAY_MODE,    ParamId::PORTAMENTO_TIME,
+         ParamId::UNISON_COUNT, ParamId::UNISON_DETUNE},
         {0.90f, 0.10f, 0.00f,
          0.50f, 0.0f, 0.0f,
          6000.0f, 0.60f, 0.0f,
@@ -187,8 +195,9 @@ static const FactoryPreset k_factory[] = {
          3.0f,   0.2f,  0.0f,  0.0f,
          1.00f, 0.50f, 0.30f, 1.0f,
          0.50f, 0.0f,  1.0f,
-         2.0f,  0.08f},   /* mono+legato, 80 ms glide for expressive phrasing */
-        39,
+         2.0f,  0.08f,              /* mono+legato, 80 ms glide for expressive phrasing */
+         2.0f,  10.0f},             /* U=2, 10 cents — thicker lead without muddiness */
+        41,
         k_clean_106_routings, k_clean_106_count,
     },
 };
