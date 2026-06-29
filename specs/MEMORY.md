@@ -293,6 +293,27 @@ Root-caused by Opus (bench showed ~131k cyc/blk/voice vs 2.6k for the Stage 0.5 
 - 🛑 3d-ii gate stays open pending Pascal's re-bench. Round B (change-gated param push,
   `engine/synth.cpp`) is the queued follow-up after the gate clears.
 
+## 2026-06-29 — perf: change-gate per-block param push (COMPLETE)
+
+- **Root cause (Opus-profiled, device):** `synth_render` step 3 called `voice->set_param()` for
+  32 params × 8 voices = 256 calls every block unconditionally — including idle voices and settled
+  params. Several setters recompute transcendentals (`FILTER_CUTOFF`→`sinf+powf`, each ADSR
+  time→`expf+logf`). ~53k cyc/blk fixed overhead in steady state.
+- **Fix:** `ParamStore::drain()` now tracks changed params per block (new target arrived OR smoother
+  still converging). First `drain()` after `init()` force-marks all valid params dirty so voices
+  receive initial values. `synth_render` step 3 loops only over `changed_count()` ids → steady state
+  pushes nothing; a knob sweep pushes only that param. All voices (active + idle) still receive the
+  push so newly triggered voices always hold current values.
+- **New members:** `changed_ids_[kParamIdMax]`, `changed_count_`, `force_all_dirty_` — all fixed-size,
+  no alloc. Snap-to-target on settle eliminates asymptotic crawl.
+- **4 new host tests** (89 total, all pass): first-drain all-dirty, second-drain zero, param_set →
+  id in changed list, smoothed param drops from changed list after settling.
+- `make test` ✅ (89/89) `make host` ✅ `make build` ✅ membrane clean.
+  `make size`: Flash 641 KB .text · DIRAM 145 KB (25.2%) · total image ~977 KB (52% free) — unchanged
+  (tracking arrays live in existing struct padding zone).
+- 🛑 3d-ii gate stays open pending Pascal's re-bench. This completes Round A+B of the queued
+  CPU optimization pair — expected device steady-state overhead to drop from ~53k → near-zero cyc/blk.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
