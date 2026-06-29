@@ -88,6 +88,15 @@ Connect a USB MIDI controller to the badge's USB-A port. The following CCs are m
 
 These CC numbers match the default pot assignments on a Novation Launchkey 37 (pots in Custom mode sending CC 21–28). Turning any mapped knob instantly jumps the screen to that parameter's page and shows the value bar moving live.
 
+A few standard General-MIDI CCs are also recognised — handy if your controller or DAW sends them. These follow the screen the same way as the pots:
+
+| Source | CC | Effect |
+|---|---|---|
+| Volume | CC 7 | Channel volume (attenuation-only, square-law taper; 127=unity, never boosts) |
+| Portamento time | CC 5 | Glide rate |
+| Sound controller | CC 70 | Oscillator level |
+| Attack time | CC 73 | Amp-envelope attack |
+
 **Preset page (home, page 1):** scroll the list with ↑/↓ to audition patches live — the sound changes as you browse. Press ○ or Enter to commit the highlighted preset. Press □ or navigate away without confirming to revert to the sound you had before browsing.
 
 **Parameter pages (pages 2–9):** nine fixed pages in order — PRESET · PERFORM · OSC · FILTER · AMP ENV · MOD ENV · LFO · FX · AMP. Multi-group pages (PERFORM = Clock + Arp; FILTER = VCF + HPF) show a section sub-header before each group. The status strip at the bottom shows active voices, the current octave, and the loaded preset name.

@@ -62,6 +62,9 @@ static dsp::Lfo s_lfo2;
 static std::atomic<float> s_mod_wheel{0.0f};
 static std::atomic<float> s_pitch_bend{0.0f};
 static std::atomic<float> s_aftertouch{0.0f};
+// ADR 0021: CC7 channel volume — attenuation-only, square-law taper applied in the
+// router; default 1.0 (unity). Not a preset value; reset to 1.0 on panic/init.
+static std::atomic<float> s_channel_vol{1.0f};
 static std::atomic<bool>  s_panic{false};
 
 // Note events cross from the control thread (core 0) to the audio thread
@@ -101,6 +104,9 @@ void synth_init(uint32_t sample_rate, size_t block_size) {
     // their table defaults — the first synth_render drain propagates these
     // to voices so the sound is identical to the Stage 1 hardcoded values.
     s_params.init(JUNO_PARAM_TABLE, kJunoParamCount, (float)sample_rate, (int)block_size);
+
+    // ADR 0021: reset channel volume to unity on (re)init.
+    s_channel_vol.store(1.0f, std::memory_order_relaxed);
 
     // ADR 0010: master musical clock — derived from the audio sample counter.
     s_clock.init((float)sample_rate);
@@ -170,6 +176,8 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
         s_arp_had_notes = false;
         s_arp_step      = 0;
         s_arp_phase     = 0.0;
+        // ADR 0021: reset channel volume to unity so panic can never latch the session quiet.
+        s_channel_vol.store(1.0f, std::memory_order_relaxed);
     }
 
     // 1a. Drain clock commands from the control thread and advance the clock
@@ -393,10 +401,13 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
         }
     }
 
-    // 6. Mono bus → stereo chorus → master gain → soft-clip → output (ADR 0016).
+    // 6. Mono bus → stereo chorus → master gain → soft-clip → output (ADR 0016 / ADR 0021).
+    // Gain = MASTER_GAIN (manual trim) × channel_vol (CC7 attenuation, ADR 0021) × 1/√U.
+    // channel_vol is 0..1 (unity at 1.0, square-law taper from CC7 in the router).
     // Apply equal-power unison compensation (1/√U) so U voices stacked on one note
     // do not sum louder than a single voice. Uses unison_count from step 2a above.
-    float gain = s_params.get(ParamId::MASTER_GAIN) * unison_gain(unison_count);
+    float gain =
+        s_params.get(ParamId::MASTER_GAIN) * s_channel_vol.load(std::memory_order_relaxed) * unison_gain(unison_count);
     for (size_t i = 0; i < frames; i++) {
         if (chorus_mode > 0) {
             s_chorus.Process(s_mono[i]);
@@ -502,6 +513,11 @@ void engine_set_mod_wheel(float norm) {
 }
 void engine_set_aftertouch(float norm) {
     s_aftertouch.store(norm, std::memory_order_relaxed);
+}
+// ADR 0021: CC7 channel volume — attenuation-only [0..1], square-law taper applied
+// by the caller (midi_router). Reset to 1.0 on init/panic.
+void engine_set_channel_volume(float vol) {
+    s_channel_vol.store(vol, std::memory_order_relaxed);
 }
 
 void engine_all_notes_off(void) {

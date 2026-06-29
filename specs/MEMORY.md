@@ -273,6 +273,33 @@ Stage 4d FX (tempo-synced delay + DaisySP ReverbSc) is the main open campaign.
   Flash: **1,122,268 B** (+440 B vs. prior; 46% partition free). DIRAM: 156,782 B (27.2%).
 - **What's next:** Stage 4d FX (tempo-synced delay + DaisySP ReverbSc), or HPF DSP wiring.
 
+## 2026-06-29 — ADR 0021 Part 1: CC7 attenuation-only channel volume (COMPLETE)
+
+**What changed:** CC7 (MIDI channel volume) was routing to `MASTER_GAIN`'s 0–2× range,
+causing CC7=127 to be a 4× boost — the opposite of MIDI spec. Dense MIDI playback landed
+continuously in the soft-clip saturation zone.
+
+**Fix (4 files):**
+- `engine/synth.cpp`: added `static std::atomic<float> s_channel_vol{1.0f}`; reset to 1.0 in
+  `synth_init` and in the panic block (so panic can never latch the session quiet); output gain
+  becomes `MASTER_GAIN × channel_vol × unison_gain(U)`.
+- `engine/synth.h`: declared `engine_set_channel_volume(float vol)` alongside other expression setters.
+- `control/midi_router.c`: CC7 special-cased before the generic-CC fallthrough; applies
+  `vol = norm * norm` square-law taper (GM/DLS convention: 127→1.0, 64→0.25=−12 dB, 0→silence)
+  and calls `engine_set_channel_volume(vol)`. CC1/64/120/123 handling untouched.
+- `engine/param_desc.cpp`: `MASTER_GAIN` CC field changed from 7 to 0xFF; `VCA_LEVEL` already
+  had 0xFF (dead shadow — no change needed). `MASTER_GAIN` is now a manual headroom knob only.
+- `README.md`: CC7 row updated from "Master gain" to accurate channel-volume description.
+
+**Key decisions:** CC7 is performance state, not a preset value — routed via expression atomics,
+not the param table (per ADR 0021). Square-law taper `norm²`. No test needed updating (existing
+`test_engine_cc_to_param` checked CC21/22/74; no CC7→param assertion existed).
+
+**Results:** `make test` ✅ (all pass) `make host` ✅ `make build` ✅ (image 0x1121c0 B, 46% free).
+
+**What's next:** ADR 0021 Part 2 — master-bus peak limiter (`dsp/LimiterStereo`, feed-forward
+stereo-linked, THRESH=0.92, 1 ms attack, 120 ms release). See ADR 0021 §2.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

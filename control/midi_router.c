@@ -65,6 +65,12 @@ void midi_router_poll(void) {
                             case 1:  // Mod wheel
                                 engine_set_mod_wheel((float)m.data2 / 127.0f);
                                 break;
+                            case 7: {  // Channel volume — attenuation-only, square-law taper (ADR 0021)
+                                float norm = (float)m.data2 / 127.0f;
+                                float vol  = norm * norm;  // GM/DLS square-law: 127→1.0, 64→0.25 (−12 dB), 0→0
+                                engine_set_channel_volume(vol);
+                                break;
+                            }
                             case 64:  // Sustain pedal
                                 sustain_set_pedal(&s_sustain, m.data2 >= 64, router_release);
                                 break;

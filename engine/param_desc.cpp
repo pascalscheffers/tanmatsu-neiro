@@ -137,13 +137,16 @@ const ParamDesc JUNO_PARAM_TABLE[] = {
 
     // --- AMP / MIX ---
     // MASTER_GAIN: global output gain. Default 0.5 = −6 dB headroom (Stage 2b).
+    //   CC7 removed (ADR 0021): CC7 is now an attenuation-only channel volume routed
+    //   through engine_set_channel_volume(), not the param table. MASTER_GAIN is a
+    //   manual headroom/output-trim knob only; no longer reachable by MIDI.
     // VCA_GATE_MODE: 0=envelope drives VCA (normal), 1=gate (hard on/off, no envelope).
     // VCA_LEVEL: per-voice output level; multiplies into the VCA after the envelope.
-    {ParamId::MASTER_GAIN, GROUP_AMP, "Master Gain", "Gain", 0.0f, 2.0f, 0.500f, CURVE_LIN, UNIT_NONE, "%.2f", 7, 10.0f,
-     FLAG_AUDIO_RATE},
+    {ParamId::MASTER_GAIN, GROUP_AMP, "Master Gain", "Gain", 0.0f, 2.0f, 0.500f, CURVE_LIN, UNIT_NONE, "%.2f", 0xFF,
+     10.0f, FLAG_AUDIO_RATE},
     {ParamId::VCA_GATE_MODE, GROUP_AMP, "VCA Gate Mode", "VcaGt", 0.0f, 1.0f, 0.0f, CURVE_STEPPED, UNIT_NONE, "%.0f",
      0xFF, 0.0f, FLAG_PER_VOICE},
-    {ParamId::VCA_LEVEL, GROUP_AMP, "VCA Level", "VcaLvl", 0.0f, 1.0f, 1.0f, CURVE_LIN, UNIT_PCT, "%.2f", 7, 5.0f,
+    {ParamId::VCA_LEVEL, GROUP_AMP, "VCA Level", "VcaLvl", 0.0f, 1.0f, 1.0f, CURVE_LIN, UNIT_PCT, "%.2f", 0xFF, 5.0f,
      FLAG_AUDIO_RATE | FLAG_PER_VOICE | FLAG_MOD_DEST},
 
     // --- Stage 3d-i: play modes (global, not per-voice) ---

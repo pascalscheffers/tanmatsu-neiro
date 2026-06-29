@@ -106,6 +106,11 @@ void engine_set_mod_wheel(float norm);
 // Channel aftertouch, [0, 1]. Fed to every voice as the AFTERTOUCH mod source.
 void engine_set_aftertouch(float norm);
 
+// CC7 channel volume, [0, 1] (ADR 0021). Attenuation-only; square-law taper applied
+// by the caller. Multiplied into the output gain as MASTER_GAIN × channel_vol × 1/√U.
+// Not a preset value — performance state only. Default 1.0 (unity); reset on init/panic.
+void engine_set_channel_volume(float vol);
+
 // Panic: release/silence all voices immediately and clear the arp held set.
 void engine_all_notes_off(void);
 
