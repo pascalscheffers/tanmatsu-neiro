@@ -23,6 +23,7 @@ add_executable(tanmatsu-tests
     test_mod_matrix.cpp
     test_params.cpp
     test_clock.cpp
+    test_scheduler.cpp
     "${DAISYSP}/Source/Synthesis/oscillator.cpp"
     "${DAISYSP}/Source/Filters/svf.cpp"
     "${DAISYSP}/Source/Control/adsr.cpp"

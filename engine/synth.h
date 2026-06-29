@@ -86,6 +86,13 @@ int      engine_clock_running(void);      // 1 if transport is running, 0 if sto
 uint64_t engine_clock_tick_pos(void);     // ticks elapsed since last start()
 float    engine_clock_bpm(void);          // current BPM
 
+// --- Event scheduler (ADR 0010, Stage 4a-ii) --------------------------------
+// Schedule a note event to fire at a specific sample-time. Lock-free:
+// control-thread safe (pushes into s_sched_in SpscRing). sample_time is in
+// Clock::sample_pos() units (samples since the last transport start()).
+// The event fires on the first audio block whose start <= sample_time < start+frames.
+void engine_schedule_note(uint64_t sample_time, uint8_t pitch, uint8_t velocity, int on);
+
 #ifdef __cplusplus
 }
 #endif

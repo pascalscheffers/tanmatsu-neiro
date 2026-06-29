@@ -14,6 +14,7 @@ void test_mod_sources_suite();
 void test_mod_matrix_suite();
 void test_params_suite();
 void test_clock_suite();
+void test_scheduler_suite();
 
 int main(void) {
     printf("=== tanmatsu host DSP tests ===\n");
@@ -28,6 +29,7 @@ int main(void) {
     test_mod_matrix_suite();
     test_params_suite();
     test_clock_suite();
+    test_scheduler_suite();
     printf("All tests passed.\n");
     return 0;
 }

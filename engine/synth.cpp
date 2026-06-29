@@ -17,6 +17,7 @@
 #include "Effects/chorus.h"
 #include "clock.h"
 #include "command_queue.h"
+#include "scheduler.h"
 #include "dsp/lfo.h"
 #include "dsp/saturate.h"
 #include "juno_model.h"
@@ -63,6 +64,12 @@ static Clock s_clock;
 // Clock transport/BPM commands cross from the control thread to the audio
 // thread via this ring. 16 slots >> the few transport events per UI frame.
 static SpscRing<ClockCmd, 16> s_clock_cmds;
+
+// ADR 0010: event scheduler (Stage 4a-ii). Producers (arp, sequencer, ...) push
+// ScheduledEvents timestamped in Clock::sample_pos() units into s_sched_in;
+// the audio thread drains them into s_sched and dispatches due events each block.
+static Scheduler<64>               s_sched;
+static SpscRing<ScheduledEvent, 64> s_sched_in;
 
 void synth_init(uint32_t sample_rate, size_t block_size) {
     s_sample_rate = (float)sample_rate;
@@ -115,6 +122,12 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
 
     // 1a. Drain clock commands from the control thread and advance the clock
     //     once for this block (ADR 0010). Mirroring the NoteCmd drain above.
+    //
+    // Ordering: capture block_start BEFORE advance() so the scheduler window
+    // [block_start, block_start+frames) correctly identifies events whose
+    // sample_time falls within THIS block. advance() then moves sample_pos_
+    // to block_start+frames (the start of the NEXT block).
+    uint64_t block_start;
     {
         ClockCmd cc;
         while (s_clock_cmds.pop(cc)) {
@@ -126,8 +139,35 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
                 case ClockCmd::kTap:       s_clock.tap();           break;
             }
         }
-        // Tick count returned here; unused until the 4a-ii event scheduler arrives.
+        block_start = s_clock.sample_pos();  // position at the START of this block
         (void)s_clock.advance((uint32_t)frames);
+    }
+
+    // 1b. Drain the scheduled-event ring into the Scheduler, then dispatch
+    //     events due in this block (ADR 0010 / Stage 4a-ii).
+    //
+    //     Dispatch is block-granular: the sub-block offset is computed and
+    //     passed to the callback, but the engine applies all events at the
+    //     block boundary (true sub-block render-splitting is deferred per
+    //     ADR 0010 — "a profile says it's needed").
+    {
+        ScheduledEvent sev;
+        while (s_sched_in.pop(sev)) {
+            s_sched.schedule(sev.sample_time, sev.cmd);
+        }
+
+        s_sched.dispatch_due(block_start, (uint32_t)frames,
+            [](const NoteCmd& cmd, uint32_t offset) {
+                // offset: sample position within the block (deferred — ADR 0010).
+                (void)offset;  // sub-block splitting deferred per ADR 0010
+
+                NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+                if (cmd.type == NoteCmd::kNoteOn) {
+                    s_alloc.note_on(cmd.pitch, cmd.velocity, expr);
+                } else {
+                    s_alloc.note_off(cmd.pitch);
+                }
+            });
     }
 
     // 2. Advance the param store smoothers and update targets from the ring.
@@ -315,6 +355,22 @@ void engine_transport_continue() {
 void engine_tap_tempo() {
     ClockCmd c{ClockCmd::kTap, 0.0f};
     s_clock_cmds.push(c);
+}
+
+// --- Event scheduler API (ADR 0010, Stage 4a-ii) ----------------------------
+// Lock-free: control thread pushes a ScheduledEvent into s_sched_in; the audio
+// thread drains and dispatches it at block_start when sample_time is due.
+// sample_time must be in Clock::sample_pos() units (samples since last start()).
+
+void engine_schedule_note(uint64_t sample_time, uint8_t pitch, uint8_t velocity, int on) {
+    NoteCmd cmd;
+    cmd.type     = on ? NoteCmd::kNoteOn : NoteCmd::kNoteOff;
+    cmd.pitch    = pitch;
+    cmd.velocity = velocity;
+    ScheduledEvent ev;
+    ev.sample_time = sample_time;
+    ev.cmd         = cmd;
+    s_sched_in.push(ev);
 }
 
 // Read-only helpers — control-thread safe; may read a frame-stale value.
