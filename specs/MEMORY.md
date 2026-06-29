@@ -549,6 +549,22 @@ gate/swing, schedule note on/off into the scheduler). **4b-i dispatched.**
   magic 8). Tab bar renders all groups. `make host`/`make test` green (146).
 - Found while answering "how do I trigger the arp" — the arp page existed in the table all along.
 
+## 2026-06-29 — Stage 4 PAUSED after 4b; Stage 5 (MIDI I/O) brief authored (RESUME HERE)
+
+Arp ratified by Pascal on device ("they're all good, keep it like this") — free-running arp +
+latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.**
+- **Stage 4 done:** 4a (clock/scheduler/BPM) + 4b (full arp). **Deferred (still roadmap):**
+  4d FX (delay → `ReverbSc`, G4 ratified, device gate pending) and 4c sequencer (G3 open).
+- **Stage 5 (MIDI I/O) campaign brief authored:** [`stages/stage-5-midi-io.md`](stages/stage-5-midi-io.md).
+  Sub-stages 5a HAL-MIDI-seam + RtMidi host + note normalization (foundation, host-first to dodge
+  the USB-host driver risk) → 5b USB-A host MIDI (the risk: P4 driver feasibility, gate G1 spike) →
+  5c expression/CC map (bend/mod/AT/sustain/panic, CC→param via `ParamDesc.midi_cc`) → 5d USB-C
+  device (TinyUSB) → 5e SMF player (reuses the 4a scheduler) → (5f) MIDI-clock-in + the
+  `CLOCK_SOURCE` param deferred from 4a-iii. **6 kickoff gates G1–G6** (driver feasibility, HAL seam
+  shape, note-event model, MPE scope, CC/MIDI-learn, host dep) to run with Pascal before work-orders.
+- **Context will be cleared next.** On resume: read order is in the brief's header; **first action =
+  G1 driver-feasibility spike + G2/G3, then author + dispatch the 5a work-order.**
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
