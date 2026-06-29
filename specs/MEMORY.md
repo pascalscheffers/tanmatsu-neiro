@@ -402,6 +402,26 @@ Stage 4 (Timing/Arp/Seq/FX) kicked off. Kickoff gates run with Pascal — record
 scheduler → **4a-iii** clock params in table + UI. **4a-i dispatched** to a fresh Sonnet worker.
 - **Next:** review 4a-i summary; dispatch 4a-ii (scheduler), then 4a-iii (params/UI), then 4b (arp).
 
+## 2026-06-29 — Stage 4a-i: master clock core + transport API (COMPLETE)
+
+- **`engine/clock.h`** (new, header-only, pure): `Clock` class at 96 PPQN. `double` accumulator
+  for long-run drift-free tick counting; `uint64_t` for monotonic counters. Transport
+  `start()`/`stop()`/`cont()`; free-running `free_pos_` (never reset, used for tap timing).
+  Tap tempo: two-tap interval → BPM; 2 s fence resets the sequence; [20–300] BPM plausibility
+  guard. No platform deps; no globals.
+- **`struct ClockCmd`** in `clock.h`: `{type:u8, arg:float}` — mirrors `NoteCmd` pattern.
+- **`engine/synth.cpp`**: `static Clock s_clock` + `static SpscRing<ClockCmd,16> s_clock_cmds`.
+  `synth_init` calls `s_clock.init(sr)`. `synth_render` drains `s_clock_cmds` (same pattern as
+  NoteCmd drain) then calls `s_clock.advance(frames)` once per block; tick count unused for now
+  (4a-ii scheduler will consume it).
+- **`engine/synth.h`**: 5 control-thread setters (`engine_set_bpm`, `engine_transport_start/stop/
+  continue`, `engine_tap_tempo`) + 3 read-only helpers (`engine_clock_running/tick_pos/bpm`).
+- **11 new host tests** (113 total, all pass): SPT math, 64-frame block accumulation, transport
+  gating, BPM clamping, tap tempo exact BPM, implausible-gap restart.
+- `make test` ✅ (113/113) `make build` ✅ membrane clean (no `esp_`/`bsp_`/`SDL`/`miniaudio`
+  above `platform/`). `make size`: DIRAM **146 748 B (25.46%)**, Flash .text 641 KB.
+- **Next:** Stage 4a-ii — event scheduler (tick-timestamped events dispatched sub-block into the engine).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
