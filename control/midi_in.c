@@ -139,6 +139,12 @@ bool midi_parse_byte(MidiParser* p, uint8_t byte, MidiMsg* out) {
         case MIDI_STATUS_CC:
             msg_type = MIDI_CC;
             break;
+        case MIDI_STATUS_PITCH_BEND:
+            msg_type = MIDI_PITCH_BEND;
+            break;
+        case MIDI_STATUS_CHAN_AFTERTOUCH:
+            msg_type = MIDI_CHANNEL_PRESSURE;
+            break;
         default:
             msg_type = MIDI_OTHER;
             break;

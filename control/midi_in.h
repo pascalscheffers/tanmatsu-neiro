@@ -2,7 +2,8 @@
 //
 // Parses a raw MIDI byte stream one byte at a time, handling running status
 // and interleaved System Real-Time bytes (0xF8–0xFF).  Emits channel-voice
-// messages only.  No engine, platform, or I/O dependencies.
+// messages; pitch-bend and channel-pressure are surfaced as distinct types.
+// No engine, platform, or I/O dependencies.
 //
 // Usage:
 //   MidiParser p;
@@ -21,10 +22,13 @@ extern "C" {
 /* ---------- Message type ------------------------------------------------- */
 
 typedef enum {
-    MIDI_NOTE_OFF = 0, /* Note-Off (and Note-On with velocity 0) */
-    MIDI_NOTE_ON,      /* Note-On, velocity > 0                  */
-    MIDI_CC,           /* Control Change                          */
-    MIDI_OTHER,        /* Any other channel-voice message         */
+    MIDI_NOTE_OFF = 0,     /* Note-Off (and Note-On with velocity 0)                       */
+    MIDI_NOTE_ON,          /* Note-On, velocity > 0                                         */
+    MIDI_CC,               /* Control Change                                                */
+    MIDI_PITCH_BEND,       /* Pitch-bend: data1=LSB(0-127), data2=MSB(0-127);              */
+                           /*   14-bit value = data1 | (data2<<7), center 0x2000           */
+    MIDI_CHANNEL_PRESSURE, /* Channel aftertouch: data1=pressure(0-127), data2=0           */
+    MIDI_OTHER,            /* Any other channel-voice message                               */
 } MidiMsgType;
 
 /* ---------- Decoded message ----------------------------------------------- */

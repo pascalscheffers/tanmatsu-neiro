@@ -168,6 +168,95 @@ static void test_program_change(void) {
     test_pass();
 }
 
+/* 8. Pitch-bend center (0x2000) ------------------------------------------- */
+static void test_pitch_bend_center(void) {
+    test_begin("Pitch-bend center 0xE0 0x00 0x40 -> MIDI_PITCH_BEND ch=0 d1=0 d2=0x40");
+    MidiParser p;
+    midi_parser_init(&p);
+    uint8_t bytes[] = {0xE0, 0x00, 0x40};
+    MidiMsg msg     = feed(&p, bytes, 3);
+    TEST_ASSERT(msg.type == MIDI_PITCH_BEND, "type must be MIDI_PITCH_BEND");
+    TEST_ASSERT(msg.channel == 0, "channel must be 0");
+    TEST_ASSERT(msg.data1 == 0x00, "data1 (LSB) must be 0x00");
+    TEST_ASSERT(msg.data2 == 0x40, "data2 (MSB) must be 0x40");
+    test_pass();
+}
+
+/* 9. Pitch-bend full-up --------------------------------------------------- */
+static void test_pitch_bend_full_up(void) {
+    test_begin("Pitch-bend full-up 0xE3 0x7F 0x7F -> MIDI_PITCH_BEND ch=3 d1=0x7F d2=0x7F");
+    MidiParser p;
+    midi_parser_init(&p);
+    uint8_t bytes[] = {0xE3, 0x7F, 0x7F};
+    MidiMsg msg     = feed(&p, bytes, 3);
+    TEST_ASSERT(msg.type == MIDI_PITCH_BEND, "type must be MIDI_PITCH_BEND");
+    TEST_ASSERT(msg.channel == 3, "channel must be 3");
+    TEST_ASSERT(msg.data1 == 0x7F, "data1 (LSB) must be 0x7F");
+    TEST_ASSERT(msg.data2 == 0x7F, "data2 (MSB) must be 0x7F");
+    test_pass();
+}
+
+/* 10. Pitch-bend full-down ------------------------------------------------ */
+static void test_pitch_bend_full_down(void) {
+    test_begin("Pitch-bend full-down 0xE0 0x00 0x00 -> MIDI_PITCH_BEND d1=0 d2=0");
+    MidiParser p;
+    midi_parser_init(&p);
+    uint8_t bytes[] = {0xE0, 0x00, 0x00};
+    MidiMsg msg     = feed(&p, bytes, 3);
+    TEST_ASSERT(msg.type == MIDI_PITCH_BEND, "type must be MIDI_PITCH_BEND");
+    TEST_ASSERT(msg.channel == 0, "channel must be 0");
+    TEST_ASSERT(msg.data1 == 0, "data1 must be 0");
+    TEST_ASSERT(msg.data2 == 0, "data2 must be 0");
+    test_pass();
+}
+
+/* 11. Pitch-bend via running status --------------------------------------- */
+static void test_pitch_bend_running_status(void) {
+    test_begin("Pitch-bend running status: second message via data bytes only");
+    MidiParser p;
+    midi_parser_init(&p);
+
+    /* First message with status, then running-status continuation */
+    uint8_t bytes[] = {0xE0, 0x00, 0x40, 0x7F, 0x7F};
+
+    MidiMsg msgs[2];
+    int     emitted = 0;
+    for (int i = 0; i < (int)(sizeof(bytes)); i++) {
+        MidiMsg m;
+        if (midi_parse_byte(&p, bytes[i], &m)) {
+            TEST_ASSERT(emitted < 2, "too many messages");
+            msgs[emitted++] = m;
+        }
+    }
+    TEST_ASSERT(emitted == 2, "expected 2 pitch-bend messages (status + running)");
+
+    /* First: center */
+    TEST_ASSERT(msgs[0].type == MIDI_PITCH_BEND, "msg[0] must be MIDI_PITCH_BEND");
+    TEST_ASSERT(msgs[0].data1 == 0x00, "msg[0] data1 must be 0x00");
+    TEST_ASSERT(msgs[0].data2 == 0x40, "msg[0] data2 must be 0x40");
+
+    /* Second: full-up via running status */
+    TEST_ASSERT(msgs[1].type == MIDI_PITCH_BEND, "msg[1] must be MIDI_PITCH_BEND");
+    TEST_ASSERT(msgs[1].data1 == 0x7F, "msg[1] data1 must be 0x7F");
+    TEST_ASSERT(msgs[1].data2 == 0x7F, "msg[1] data2 must be 0x7F");
+
+    test_pass();
+}
+
+/* 12. Channel pressure ----------------------------------------------------- */
+static void test_channel_pressure(void) {
+    test_begin("Channel pressure 0xD5 0x40 -> MIDI_CHANNEL_PRESSURE ch=5 d1=0x40 d2=0");
+    MidiParser p;
+    midi_parser_init(&p);
+    uint8_t bytes[] = {0xD5, 0x40};
+    MidiMsg msg     = feed(&p, bytes, 2);
+    TEST_ASSERT(msg.type == MIDI_CHANNEL_PRESSURE, "type must be MIDI_CHANNEL_PRESSURE");
+    TEST_ASSERT(msg.channel == 5, "channel must be 5");
+    TEST_ASSERT(msg.data1 == 0x40, "data1 must be 0x40");
+    TEST_ASSERT(msg.data2 == 0, "data2 must be 0 (single-data-byte message)");
+    test_pass();
+}
+
 /* --------------------------------------------------------------------------
  * Suite entry point
  * -------------------------------------------------------------------------- */
@@ -181,4 +270,9 @@ void test_midi_parse_suite(void) {
     test_cc();
     test_realtime_interleaved();
     test_program_change();
+    test_pitch_bend_center();
+    test_pitch_bend_full_up();
+    test_pitch_bend_full_down();
+    test_pitch_bend_running_status();
+    test_channel_pressure();
 }
