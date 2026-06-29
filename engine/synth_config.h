@@ -4,3 +4,7 @@
 #pragma once
 
 static constexpr int kNumVoices = 8;
+
+// Pitch-bend wheel range, applied directly to voice pitch (Stage 5c). Fixed ±2
+// semitones (standard wheel range); not a patch param in v1. RPN bend-range ignored.
+static constexpr float kPitchBendRangeSemis = 2.0f;

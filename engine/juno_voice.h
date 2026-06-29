@@ -61,6 +61,10 @@ public:
         lfo2_raw_ = lfo2_raw;
     }
 
+    // IVoice: inject channel-wide MIDI expression for this block (Stage 5c).
+    // mod_wheel/aftertouch in [0,1]; pitch_bend bipolar [-1,+1].
+    void set_expression(float mod_wheel, float pitch_bend, float aftertouch) override;
+
 private:
     float   sample_rate_    = 48000.0f;
     bool    gate_           = false;
@@ -90,6 +94,11 @@ private:
     // block via set_lfo_inputs(). In [-1,+1] before per-note depth+delay scaling.
     float lfo1_raw_ = 0.0f;
     float lfo2_raw_ = 0.0f;
+
+    // Stage 5c: channel-wide MIDI expression, injected each block via set_expression().
+    float p_mod_wheel_  = 0.0f;  // [0, 1]  CC1
+    float p_pitch_bend_ = 0.0f;  // [-1, +1] bipolar; scaled by kPitchBendRangeSemis
+    float p_aftertouch_ = 0.0f;  // [0, 1]  channel aftertouch
 
     // Param cache — physical values pushed from the param store.
     float p_osc_level_        = 0.70f;

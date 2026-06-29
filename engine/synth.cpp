@@ -14,6 +14,7 @@
 
 #include <math.h>
 #include <string.h>
+#include <atomic>
 #include "Effects/chorus.h"
 #include "arp.h"
 #include "arp_clock.h"
@@ -55,6 +56,13 @@ static float           s_sample_rate = 48000.0f;
 // LFO1/2 are global, not per-voice). Per-note delay fade-in stays in JunoVoice.
 static dsp::Lfo s_lfo1;
 static dsp::Lfo s_lfo2;
+
+// Stage 5c: channel-wide MIDI expression. Single-writer (control thread) /
+// single-reader (audio thread); relaxed atomics, latest-value-wins.
+static std::atomic<float> s_mod_wheel{0.0f};
+static std::atomic<float> s_pitch_bend{0.0f};
+static std::atomic<float> s_aftertouch{0.0f};
+static std::atomic<bool>  s_panic{false};
 
 // Note events cross from the control thread (core 0) to the audio thread
 // (core 1) via this ring. 64 slots >> the few events a UI frame can produce.
@@ -153,6 +161,15 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
                 s_alloc.note_off(cmd.pitch);
             }
         }
+    }
+
+    // Stage 5c: panic overrides any notes drained this block.
+    if (s_panic.exchange(false, std::memory_order_relaxed)) {
+        s_alloc.reset_all();
+        s_arp.clear();
+        s_arp_had_notes = false;
+        s_arp_step      = 0;
+        s_arp_phase     = 0.0;
     }
 
     // 1a. Drain clock commands from the control thread and advance the clock
@@ -342,11 +359,16 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
 
     // 3a. ADR 0018: advance shared LFOs once for the whole block (unconditional —
     //     free-running regardless of voice activity) and inject into every voice.
+    //     Stage 5c: also load channel-wide MIDI expression atomics once and inject.
     {
         float l1 = s_lfo1.process_block((uint32_t)frames);
         float l2 = s_lfo2.process_block((uint32_t)frames);
+        float mw = s_mod_wheel.load(std::memory_order_relaxed);
+        float pb = s_pitch_bend.load(std::memory_order_relaxed);
+        float at = s_aftertouch.load(std::memory_order_relaxed);
         for (int v = 0; v < kNumVoices; v++) {
             slots[v].voice->set_lfo_inputs(l1, l2);
+            slots[v].voice->set_expression(mw, pb, at);
         }
     }
 
@@ -467,6 +489,31 @@ void engine_transport_continue() {
 void engine_tap_tempo() {
     ClockCmd c{ClockCmd::kTap, 0.0f};
     s_clock_cmds.push(c);
+}
+
+// --- MIDI expression API (Stage 5c) -----------------------------------------
+// Control-thread setters; relaxed atomics, latest-value-wins.
+
+void engine_set_pitch_bend(float norm_bipolar) {
+    s_pitch_bend.store(norm_bipolar, std::memory_order_relaxed);
+}
+void engine_set_mod_wheel(float norm) {
+    s_mod_wheel.store(norm, std::memory_order_relaxed);
+}
+void engine_set_aftertouch(float norm) {
+    s_aftertouch.store(norm, std::memory_order_relaxed);
+}
+
+void engine_all_notes_off(void) {
+    s_panic.store(true, std::memory_order_relaxed);
+}
+
+uint16_t engine_cc_to_param(uint8_t cc) {
+    if (cc == 0xFF) return 0;
+    for (int i = 0; i < kJunoParamCount; i++) {
+        if (JUNO_PARAM_TABLE[i].midi_cc == cc) return JUNO_PARAM_TABLE[i].id;
+    }
+    return 0;
 }
 
 // --- Event scheduler API (ADR 0010, Stage 4a-ii) ----------------------------

@@ -872,6 +872,33 @@ latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.*
 - `make test` ✅ (158/158) `make host` ✅ `make format` ✅ membrane clean.
 - **Next:** Stage 5c-ii — engine expression path (route bend/pressure into the mod matrix / engine API).
 
+## 2026-06-29 — Stage 5c-ii: engine MIDI-expression path (COMPLETE)
+
+- **5 new engine APIs in `synth.h`/`synth.cpp`:**
+  `engine_set_pitch_bend(float)` / `engine_set_mod_wheel(float)` / `engine_set_aftertouch(float)` —
+  relaxed atomics, latest-value-wins (mirrors shared-LFO pattern). `engine_all_notes_off()` — sets
+  an atomic `s_panic` flag; the audio thread calls `s_alloc.reset_all()` + `s_arp.clear()` at the
+  top of the next block. `engine_cc_to_param(uint8_t cc)` — scans `JUNO_PARAM_TABLE` for a matching
+  `midi_cc` field; returns `ParamId` or 0 for unassigned.
+- **Direct ±2-semitone bend path:** `kPitchBendRangeSemis=2.0f` constant added to `synth_config.h`.
+  In `JunoVoice::render()`, `range_semi` now includes `p_pitch_bend_ * kPitchBendRangeSemis` — flows
+  into both `base_freq` and `mod_freq_end` so bend is smooth and always-on.
+- **Mod-wheel and aftertouch as live mod sources:** `set_expression(mw, pb, at)` fills
+  `ModSources.mod_wheel / .pitch_bend / .aftertouch` each block (previously left at 0). Patches
+  can now route any of these three sources via the mod matrix.
+- **No default routings added; factory presets untouched.**
+- **New pure-virtual `IVoice::set_expression()`** added (`engine/voice.h`); `JunoVoice` implements
+  it (members `p_mod_wheel_`, `p_pitch_bend_`, `p_aftertouch_` added). Expression injected in
+  synth_render step 3a alongside `set_lfo_inputs`, same loop.
+- **5 new host tests** (158 → 163, all pass): bend-up raises pitch toward note+2, bend-down lowers
+  toward note-2, mod-wheel feeds mod-matrix cutoff route (RMS change vs wheel=0), CC→param lookup
+  (CC74→FILTER_CUTOFF, CC71→FILTER_RES, 0x7E→0), panic via `VoiceAlloc::reset_all()`.
+- Decision: relaxed atomics (same as s_lfo1/2 injection); presets untouched; bend range fixed (not a param).
+- `make test` ✅ (163/163) `make host` ✅ `make build` ✅ membrane clean.
+  `make size`: Flash 995 KB / DIRAM 155 KB — total image **1,108,410 bytes** (47% free). +~600 bytes.
+- **Next:** Stage 5c-iii — router wiring (bend/mod/AT/CC from `midi_router_poll` → new engine APIs +
+  sustain + CC→param). The four APIs above are the handoff seam.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

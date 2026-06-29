@@ -13,6 +13,7 @@
 #include "juno_voice.h"
 #include "mod_matrix.h"
 #include "param_id.h"
+#include "synth_config.h"  // kPitchBendRangeSemis (Stage 5c)
 
 void JunoVoice::init(float sample_rate) {
     sample_rate_ = sample_rate;
@@ -64,6 +65,15 @@ void JunoVoice::note_on(uint8_t pitch, uint8_t velocity, NoteExpression expr) {
 
 void JunoVoice::note_off() {
     gate_ = false;
+}
+
+// Stage 5c: inject channel-wide MIDI expression (called once per block by synth_render,
+// before render(), mirroring set_lfo_inputs). pitch_bend is bipolar [-1,+1]; the voice
+// scales it by kPitchBendRangeSemis and adds it directly to the pitch calculation.
+void JunoVoice::set_expression(float mod_wheel, float pitch_bend, float aftertouch) {
+    p_mod_wheel_  = mod_wheel;
+    p_pitch_bend_ = pitch_bend;
+    p_aftertouch_ = aftertouch;
 }
 
 void JunoVoice::reset() {
@@ -223,13 +233,16 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
     if (key_track_raw < -1.0f) key_track_raw = -1.0f;
 
     ModSources msrc;
-    msrc.lfo1      = lfo1_value_;
-    msrc.lfo2      = lfo2_value_;
-    msrc.env1      = 0.0f;  // amp env not yet cached; filled below if needed
-    msrc.env2      = env2_value_;
-    msrc.velocity  = vel_scale_;  // [0,1]
-    msrc.key_track = key_track_raw;
-    // Global sources (mod_wheel, pitch_bend, aftertouch) left at 0; Stage 3c wires them.
+    msrc.lfo1       = lfo1_value_;
+    msrc.lfo2       = lfo2_value_;
+    msrc.env1       = 0.0f;  // amp env not yet cached; filled below if needed
+    msrc.env2       = env2_value_;
+    msrc.velocity   = vel_scale_;  // [0,1]
+    msrc.key_track  = key_track_raw;
+    // Stage 5c: global MIDI expression — injected each block via set_expression().
+    msrc.mod_wheel  = p_mod_wheel_;
+    msrc.pitch_bend = p_pitch_bend_;
+    msrc.aftertouch = p_aftertouch_;
 
     ModOutputs mout = mod_matrix_.eval(msrc);
 
@@ -244,7 +257,12 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
     // Pitch (semitone offset → freq). OSC_RANGE adds a fixed offset in semitones.
     // p_pitch_offset_ is a portamento glide semitone offset set by VoiceAlloc each
     // block; it is already block-rate-smoothed by the allocator.
-    float range_semi   = p_osc_range_semi_ + p_pitch_offset_;
+    // Stage 5c: direct pitch-bend path — always-on, ±kPitchBendRangeSemis.
+    // Flows into both base_freq and mod_freq_end so bend is smooth across the block.
+    // The pitch_bend mod-matrix SOURCE (msrc.pitch_bend) remains available for patches
+    // but the direct path is primary. Both can coexist without double-counting because
+    // the matrix source is only used when a patch route maps it — which is additive.
+    float range_semi   = p_osc_range_semi_ + p_pitch_offset_ + p_pitch_bend_ * kPitchBendRangeSemis;
     float base_freq    = daisysp::mtof((float)midi_note_ + range_semi);
     float mod_freq_end = daisysp::mtof((float)midi_note_ + range_semi + mout.pitch_semi);
 

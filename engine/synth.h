@@ -93,6 +93,27 @@ float    engine_clock_bpm(void);       // current BPM
 // The event fires on the first audio block whose start <= sample_time < start+frames.
 void engine_schedule_note(uint64_t sample_time, uint8_t pitch, uint8_t velocity, int on);
 
+// --- MIDI expression (Stage 5c) — channel-wide (omni), lock-free control thread.
+// Continuous controllers use latest-value-wins atomics (no queue to overflow).
+
+// Pitch-bend, bipolar normalized [-1, +1] (router maps 14-bit, center 0x2000 → 0).
+// Applied directly to all voices' pitch over kPitchBendRangeSemis.
+void engine_set_pitch_bend(float norm_bipolar);
+
+// Mod-wheel (CC1), [0, 1]. Fed to every voice as the MOD_WHEEL mod source.
+void engine_set_mod_wheel(float norm);
+
+// Channel aftertouch, [0, 1]. Fed to every voice as the AFTERTOUCH mod source.
+void engine_set_aftertouch(float norm);
+
+// Panic: release/silence all voices immediately and clear the arp held set.
+void engine_all_notes_off(void);
+
+// Map a MIDI CC number to a ParamId, using ParamDesc.midi_cc (the table is the
+// single CC→param map). Returns 0 (ParamId none/invalid) if no row uses this CC.
+// Control-thread helper for the MIDI router (Stage 5c-iii).
+uint16_t engine_cc_to_param(uint8_t cc);
+
 #ifdef __cplusplus
 }
 #endif

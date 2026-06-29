@@ -27,9 +27,14 @@
 #include <stdio.h>
 #include <string.h>
 #include "dsp/lfo.h"
+#include "juno_model.h"
 #include "juno_voice.h"
+#include "mod_matrix.h"
+#include "param_desc.h"
 #include "param_id.h"
 #include "runner.h"
+#include "synth_config.h"
+#include "voice_alloc.h"
 
 static const float kSampleRate = 48000.0f;
 
@@ -388,6 +393,261 @@ void test_lfo_process_block() {
     test_pass();
 }
 
+// ── helpers ────────────────────────────────────────────────────────────────────
+
+// Estimate pitch from a rendered voice by counting zero-crossings (pos→neg) over
+// a large number of blocks.  Returns crossings-per-second as a float frequency estimate.
+// Uses 500 measurement blocks (32000 samples at 48k) for reliable counting.
+// Must be called after the voice is warmed up (gate set, past attack).
+static float estimate_pitch_hz(JunoVoice& v, float mod_wheel, float pitch_bend, float aftertouch) {
+    float buf[64];
+    int   total  = 0;
+    int   blocks = 500;
+    float prev   = 0.0f;  // carry last sample across blocks for edge detection
+
+    for (int b = 0; b < blocks; b++) {
+        v.set_expression(mod_wheel, pitch_bend, aftertouch);
+        memset(buf, 0, sizeof(buf));
+        v.render(buf, 64);
+        // Count positive→negative crossings (one per oscillator period for a saw).
+        float last = prev;
+        for (int i = 0; i < 64; i++) {
+            if (last >= 0.0f && buf[i] < 0.0f) total++;
+            last = buf[i];
+        }
+        prev = buf[63];
+    }
+
+    int total_samples = blocks * 64;  // 32000
+    return (float)total * kSampleRate / (float)total_samples;
+}
+
+static void warm_up_voice(JunoVoice& v, float bend, int warmup_blocks = 30) {
+    float buf[64];
+    for (int b = 0; b < warmup_blocks; b++) {
+        v.set_expression(0.0f, bend, 0.0f);
+        memset(buf, 0, sizeof(buf));
+        v.render(buf, 64);
+    }
+}
+
+static JunoVoice make_pitch_test_voice(int note) {
+    JunoVoice v;
+    v.init(kSampleRate);
+    v.set_param((int)ParamId::OSC_WAVEFORM, 0);  // SAW — clean zero crossings
+    v.set_param((int)ParamId::OSC_LEVEL, 1.0f);
+    v.set_param((int)ParamId::SUB_LEVEL, 0.0f);
+    v.set_param((int)ParamId::NOISE_LEVEL, 0.0f);
+    v.set_param((int)ParamId::FILTER_CUTOFF, 20000.0f);  // wide open — no crossings lost to LPF
+    v.set_param((int)ParamId::FILTER_RES, 0.0f);
+    v.set_param((int)ParamId::VCF_ENV_DEPTH, 0.0f);
+    v.set_param((int)ParamId::VCF_KEY_TRACK, 0.0f);
+    v.set_param((int)ParamId::VCF_LFO_DEPTH, 0.0f);
+    v.set_param((int)ParamId::ENV_ATTACK, 0.001f);
+    v.set_param((int)ParamId::ENV_DECAY, 0.001f);
+    v.set_param((int)ParamId::ENV_SUSTAIN, 1.0f);
+    v.set_param((int)ParamId::VCA_GATE_MODE, 0);  // env mode (gate mode clips DC offset)
+    v.set_param((int)ParamId::VCA_LEVEL, 1.0f);
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+    v.note_on((uint8_t)note, 127, expr);
+    return v;
+}
+
+/* --- 11. Pitch-bend: positive bend raises pitch ----------------------------- */
+void test_pitch_bend_shifts_pitch_up() {
+    printf("--- Stage 5c: MIDI expression (pitch-bend, mod-wheel, aftertouch) ---\n");
+    test_begin("Pitch bend +1.0 raises pitch toward note+2semis");
+
+    // Note 60 (C4) = 261.63 Hz, note 62 (D4) = 293.66 Hz.
+    // Bend ±1 → ±kPitchBendRangeSemis (2 semis). Expected: ≈293 Hz at bend=+1.
+    // Measure via zero-crossings over 32000 samples → ~140-200 crossings at these pitches.
+
+    JunoVoice v0 = make_pitch_test_voice(60);
+    JunoVoice v2 = make_pitch_test_voice(62);
+    JunoVoice vb = make_pitch_test_voice(60);
+
+    warm_up_voice(v0, 0.0f);
+    warm_up_voice(v2, 0.0f);
+    warm_up_voice(vb, +1.0f);
+
+    float freq_60   = estimate_pitch_hz(v0, 0.0f, 0.0f, 0.0f);
+    float freq_62   = estimate_pitch_hz(v2, 0.0f, 0.0f, 0.0f);
+    float freq_b_up = estimate_pitch_hz(vb, 0.0f, +1.0f, 0.0f);
+
+    // bend=+1 must be higher than bend=0.
+    TEST_ASSERT(freq_b_up > freq_60, "Pitch bend +1 must raise frequency above note-60 base");
+
+    // bend=+1 on note 60 should approximate note 62 within 10%.
+    float ratio = freq_b_up / (freq_62 > 1.0f ? freq_62 : 1.0f);
+    TEST_ASSERT(ratio > 0.90f && ratio < 1.10f,
+                "Pitch bend +1 on note 60 must approximate note 62 frequency within 10%");
+
+    test_pass();
+}
+
+/* --- 12. Pitch-bend: negative bend lowers pitch symmetrically -------------- */
+void test_pitch_bend_shifts_pitch_down() {
+    test_begin("Pitch bend -1.0 lowers pitch toward note-2semis");
+
+    JunoVoice v0  = make_pitch_test_voice(60);
+    JunoVoice v58 = make_pitch_test_voice(58);
+    JunoVoice vb  = make_pitch_test_voice(60);
+
+    warm_up_voice(v0, 0.0f);
+    warm_up_voice(v58, 0.0f);
+    warm_up_voice(vb, -1.0f);
+
+    float freq_60   = estimate_pitch_hz(v0, 0.0f, 0.0f, 0.0f);
+    float freq_58   = estimate_pitch_hz(v58, 0.0f, 0.0f, 0.0f);
+    float freq_b_dn = estimate_pitch_hz(vb, 0.0f, -1.0f, 0.0f);
+
+    // bend=-1 must be lower than bend=0.
+    TEST_ASSERT(freq_b_dn < freq_60, "Pitch bend -1 must lower frequency below note-60 base");
+
+    // bend=-1 on note 60 should approximate note 58 within 10%.
+    float ratio = freq_b_dn / (freq_58 > 1.0f ? freq_58 : 1.0f);
+    TEST_ASSERT(ratio > 0.90f && ratio < 1.10f,
+                "Pitch bend -1 on note 60 must approximate note 58 frequency within 10%");
+
+    test_pass();
+}
+
+/* --- 13. Mod-wheel feeds ModSources.mod_wheel to the mod matrix ------------ */
+void test_mod_wheel_feeds_matrix() {
+    test_begin("Mod-wheel set_expression(1.0) changes output via mod-matrix routing");
+
+    // Wire MOD_WHEEL → FILTER_CUTOFF with depth=0.5 (LIN).
+    // At mod_wheel=0: cutoff at base; at mod_wheel=1: cutoff shifted → different tone.
+    auto measure_rms_with_wheel = [](float wheel) -> float {
+        JunoVoice v;
+        v.init(kSampleRate);
+        v.set_param((int)ParamId::OSC_LEVEL, 1.0f);
+        v.set_param((int)ParamId::FILTER_CUTOFF, 500.0f);  // low base cutoff
+        v.set_param((int)ParamId::FILTER_RES, 0.0f);
+        v.set_param((int)ParamId::ENV_ATTACK, 0.001f);
+        v.set_param((int)ParamId::ENV_DECAY, 0.001f);
+        v.set_param((int)ParamId::ENV_SUSTAIN, 1.0f);
+        v.set_param((int)ParamId::VCA_GATE_MODE, 1);
+
+        // Route MOD_WHEEL → FILTER_CUTOFF with depth 5000 Hz
+        // (mod_wheel=1 adds 5000 Hz to a 500 Hz base → wide-open filter).
+        ModMatrix mat;
+        mat.clear();
+        Routing r;
+        r.source        = static_cast<uint8_t>(ModSource::MOD_WHEEL);
+        r.dest_param_id = ParamId::FILTER_CUTOFF;
+        r.depth         = 5000.0f;  // additive Hz (matches test_mod_matrix convention)
+        r.curve         = static_cast<uint8_t>(ModCurve::LIN);
+        mat.set_route(0, r);
+        v.set_mod_matrix(mat);
+
+        NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+        v.note_on(69, 127, expr);
+
+        float buf[64];
+        // Warm-up: steady state.
+        for (int b = 0; b < 50; b++) {
+            v.set_expression(wheel, 0.0f, 0.0f);
+            memset(buf, 0, sizeof(buf));
+            v.render(buf, 64);
+        }
+        // Measure RMS of last block.
+        memset(buf, 0, sizeof(buf));
+        v.set_expression(wheel, 0.0f, 0.0f);
+        v.render(buf, 64);
+        return rms(buf, 64);
+    };
+
+    float rms_wheel0 = measure_rms_with_wheel(0.0f);
+    float rms_wheel1 = measure_rms_with_wheel(1.0f);
+
+    // Higher cutoff → more high-frequency content → higher RMS on a rich oscillator.
+    // The mod-matrix route must cause a measurable difference.
+    TEST_ASSERT(rms_wheel1 != rms_wheel0,
+                "Mod-wheel at 1.0 with MOD_WHEEL→CUTOFF routing must change output RMS vs wheel=0");
+    test_pass();
+}
+
+/* --- 14. engine_cc_to_param: CC→ParamId lookup via JUNO_PARAM_TABLE -------- */
+void test_engine_cc_to_param() {
+    test_begin("CC→ParamId lookup: CC74→FILTER_CUTOFF, unassigned CC→0");
+
+    // Replicate the engine_cc_to_param logic directly (synth.cpp not linked in
+    // the host test build; JUNO_PARAM_TABLE and kJunoParamCount are available).
+    auto cc_to_param = [](uint8_t cc) -> uint16_t {
+        if (cc == 0xFF) return 0;
+        for (int i = 0; i < kJunoParamCount; i++) {
+            if (JUNO_PARAM_TABLE[i].midi_cc == cc) return JUNO_PARAM_TABLE[i].id;
+        }
+        return 0;
+    };
+
+    // CC74 = FILTER_CUTOFF (brightness, standard GM/MIDI assignment).
+    uint16_t id_74 = cc_to_param(74);
+    TEST_ASSERT(id_74 == ParamId::FILTER_CUTOFF, "CC74 must map to ParamId::FILTER_CUTOFF (0x20)");
+
+    // CC71 = FILTER_RES (resonance, standard GM/MIDI assignment).
+    uint16_t id_71 = cc_to_param(71);
+    TEST_ASSERT(id_71 == ParamId::FILTER_RES, "CC71 must map to ParamId::FILTER_RES (0x21)");
+
+    // Unassigned CC (0x7E = 126, not in the table) → 0.
+    uint16_t id_unk = cc_to_param(0x7E);
+    TEST_ASSERT(id_unk == 0, "Unassigned CC (0x7E) must return 0");
+
+    // 0xFF sentinel → 0.
+    uint16_t id_ff = cc_to_param(0xFF);
+    TEST_ASSERT(id_ff == 0, "CC=0xFF must return 0 (unassigned sentinel)");
+
+    test_pass();
+}
+
+/* --- 15. Panic (alloc level): reset_all() silences all voices -------------- */
+void test_panic_silences_voices() {
+    test_begin("Panic: reset_all() on VoiceAlloc silences all voices immediately");
+
+    // Use VoiceAlloc + JunoModel directly (synth.cpp not linked in host test build;
+    // the engine's panic handler calls s_alloc.reset_all() — same logic tested here).
+    JunoModel model;
+    model.init(kSampleRate);
+    VoiceAlloc alloc;
+    alloc.init(&model);
+
+    // Trigger several notes.
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+    alloc.note_on(60, 100, expr);
+    alloc.note_on(64, 100, expr);
+    alloc.note_on(67, 100, expr);
+
+    // Warm up: advance a few blocks so envelopes are running.
+    const VoiceSlot* slots = alloc.slots();
+    float            buf[64];
+    for (int b = 0; b < 10; b++) {
+        for (int v = 0; v < kNumVoices; v++) {
+            if (slots[v].voice->is_active()) {
+                memset(buf, 0, sizeof(buf));
+                slots[v].voice->render(buf, 64);
+            }
+        }
+    }
+
+    // Confirm voices are active before panic.
+    int active_before = 0;
+    for (int v = 0; v < kNumVoices; v++) {
+        if (slots[v].voice->is_active()) active_before++;
+    }
+    TEST_ASSERT(active_before > 0, "Must have active voices before panic");
+
+    // Panic: reset_all silences everything immediately.
+    alloc.reset_all();
+
+    int active_after = 0;
+    for (int v = 0; v < kNumVoices; v++) {
+        if (slots[v].voice->is_active()) active_after++;
+    }
+    TEST_ASSERT(active_after == 0, "reset_all() must silence all voices immediately");
+    test_pass();
+}
+
 /* Entry point declared in main.cpp */
 void test_mod_sources_suite() {
     test_env2_independent_from_env1();
@@ -400,4 +660,10 @@ void test_mod_sources_suite() {
     test_lfo_output_range();
     test_env2_per_voice_independent();
     test_lfo_process_block();
+    // Stage 5c: MIDI expression tests.
+    test_pitch_bend_shifts_pitch_up();
+    test_pitch_bend_shifts_pitch_down();
+    test_mod_wheel_feeds_matrix();
+    test_engine_cc_to_param();
+    test_panic_silences_voices();
 }

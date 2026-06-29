@@ -47,4 +47,10 @@ public:
     // from synth_render, before render()). The raw values are in [-1, +1]; the
     // voice applies its own per-note delay fade-in scale and depth.
     virtual void set_lfo_inputs(float lfo1_raw, float lfo2_raw) = 0;
+
+    // Inject channel-wide MIDI expression for this block (called once per block from
+    // synth_render, before render(), like set_lfo_inputs). Channel-wide (omni) in v1;
+    // per-note MPE is future. mod_wheel/aftertouch in [0,1]; pitch_bend bipolar [-1,+1]
+    // (the voice scales it by kPitchBendRangeSemis and applies it directly to pitch).
+    virtual void set_expression(float mod_wheel, float pitch_bend, float aftertouch) = 0;
 };
