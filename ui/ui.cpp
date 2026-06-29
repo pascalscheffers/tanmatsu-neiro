@@ -18,6 +18,7 @@
 #include "platform.h"
 #include "ui_icons.h"
 #include "ui_overlay.h"
+#include "ui_page_table.h"
 #include "ui_presets.h"
 
 // ---------------------------------------------------------------------------
@@ -80,7 +81,7 @@ static void draw_gradient_bar(pax_buf_t* fb, float x, float y, float w, float h,
 }
 
 // ---------------------------------------------------------------------------
-// Internal helpers
+// Internal helpers (group_params, page_rows, PAGE_TABLE defined in ui_page_table.cpp)
 // ---------------------------------------------------------------------------
 static const char* group_name(uint8_t g) {
     switch (g) {
@@ -107,61 +108,6 @@ static const char* group_name(uint8_t g) {
         default:
             return "?";
     }
-}
-
-// Collect all params for a group into out[], table order. Returns count.
-static int group_params(uint8_t group, const ParamDesc** out, int max_out) {
-    int n = 0;
-    for (int i = 0; i < kJunoParamCount && n < max_out; i++) {
-        if ((uint8_t)JUNO_PARAM_TABLE[i].group == group) {
-            out[n++] = &JUNO_PARAM_TABLE[i];
-        }
-    }
-    return n;
-}
-
-// ---------------------------------------------------------------------------
-// Explicit page table (Stage 5d WO-1)
-// ---------------------------------------------------------------------------
-enum PageKind : uint8_t {
-    PAGE_PRESETS = 0,  // no param rows — rendered separately (WO-3)
-    PAGE_PARAMS  = 1,  // one or more ParamGroup columns concatenated
-};
-
-struct PageDef {
-    const char* title;
-    PageKind    kind;
-    uint8_t     groups[3];  // ParamGroup values; unused slots are 0xFF
-    uint8_t     num_groups;
-};
-
-// clang-format off
-static const PageDef PAGE_TABLE[] = {
-    { "PRESET",  PAGE_PRESETS, {0xFF, 0xFF, 0xFF},                      0 },
-    { "PERFORM", PAGE_PARAMS,  {GROUP_GLOBAL, GROUP_ARP,   0xFF},        2 },
-    { "OSC",     PAGE_PARAMS,  {GROUP_OSC,    0xFF,        0xFF},        1 },
-    { "FILTER",  PAGE_PARAMS,  {GROUP_FILTER, GROUP_HPF,   0xFF},        2 },
-    { "AMP ENV", PAGE_PARAMS,  {GROUP_ENV,    0xFF,        0xFF},        1 },
-    { "MOD ENV", PAGE_PARAMS,  {GROUP_ENV2,   0xFF,        0xFF},        1 },
-    { "LFO",     PAGE_PARAMS,  {GROUP_LFO,    0xFF,        0xFF},        1 },
-    { "FX",      PAGE_PARAMS,  {GROUP_FX,     0xFF,        0xFF},        1 },
-    { "AMP",     PAGE_PARAMS,  {GROUP_AMP,    0xFF,        0xFF},        1 },
-};
-// clang-format on
-
-static const int kNumPages = (int)(sizeof(PAGE_TABLE) / sizeof(PAGE_TABLE[0]));
-
-// Collect params for a page into out[] (all groups in order). Returns count.
-// For PAGE_PRESETS returns 0.  max_out should be at least 24.
-static int page_rows(int page_index, const ParamDesc** out, int max_out) {
-    if (page_index < 0 || page_index >= kNumPages) return 0;
-    const PageDef& pd = PAGE_TABLE[page_index];
-    if (pd.kind != PAGE_PARAMS) return 0;
-    int n = 0;
-    for (int g = 0; g < (int)pd.num_groups && n < max_out; g++) {
-        n += group_params(pd.groups[g], out + n, max_out - n);
-    }
-    return n;
 }
 
 // ---------------------------------------------------------------------------

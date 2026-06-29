@@ -13,6 +13,12 @@
 static MidiParser   s_parser;
 static SustainPedal s_sustain;
 
+// CC-driven param focus state: stashed whenever a generic CC moves a mapped
+// param. Cleared on read by midi_router_take_param_focus().
+static uint16_t s_focus_id      = 0;
+static float    s_focus_norm    = 0.0f;
+static bool     s_focus_pending = false;
+
 // Callback from sustain_set_pedal: release a deferred voice.
 static void router_release(uint8_t pitch) {
     engine_note_off(pitch);
@@ -68,9 +74,15 @@ void midi_router_poll(void) {
                                 sustain_clear(&s_sustain);
                                 break;
                             default: {
-                                uint16_t id = engine_cc_to_param(m.data1);
+                                uint16_t id   = engine_cc_to_param(m.data1);
+                                float    norm = (float)m.data2 / 127.0f;
                                 if (id) {
-                                    engine_set_param_norm(id, (float)m.data2 / 127.0f);
+                                    engine_set_param_norm(id, norm);
+                                    // Stash for UI focus (one-shot; cleared by
+                                    // midi_router_take_param_focus on the control task).
+                                    s_focus_id      = id;
+                                    s_focus_norm    = norm;
+                                    s_focus_pending = true;
                                 }
                                 break;
                             }
@@ -85,4 +97,12 @@ void midi_router_poll(void) {
         }
         if (n < sizeof buf) break;
     }
+}
+
+bool midi_router_take_param_focus(uint16_t* out_id, float* out_norm) {
+    if (!s_focus_pending) return false;
+    *out_id         = s_focus_id;
+    *out_norm       = s_focus_norm;
+    s_focus_pending = false;
+    return true;
 }

@@ -182,6 +182,13 @@ void app_run(void) {
             if (ui_handle_event(&ui_state, &ev)) ui_state.change_seq++;
         }
         midi_router_poll();
+        {
+            uint16_t fid;
+            float    fnorm;
+            if (midi_router_take_param_focus(&fid, &fnorm)) {
+                if (ui_focus_param(&ui_state, fid, fnorm)) ui_state.change_seq++;
+            }
+        }
 
         // --- Control tick + inline render (when no render task) ---
         uint64_t now = platform_millis();

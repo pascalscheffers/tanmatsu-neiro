@@ -76,6 +76,11 @@ void ui_tick(UIState* s, uint64_t now_ms);
 // Render one frame of the Stage 2c parameter-page UI into fb.
 void ui_draw(pax_buf_t* fb, uint64_t millis, const UIState* s);
 
+// Retarget the UI to the page/row showing param_id and set its bar to `norm`.
+// Returns true if the param is shown on some page (caller bumps change_seq).
+// If the PRESET page is currently auditioning, the audition is cleared first.
+bool ui_focus_param(UIState* s, uint16_t param_id, float norm);
+
 #ifdef __cplusplus
 }
 #endif

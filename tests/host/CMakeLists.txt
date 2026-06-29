@@ -32,6 +32,10 @@ add_executable(tanmatsu-tests
     # WO-3: preset browser state-machine tests (no PAX dependency).
     test_ui_presets.cpp
     "${REPO_ROOT}/ui/ui_presets_state.cpp"
+    # Launchkey follow: CC-driven page/row focus (no PAX dependency).
+    test_ui_focus.cpp
+    "${REPO_ROOT}/ui/ui_focus.cpp"
+    "${REPO_ROOT}/ui/ui_page_table.cpp"
     "${REPO_ROOT}/control/sustain.c"
     "${DAISYSP}/Source/Synthesis/oscillator.cpp"
     "${DAISYSP}/Source/Filters/svf.cpp"

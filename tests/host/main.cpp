@@ -21,6 +21,7 @@ void test_arp_clock_suite();
 void test_midi_parse_suite();
 void test_sustain_suite();
 void test_ui_presets_suite();
+void test_ui_focus_suite();
 
 int main(void) {
     printf("=== tanmatsu host DSP tests ===\n");
@@ -42,6 +43,7 @@ int main(void) {
     test_midi_parse_suite();
     test_sustain_suite();
     test_ui_presets_suite();
+    test_ui_focus_suite();
     printf("All tests passed.\n");
     return 0;
 }
