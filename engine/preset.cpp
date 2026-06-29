@@ -54,8 +54,8 @@ static constexpr int k_clean_106_count = (int)(sizeof(k_clean_106_routings) / si
 
 struct FactoryPreset {
     const char*    name;
-    uint16_t       ids[48];  // Stage 3c-i: widened from 32 → 48 for full Juno param set
-    float          vals[48];
+    uint16_t       ids[64];  // Stage 4b-ii: widened from 48 → 64 to hold 49 params + future growth
+    float          vals[64];
     int            count;
     const Routing* routings;
     int            routing_count;
@@ -86,13 +86,16 @@ static const FactoryPreset
                  ParamId::LFO2_SHAPE,    ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,
                  ParamId::CHORUS_DELAY,  ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,
                  ParamId::VCA_LEVEL,     ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,
-                 ParamId::UNISON_DETUNE, ParamId::CLOCK_BPM},
+                 ParamId::UNISON_DETUNE, ParamId::CLOCK_BPM,
+                 ParamId::ARP_ON,        ParamId::ARP_MODE,    ParamId::ARP_RATE,        ParamId::ARP_OCTAVES,
+                 ParamId::ARP_GATE,      ParamId::ARP_SWING,   ParamId::ARP_LATCH},
                 {0.70f,  0.30f,  0.05f,  0.50f,  0.0f,   0.0f,   2000.0f, 0.30f,  0.0f, 20.0f, 0.35f, 0.0f, 0.50f, 0.0f,
                  0.010f, 0.100f, 0.700f, 0.300f, 0.005f, 0.200f, 0.000f,  0.200f, 1.0f, 0.5f,  0.0f,  0.0f, 0.5f,  0.5f,
                  0.0f,   0.0f,   0.500f, 0.700f, 0.400f, 1.0f,   0.500f,  0.0f,   1.0f, 0.0f,  0.0f, /* poly, no glide
                                                                                                       */
-                 1.0f,   7.0f,   120.0f}, /* U=1 (no unison), 7 cents ready (table default); 120 BPM */
-                42,
+                 1.0f,   7.0f,   120.0f,
+                 0.0f, 0.0f, 3.0f, 1.0f, 0.5f, 0.0f, 0.0f}, /* arp: off, up, 1/16, 1 oct, gate 0.5, no swing/latch */ /* U=1 (no unison), 7 cents ready (table default); 120 BPM */
+                49,
                 k_clean_106_routings,
                 k_clean_106_count,
             },
@@ -109,14 +112,17 @@ static const FactoryPreset
                  ParamId::LFO2_SHAPE,    ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,
                  ParamId::CHORUS_DELAY,  ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,
                  ParamId::VCA_LEVEL,     ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,
-                 ParamId::UNISON_DETUNE, ParamId::CLOCK_BPM},
+                 ParamId::UNISON_DETUNE, ParamId::CLOCK_BPM,
+                 ParamId::ARP_ON,        ParamId::ARP_MODE,    ParamId::ARP_RATE,        ParamId::ARP_OCTAVES,
+                 ParamId::ARP_GATE,      ParamId::ARP_SWING,   ParamId::ARP_LATCH},
                 {0.85f,  0.60f, 0.00f, 0.50f, 0.0f,   -12.0f,              /* bass: 1 oct down */
                  800.0f, 0.50f, 0.0f,  20.0f, 0.50f,  0.0f,   0.30f, 0.0f, /* stronger env mod for bass filter sweep */
                  0.002f, 0.15f, 0.50f, 0.08f, 0.002f, 0.10f,  0.00f, 0.08f, 0.5f, 0.3f, 0.0f, 0.0f,  0.5f,
                  0.3f,   0.0f,  0.0f,  0.30f, 0.40f,  0.30f,  1.0f,  0.60f, 0.0f, 1.0f, 1.0f, 0.06f, /* mono+retrigger,
                                                                                                         60 ms glide */
-                 1.0f,   0.0f,   120.0f}, /* U=1 (no unison — bass lines stay tight); 120 BPM */
-                42,
+                 1.0f,   0.0f,   120.0f,
+                 0.0f, 0.0f, 3.0f, 1.0f, 0.5f, 0.0f, 0.0f}, /* arp: off, up, 1/16, 1 oct, gate 0.5, no swing/latch */ /* U=1 (no unison — bass lines stay tight); 120 BPM */
+                49,
                 k_clean_106_routings,
                 k_clean_106_count,
             },
@@ -133,15 +139,18 @@ static const FactoryPreset
                  ParamId::LFO2_SHAPE,    ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,
                  ParamId::CHORUS_DELAY,  ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,
                  ParamId::VCA_LEVEL,     ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,
-                 ParamId::UNISON_DETUNE, ParamId::CLOCK_BPM},
+                 ParamId::UNISON_DETUNE, ParamId::CLOCK_BPM,
+                 ParamId::ARP_ON,        ParamId::ARP_MODE,    ParamId::ARP_RATE,        ParamId::ARP_OCTAVES,
+                 ParamId::ARP_GATE,      ParamId::ARP_SWING,   ParamId::ARP_LATCH},
                 {0.75f,   0.20f, 0.08f, 0.60f, 0.0f,  0.0f, /* wider PWM for pad shimmer */
                  3000.0f, 0.15f, 0.0f,  20.0f, 0.25f, 0.0f,  0.60f, 0.0f, 0.80f, 0.50f, 0.80f,
                  1.50f,   0.50f, 0.80f, 0.00f, 0.80f, 0.3f,  0.6f,  0.0f, 0.3f, /* LFO1 delay 0.3s for gentle vibrato
                                                                                    fade-in */
                  0.2f,    0.4f,  1.0f,  0.0f,  0.40f, 0.90f, 0.55f, 2.0f,       /* Chorus II for wider stereo spread */
                  0.50f,   0.0f,  1.0f,  0.0f,  0.0f,                            /* poly, no glide */
-                 2.0f,    7.0f,   120.0f}, /* U=2, 7 cents spread — fat pad shimmer; 120 BPM */
-                42,
+                 2.0f,    7.0f,   120.0f,
+                 0.0f, 0.0f, 3.0f, 1.0f, 0.5f, 0.0f, 0.0f}, /* arp: off, up, 1/16, 1 oct, gate 0.5, no swing/latch */ /* U=2, 7 cents spread — fat pad shimmer; 120 BPM */
+                49,
                 k_clean_106_routings,
                 k_clean_106_count,
             },
@@ -158,15 +167,18 @@ static const FactoryPreset
                  ParamId::LFO2_SHAPE,    ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,
                  ParamId::CHORUS_DELAY,  ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,
                  ParamId::VCA_LEVEL,     ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,
-                 ParamId::UNISON_DETUNE, ParamId::CLOCK_BPM},
+                 ParamId::UNISON_DETUNE, ParamId::CLOCK_BPM,
+                 ParamId::ARP_ON,        ParamId::ARP_MODE,    ParamId::ARP_RATE,        ParamId::ARP_OCTAVES,
+                 ParamId::ARP_GATE,      ParamId::ARP_SWING,   ParamId::ARP_LATCH},
                 {0.90f, 0.10f, 0.00f, 0.50f, 0.0f,   0.0f,  6000.0f, 0.60f, 0.0f,   80.0f, /* Lead: slight HPF to thin
                                                                                               low end */
                  0.30f, 0.0f,  0.70f, 0.0f,  0.005f, 0.20f, 0.65f,   0.12f, 0.003f, 0.15f, 0.00f,
                  0.10f, 5.0f,  0.4f,  0.0f,  0.0f,   3.0f,  0.2f,    0.0f,  0.0f,   1.00f, 0.50f,
                  0.30f, 1.0f,  0.50f, 0.0f,  1.0f,   2.0f,  0.08f, /* mono+legato, 80 ms glide for expressive phrasing
                                                                     */
-                 2.0f,  10.0f,  120.0f},                           /* U=2, 10 cents — thicker lead without muddiness; 120 BPM */
-                42,
+                 2.0f,  10.0f,  120.0f,
+                 0.0f, 0.0f, 3.0f, 1.0f, 0.5f, 0.0f, 0.0f}, /* arp: off, up, 1/16, 1 oct, gate 0.5, no swing/latch */                           /* U=2, 10 cents — thicker lead without muddiness; 120 BPM */
+                49,
                 k_clean_106_routings,
                 k_clean_106_count,
             },

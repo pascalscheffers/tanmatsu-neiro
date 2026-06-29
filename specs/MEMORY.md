@@ -491,6 +491,25 @@ gate/swing, schedule note on/off into the scheduler). **4b-i dispatched.**
 - **Next:** Stage 4b-ii — arp params in the table + UI (ARP_MODE, ARP_RATE, ARP_OCTAVES,
   ARP_LATCH, ARP_GATE, ARP_SWING, ARP_ON).
 
+## 2026-06-29 — Stage 4b-ii: arp params + table + UI (COMPLETE — finished inline by Opus)
+
+- **7 ARP param rows** added (ids 0x08–0x0E, all < kMax): `ARP_ON/MODE/RATE/OCTAVES/GATE/SWING/LATCH`.
+  New `GROUP_ARP = 10`; `ui.cpp group_name()` → "Arp" (dynamic page builder surfaces the page).
+  **kJunoParamCount: 42 → 49.** ARP_RATE stepped 0..5 → {1/4,1/8,1/8T,1/16,1/16T,1/32} @ 96 PPQN, def 3 (1/16).
+- **`PRESET_BLOB_MAX` 384 → 512** (no `PRESET_FORMAT_VERSION` change — buffer ceiling only; worst-case
+  49 params + 16 routings = 466 B). FactoryPreset `ids/vals` arrays widened `[48] → [64]`.
+- **All 4 factory presets** carry the 7 arp params, **arp OFF** (ARP_ON=0) so existing patches sound
+  identical until enabled; counts 42 → 49.
+- **Test_params.cpp:** ARP coverage in `test_params_table_coverage` + new `test_params_arp_rows`
+  (group/curve/range/defaults). **139 tests pass** (was 134).
+- **Process note:** the dispatched 4b-ii worker died mid-run (API connection drop) after editing
+  param_id/desc/preset headers but BEFORE the factory-preset values, ui.cpp, tests, or commit. Opus
+  verified the partial edits were correct and finished the remainder inline (factory values + counts,
+  ui group name, tests) rather than re-dispatching half-done work.
+- `make test` ✅ (139) `make host` ✅ `make build` ✅ membrane clean. Image **0xf5090 ≈ 980 KB (52% free)**.
+- **Next:** Stage 4b-iii — wire arp into `synth_render` (clock-driven steps, ARP_RATE→ticks, gate/swing,
+  schedule note on/off into the 4a scheduler). First point the arp makes sound.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

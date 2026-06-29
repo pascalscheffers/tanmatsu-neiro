@@ -20,6 +20,7 @@ enum ParamGroup : uint8_t {
     GROUP_GLOBAL = 7,
     GROUP_ENV2   = 8,  // ENV2 — filter/mod ADSR (Stage 3a)
     GROUP_HPF    = 9,  // High-pass filter (Stage 3c-i)
+    GROUP_ARP    = 10, // Arpeggiator control (Stage 4b-ii)
 };
 
 // Value-curve: how a normalised [0,1] input maps to the physical [min,max] range.

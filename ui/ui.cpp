@@ -69,6 +69,8 @@ static const char* group_name(uint8_t g) {
             return "AMP";
         case GROUP_GLOBAL:
             return "Clock";
+        case GROUP_ARP:
+            return "Arp";
         default:
             return "?";
     }

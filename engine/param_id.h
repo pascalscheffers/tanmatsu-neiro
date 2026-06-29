@@ -17,6 +17,17 @@ namespace ParamId {
 // 0x00 reserved (invalid/sentinel).
 static constexpr uint16_t CLOCK_BPM = 0x01;  // tempo in BPM [20..300]; UI/preset home for tempo
 
+// ARP group (0x08–0x0F) — arpeggiator control (Stage 4b-ii)
+// ARP_RATE stepped index 0..5 → divisions {1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32} at 96 PPQN;
+// the index→ticks mapping is wired in Stage 4b-iii.
+static constexpr uint16_t ARP_ON      = 0x08;  // 0=off, 1=on
+static constexpr uint16_t ARP_MODE    = 0x09;  // 0=up,1=down,2=up-down,3=order,4=random
+static constexpr uint16_t ARP_RATE    = 0x0A;  // stepped clock-division index (see 4b-iii)
+static constexpr uint16_t ARP_OCTAVES = 0x0B;  // 1..4
+static constexpr uint16_t ARP_GATE    = 0x0C;  // gate length as fraction of step
+static constexpr uint16_t ARP_SWING   = 0x0D;  // swing amount (delays even steps)
+static constexpr uint16_t ARP_LATCH   = 0x0E;  // 0=off, 1=on
+
 // OSC group  (0x10-0x1F) — oscillator section
 static constexpr uint16_t OSC_LEVEL    = 0x10;  // main oscillator mix level
 static constexpr uint16_t SUB_LEVEL    = 0x11;  // sub-oscillator level

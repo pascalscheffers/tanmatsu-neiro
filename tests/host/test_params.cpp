@@ -98,6 +98,43 @@ void test_params_table_coverage() {
     /* CLOCK group (Stage 4a-iii) */
     TEST_ASSERT(find_param(ParamId::CLOCK_BPM) != nullptr, "CLOCK_BPM missing");
 
+    /* ARP group (Stage 4b-ii) */
+    TEST_ASSERT(find_param(ParamId::ARP_ON) != nullptr, "ARP_ON missing");
+    TEST_ASSERT(find_param(ParamId::ARP_MODE) != nullptr, "ARP_MODE missing");
+    TEST_ASSERT(find_param(ParamId::ARP_RATE) != nullptr, "ARP_RATE missing");
+    TEST_ASSERT(find_param(ParamId::ARP_OCTAVES) != nullptr, "ARP_OCTAVES missing");
+    TEST_ASSERT(find_param(ParamId::ARP_GATE) != nullptr, "ARP_GATE missing");
+    TEST_ASSERT(find_param(ParamId::ARP_SWING) != nullptr, "ARP_SWING missing");
+    TEST_ASSERT(find_param(ParamId::ARP_LATCH) != nullptr, "ARP_LATCH missing");
+
+    test_pass();
+}
+
+/* 6. ARP rows: group, curve, range, defaults per the 4b-ii spec. */
+void test_params_arp_rows() {
+    test_begin("ARP rows: group GROUP_ARP, stepped/lin curves, ranges + defaults");
+
+    const uint16_t arp_ids[] = {ParamId::ARP_ON,   ParamId::ARP_MODE,  ParamId::ARP_RATE, ParamId::ARP_OCTAVES,
+                                ParamId::ARP_GATE, ParamId::ARP_SWING, ParamId::ARP_LATCH};
+    for (unsigned i = 0; i < sizeof(arp_ids) / sizeof(arp_ids[0]); i++) {
+        const ParamDesc* p = find_param(arp_ids[i]);
+        TEST_ASSERT(p != nullptr, "ARP row missing");
+        TEST_ASSERT(p->group == GROUP_ARP, "ARP row must be in GROUP_ARP");
+    }
+
+    const ParamDesc* mode = find_param(ParamId::ARP_MODE);
+    TEST_ASSERT(mode->curve == CURVE_STEPPED && mode->min == 0.0f && mode->max == 4.0f, "ARP_MODE 0..4 stepped");
+    const ParamDesc* rate = find_param(ParamId::ARP_RATE);
+    TEST_ASSERT(rate->curve == CURVE_STEPPED && rate->max == 5.0f && rate->def == 3.0f, "ARP_RATE 0..5 def=3 (1/16)");
+    const ParamDesc* oct = find_param(ParamId::ARP_OCTAVES);
+    TEST_ASSERT(oct->min == 1.0f && oct->max == 4.0f && oct->def == 1.0f, "ARP_OCTAVES 1..4 def=1");
+    const ParamDesc* gate = find_param(ParamId::ARP_GATE);
+    TEST_ASSERT(gate->curve == CURVE_LIN && gate->def == 0.5f, "ARP_GATE lin def=0.5");
+    const ParamDesc* swing = find_param(ParamId::ARP_SWING);
+    TEST_ASSERT(swing->curve == CURVE_LIN && swing->min == 0.0f && swing->max == 0.75f, "ARP_SWING lin 0..0.75");
+    const ParamDesc* on = find_param(ParamId::ARP_ON);
+    TEST_ASSERT(on->def == 0.0f, "ARP_ON default off (factory patches unchanged)");
+
     test_pass();
 }
 
@@ -302,4 +339,5 @@ void test_params_suite() {
     test_params_vca_gate_mode();
     test_params_vcf_env_depth();
     test_params_clock_bpm_row();
+    test_params_arp_rows();
 }

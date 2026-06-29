@@ -25,8 +25,9 @@
 #include "mod_matrix.h"
 
 static constexpr int     PRESET_NAME_LEN       = 32;
-// v2 max: 42 (header) + 24*6 (params) + 2 (routing count) + 16*8 (16 routing slots) = 316
-static constexpr size_t  PRESET_BLOB_MAX       = 384;
+// v2 max: 42 (header) + 49*6 (params) + 2 (routing count) + 16*8 (16 routing slots) = 466
+// 512 gives headroom for future params without a format-version bump.
+static constexpr size_t  PRESET_BLOB_MAX       = 512;
 static constexpr uint8_t PRESET_FORMAT_VERSION = 2;
 static constexpr uint8_t PRESET_MODEL_JUNO     = 1;
 
