@@ -4,7 +4,7 @@
 # Configure into build-test/ (see the Makefile `test` target).
 # FTZ-off: no -ffast-math so denormals behave as on the device (ADR 0012).
 cmake_minimum_required(VERSION 3.16)
-project(tanmatsu_tests CXX)
+project(tanmatsu_tests C CXX)
 set(CMAKE_CXX_STANDARD 17)
 
 get_filename_component(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
@@ -12,6 +12,7 @@ set(DAISYSP "${REPO_ROOT}/dsp/vendor/daisysp")
 
 add_executable(tanmatsu-tests
     main.cpp
+    test_midi_parse.cpp
     test_osc.cpp
     test_voice.cpp
     test_alloc.cpp
@@ -37,6 +38,7 @@ add_executable(tanmatsu-tests
     "${REPO_ROOT}/engine/param_desc.cpp"
     "${REPO_ROOT}/engine/param_store.cpp"
     "${REPO_ROOT}/engine/preset.cpp"
+    "${REPO_ROOT}/control/midi_in.c"
 )
 
 target_include_directories(tanmatsu-tests PRIVATE

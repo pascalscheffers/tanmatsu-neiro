@@ -565,6 +565,29 @@ latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.*
 - **Context will be cleared next.** On resume: read order is in the brief's header; **first action =
   G1 driver-feasibility spike + G2/G3, then author + dispatch the 5a work-order.**
 
+## 2026-06-29 — Stage 5a-i: pure incremental MIDI parser + host tests (COMPLETE)
+
+- **`control/midi_in.h`** (new): `MidiMsgType` enum (NOTE_OFF/NOTE_ON/CC/OTHER), `MidiMsg`
+  struct (type/channel/data1/data2), `MidiParser` state struct. C-linkage-safe (`extern "C"` guard).
+  No engine/platform/io deps — `<stdint.h>/<stdbool.h>` only.
+- **`control/midi_in.c`** (new, 157 lines): incremental byte-stream parser. Handles running
+  status (status preserved across data pairs), interleaved System Real-Time bytes (0xF8–0xFF
+  transparently discarded, parser state undisturbed), System Common (0xF0–0xF7 resets running
+  status). Correct data-byte counts (2 for NoteOff/NoteOn/PolyAT/CC/PitchBend; 1 for ProgChange/ChanAT).
+  **Normalization:** Note-On velocity=0 emitted as `MIDI_NOTE_OFF` (standard MIDI). Channel
+  preserved (0–15), omni handling deferred to 5a-ii+.
+- **`tests/host/CMakeLists.txt`**: `project` widened to `C CXX` (needed to compile the `.c` source);
+  `midi_in.c` added to the `tanmatsu-tests` source list; `test_midi_parse.cpp` registered.
+- **`tests/host/main.cpp`**: `test_midi_parse_suite()` declared + called.
+- **7 new host tests** (153 total, all pass): Note-On, Note-Off, vel-0→NoteOff normalization,
+  running status (3 consecutive messages, channel preserved), CC framing, RT byte interleaved
+  mid-message, 1-byte Program Change followed by fresh Note-On (stream stays locked).
+- `make test` ✅ (153/153) `make format` ✅ membrane clean (no `engine/`/`platform/`/`synth.h`
+  includes in `control/midi_in.*`).
+- **Next:** Stage 5a-ii — HAL transport seam + RtMidi host backend + engine wire-in (note events
+  from MIDI parser routed to `engine_note_on/off/cc`). This is the first sub-stage that touches
+  platform code.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
