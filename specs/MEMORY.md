@@ -454,6 +454,18 @@ scheduler → **4a-iii** clock params in table + UI. **4a-i dispatched** to a fr
   Image: **1,002,470 bytes (~979 KB, 52% partition free)** — +428 bytes vs 4a-ii (one row + switch case + string).
 - **Stage 4a COMPLETE.** Next: Stage 4b — arpeggiator (clock-driven, table-param rate + mode).
 
+## 2026-06-29 — ADR 0019 (note-gen seam); 4b decomposed + 4b-i dispatched (Opus 4.8)
+
+**Seam ratified (ADR 0019):** note generators (arp 4b, seq 4c) run **engine-side on the audio
+thread**, driven from `synth_render` (observe NoteCmd drain → read clock → push to scheduler).
+Overrides the brief's tentative control-layer placement. Pascal confirmed.
+
+**4b (full arp, G2) split into 3 work-orders:** **4b-i** pure arp core (header-only `engine/arp.h`:
+held set + modes up/down/up-down/order/random + octaves + latch + `next()`; timing-free) →
+**4b-ii** arp params + UI → **4b-iii** synth wiring (step timing from clock + RATE @ 96 PPQN,
+gate/swing, schedule note on/off into the scheduler). **4b-i dispatched.**
+- **Next:** review 4b-i; dispatch 4b-ii then 4b-iii; then 4d (FX: delay → ReverbSc w/ device gate).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

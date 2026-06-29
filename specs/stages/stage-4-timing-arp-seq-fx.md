@@ -82,6 +82,26 @@ scheduler does not depend on the BPM param).
 - **4a-iii — Clock/transport params in the table + UI.** `CLOCK_BPM` / `CLOCK_SOURCE` rows (new
   GROUP_GLOBAL ids < kMax), wire `engine_set_param`→clock, factory-preset defaults, UI group name.
   Makes BPM persisted + table-driven (the dedup home for the value 4a-i exposes via API).
+  *Shipped: `CLOCK_BPM` only (id 0x01, GROUP_GLOBAL="Clock"). `CLOCK_SOURCE` deferred to Stage 5 —
+  a source selector is a dead control until external MIDI-clock exists.* **Stage 4a COMPLETE.**
+
+## Seam decision (Opus + Pascal 2026-06-29) — ADR 0019
+Note generators (arp 4b, sequencer 4c) run **engine-side on the audio thread**, driven once per
+block from `synth_render`: they observe note on/off as the `NoteCmd` ring is drained, read the
+clock with zero staleness, and push timed events into the 4a scheduler. Pure (fixed-size, no
+alloc/log/lock). Overrides the brief's tentative "control layer" placement below. Frozen in
+[`decisions/0019-note-generators-engine-side.md`](../decisions/0019-note-generators-engine-side.md).
+
+## 4b sub-decomposition (Opus, post-seam — within the ≤8-file budget)
+- **4b-i — Arp engine core (pure) + tests.** Header-only `engine/arp.h`: held-note set, modes
+  (up/down/up-down/order/random), octave range, latch; a `next()` pattern generator that yields
+  the next pitch. **Timing-free** (rate/gate/swing are sample-time concerns handled by the 4b-iii
+  wiring). Host-tested in isolation. Header-only ⇒ no CMake ripple.
+- **4b-ii — Arp params + table + UI.** `ARP_ON/MODE/RATE/OCTAVES/GATE/SWING/LATCH` rows (new
+  GROUP_ARP), factory defaults, UI page name. Mechanical param-ripple sub-stage.
+- **4b-iii — Wire arp into `synth_render`.** Instantiate the arp; observe note on/off in the drain
+  loop; compute step boundaries from the clock + `ARP_RATE` (ticks/step @ 96 PPQN); schedule
+  note-on + note-off (gate, swing) into the scheduler; apply ON/MODE/OCTAVES/LATCH from params.
 
 ## Continuous (every sub-stage)
 Track `make size`; keep host + device green; **profile before optimizing**; every FX/voice spend
