@@ -21,6 +21,9 @@ void ParamStore::init(const ParamDesc* table, int count,
     // alpha: one-pole coefficient — fraction of distance covered per block.
     const float block_dt = (float)block_size / sample_rate;
 
+    changed_count_   = 0;
+    force_all_dirty_ = true;  // first drain() must push all params to voices
+
     for (int i = 0; i < count; i++) {
         const ParamDesc& d = table[i];
         if (d.id >= kParamIdMax) continue;
@@ -54,7 +57,39 @@ bool ParamStore::param_set(uint16_t id, float value, uint8_t source) {
 }
 
 IRAM_ATTR void ParamStore::drain() {
+    changed_count_ = 0;
+
+    // Force-all-dirty path: first drain after init() marks every valid param
+    // changed so voices receive all initial values unconditionally.
+    if (force_all_dirty_) {
+        force_all_dirty_ = false;
+        // Drain the ring first to pick up any pre-init targets.
+        ParamUpdate upd;
+        while (ring_.pop(upd)) {
+            if (upd.id < kParamIdMax && s_[upd.id].valid) {
+                s_[upd.id].target = upd.value;
+                if (s_[upd.id].alpha >= 1.0f) {
+                    s_[upd.id].current = upd.value;
+                }
+            }
+        }
+        // Advance smoothers then mark every valid param as changed.
+        for (uint16_t i = 0; i < kParamIdMax; i++) {
+            ParamState& s = s_[i];
+            if (!s.valid) continue;
+            if (s.alpha < 1.0f) {
+                s.current += (s.target - s.current) * s.alpha;
+                s.current += 1e-18f;
+                s.current -= 1e-18f;
+            }
+            changed_ids_[changed_count_++] = i;
+        }
+        return;
+    }
+
     // 1. Drain the ring: update targets (and snap instants immediately).
+    //    Track which ids received a new target this block.
+    bool new_target[kParamIdMax] = {};
     ParamUpdate upd;
     while (ring_.pop(upd)) {
         if (upd.id < kParamIdMax && s_[upd.id].valid) {
@@ -62,19 +97,40 @@ IRAM_ATTR void ParamStore::drain() {
             if (s_[upd.id].alpha >= 1.0f) {
                 s_[upd.id].current = upd.value;
             }
+            new_target[upd.id] = true;
         }
     }
 
-    // 2. Advance one-pole smoothers.
+    // 2. Advance one-pole smoothers; collect changed ids.
     for (uint16_t i = 0; i < kParamIdMax; i++) {
         ParamState& s = s_[i];
-        if (!s.valid || s.alpha >= 1.0f) continue;
+        if (!s.valid) continue;
+
+        if (s.alpha >= 1.0f) {
+            // Instant param: only changed if a new target arrived this block.
+            if (new_target[i]) {
+                changed_ids_[changed_count_++] = i;
+            }
+            continue;
+        }
+
+        const float before = s.current;
         s.current += (s.target - s.current) * s.alpha;
         // Anti-denormal: P4 has no hardware FTZ (ADR 0012). Smoothed params
         // can approach zero asymptotically; a tiny DC offset flushes the
         // denormal before it stalls the FPU pipeline.
         s.current += 1e-18f;
         s.current -= 1e-18f;
+
+        // Snap to target when settled (avoids asymptotic crawl).
+        const float tgt = s.target;
+        if (fabsf(tgt - s.current) <= fabsf(tgt) * 1e-5f + 1e-9f) {
+            s.current = tgt;
+        }
+
+        if (new_target[i] || s.current != before) {
+            changed_ids_[changed_count_++] = i;
+        }
     }
 }
 

@@ -111,46 +111,20 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
         s_alloc.advance_glide(block_time);
     }
 
-    // 3. Push smoothed per-voice params to all voices (block-rate update).
-    //    Idle voices receive the push too — negligible cost (8 voices × 10
-    //    params), ensures newly triggered voices always have current values.
+    // 3. Push only params that changed this block to all voices (block-rate).
+    //    Steady state pushes nothing; a knob sweep pushes only that param.
+    //    Idle voices receive the push too (cheap now) so a newly triggered
+    //    voice always holds current values. Voices ignore ids they don't handle.
     const VoiceSlot* slots = s_alloc.slots();
-    for (int v = 0; v < kNumVoices; v++) {
-        IVoice* voice = slots[v].voice;
-        voice->set_param(ParamId::OSC_LEVEL,     s_params.get(ParamId::OSC_LEVEL));
-        voice->set_param(ParamId::SUB_LEVEL,     s_params.get(ParamId::SUB_LEVEL));
-        voice->set_param(ParamId::NOISE_LEVEL,   s_params.get(ParamId::NOISE_LEVEL));
-        voice->set_param(ParamId::FILTER_CUTOFF, s_params.get(ParamId::FILTER_CUTOFF));
-        voice->set_param(ParamId::FILTER_RES,    s_params.get(ParamId::FILTER_RES));
-        voice->set_param(ParamId::FILTER_MODE,   s_params.get(ParamId::FILTER_MODE));
-        voice->set_param(ParamId::ENV_ATTACK,    s_params.get(ParamId::ENV_ATTACK));
-        voice->set_param(ParamId::ENV_DECAY,     s_params.get(ParamId::ENV_DECAY));
-        voice->set_param(ParamId::ENV_SUSTAIN,   s_params.get(ParamId::ENV_SUSTAIN));
-        voice->set_param(ParamId::ENV_RELEASE,   s_params.get(ParamId::ENV_RELEASE));
-        // Stage 3a: ENV2 + LFO params.
-        voice->set_param(ParamId::ENV2_ATTACK,   s_params.get(ParamId::ENV2_ATTACK));
-        voice->set_param(ParamId::ENV2_DECAY,    s_params.get(ParamId::ENV2_DECAY));
-        voice->set_param(ParamId::ENV2_SUSTAIN,  s_params.get(ParamId::ENV2_SUSTAIN));
-        voice->set_param(ParamId::ENV2_RELEASE,  s_params.get(ParamId::ENV2_RELEASE));
-        voice->set_param(ParamId::LFO1_RATE,     s_params.get(ParamId::LFO1_RATE));
-        voice->set_param(ParamId::LFO1_DEPTH,    s_params.get(ParamId::LFO1_DEPTH));
-        voice->set_param(ParamId::LFO1_SHAPE,    s_params.get(ParamId::LFO1_SHAPE));
-        voice->set_param(ParamId::LFO2_RATE,     s_params.get(ParamId::LFO2_RATE));
-        voice->set_param(ParamId::LFO2_DEPTH,    s_params.get(ParamId::LFO2_DEPTH));
-        voice->set_param(ParamId::LFO2_SHAPE,    s_params.get(ParamId::LFO2_SHAPE));
-        // Stage 3c-i: new Juno params.
-        voice->set_param(ParamId::OSC_PWM,         s_params.get(ParamId::OSC_PWM));
-        voice->set_param(ParamId::OSC_WAVEFORM,    s_params.get(ParamId::OSC_WAVEFORM));
-        voice->set_param(ParamId::OSC_RANGE,       s_params.get(ParamId::OSC_RANGE));
-        voice->set_param(ParamId::VCF_ENV_DEPTH,   s_params.get(ParamId::VCF_ENV_DEPTH));
-        voice->set_param(ParamId::VCF_ENV_POLARITY,s_params.get(ParamId::VCF_ENV_POLARITY));
-        voice->set_param(ParamId::VCF_KEY_TRACK,   s_params.get(ParamId::VCF_KEY_TRACK));
-        voice->set_param(ParamId::VCF_LFO_DEPTH,   s_params.get(ParamId::VCF_LFO_DEPTH));
-        voice->set_param(ParamId::HPF_CUTOFF,      s_params.get(ParamId::HPF_CUTOFF));
-        voice->set_param(ParamId::LFO1_DELAY,      s_params.get(ParamId::LFO1_DELAY));
-        voice->set_param(ParamId::LFO2_DELAY,      s_params.get(ParamId::LFO2_DELAY));
-        voice->set_param(ParamId::VCA_GATE_MODE,   s_params.get(ParamId::VCA_GATE_MODE));
-        voice->set_param(ParamId::VCA_LEVEL,       s_params.get(ParamId::VCA_LEVEL));
+    {
+        int nch = s_params.changed_count();
+        for (int c = 0; c < nch; c++) {
+            uint16_t id  = s_params.changed_id(c);
+            float    val = s_params.get(id);
+            for (int v = 0; v < kNumVoices; v++) {
+                slots[v].voice->set_param(id, val);
+            }
+        }
     }
 
     // 4. Update chorus (non-per-voice) from the param store.

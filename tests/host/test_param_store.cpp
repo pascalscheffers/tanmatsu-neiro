@@ -295,9 +295,88 @@ static void test_juno_table() {
     }
 }
 
+// ---- Changed-set tests --------------------------------------------------
+
+static void test_changed_set() {
+    printf("--- ParamStore changed-set ---\n");
+
+    {
+        test_begin("init + first drain: all valid params in changed set");
+        ParamStore ps;
+        ps.init(JUNO_PARAM_TABLE, kJunoParamCount, 48000.0f, 64);
+        ps.drain();
+        // Every Juno param must appear in the changed list on the first drain.
+        int nch = ps.changed_count();
+        TEST_ASSERT(nch == kJunoParamCount,
+                    "First drain must report all valid params changed");
+        test_pass();
+    }
+
+    {
+        test_begin("second drain with no param_set: changed_count is 0");
+        ParamStore ps;
+        ps.init(JUNO_PARAM_TABLE, kJunoParamCount, 48000.0f, 64);
+        ps.drain();  // first drain: all dirty
+        ps.drain();  // second drain: nothing moved → settled → empty
+        TEST_ASSERT(ps.changed_count() == 0,
+                    "Second drain with no changes must yield changed_count == 0");
+        test_pass();
+    }
+
+    {
+        test_begin("param_set then drain: moved id appears in changed list");
+        // Use an instant param (smoothing_ms=0) so it settles in exactly one drain.
+        ParamDesc d = make_desc(1, 0.0f, 1.0f, 0.0f, CURVE_LIN, 0.0f);
+        ParamStore ps;
+        ps.init(&d, 1, 48000.0f, 64);
+        ps.drain();  // consume force-all-dirty
+        ps.drain();  // steady state: 0 changed
+
+        ps.param_set(1, 0.8f);
+        ps.drain();
+        TEST_ASSERT(ps.changed_count() == 1,
+                    "After param_set, changed_count must be 1");
+        TEST_ASSERT(ps.changed_id(0) == 1,
+                    "Changed id must match the param that was set");
+        test_pass();
+    }
+
+    {
+        test_begin("smoothed param settles: stops appearing in changed list");
+        const float sm_ms = 20.0f;
+        const float sr    = 48000.0f;
+        const int   bs    = 64;
+        ParamDesc d = make_desc(2, 0.0f, 1.0f, 0.0f, CURVE_LIN, sm_ms);
+        ParamStore ps;
+        ps.init(&d, 1, sr, bs);
+        ps.drain();  // first drain: all dirty
+
+        ps.param_set(2, 1.0f);
+
+        // Drain until settled (snap-to-target kicks in).
+        // Well past 5x tau: 5 * 20ms / (64/48000 ≈ 1.33ms) ≈ 75 blocks.
+        bool found_after_settle = false;
+        for (int b = 0; b < 200; b++) {
+            ps.drain();
+            const float val = ps.get(2);
+            // Once we're very close to target, drain twice more to let snap fire.
+            if (fabsf(val - 1.0f) < 1e-5f && b > 10) {
+                ps.drain();
+                ps.drain();
+                found_after_settle = (ps.changed_count() > 0);
+                break;
+            }
+        }
+        TEST_ASSERT(!found_after_settle,
+                    "Settled smoothed param must not appear in changed list");
+        test_pass();
+    }
+}
+
 void test_param_store_suite() {
     test_curves();
     test_smoothing();
     test_ring();
     test_juno_table();
+    test_changed_set();
 }

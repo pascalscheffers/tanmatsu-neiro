@@ -49,11 +49,17 @@ public:
 
     // Drain the update ring and advance smoothers. Call once per block,
     // before rendering. Must be called on the audio thread only.
+    // After drain(), changed_count()/changed_id() report which params moved.
     void drain();
 
     // Read the current smoothed value. Returns 0 for unknown ids.
     // Read-only — safe to call from the audio thread.
     float get(uint16_t id) const;
+
+    // Param ids whose smoothed value changed in the most recent drain().
+    // Valid until the next drain(). Audio-thread only.
+    int      changed_count() const { return changed_count_; }
+    uint16_t changed_id(int i) const { return changed_ids_[i]; }
 
 private:
     struct ParamState {
@@ -67,6 +73,11 @@ private:
     SpscRing<ParamUpdate, 64> ring_;
     const ParamDesc*       table_ = nullptr;
     int                    count_ = 0;
+
+    // Changed-set: populated fresh by each drain(). Audio-thread only.
+    uint16_t               changed_ids_[kParamIdMax];
+    int                    changed_count_ = 0;
+    bool                   force_all_dirty_ = false;  // set true by init(); consumed on first drain()
 
     const ParamDesc* find_desc(uint16_t id) const;
     static float     apply_curve(const ParamDesc& d, float norm);
