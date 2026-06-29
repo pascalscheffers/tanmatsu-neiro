@@ -1021,6 +1021,30 @@ latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.*
   Binary: **0x110260 = 1,114,112 bytes (47% partition free)**; DIRAM 156 KB (26.99%).
 - **Next:** per Opus — Stage 4d (FX), WO-6 (key-guide overlay), or other.
 
+## 2026-06-29 — WO-6: on-demand piano key-guide overlay (F5 three-lobe button) (COMPLETE)
+
+- **`control/keyboard.h/.c`**: new `keyboard_semitone_for_key(int key) → int` — thin public
+  wrapper around the existing `static key_to_semitone()`. The UI derives note names from
+  this accessor + `keyboard_octave()` with no table duplication (Prime Directive 2).
+- **`ui/ui.h`**: `bool show_keyguide` added to `UIState` (zero-initialized by `memset` in
+  `ui_state_init` — defaults to off).
+- **`ui/ui.cpp`**: F5 (PLATFORM_KEY_F5) handled **early on PRESS**, before any page-kind
+  branching, toggling `s->show_keyguide` and returning `true` (consumed). Old placeholder
+  `return false` stub in the PAGE_PARAMS F5 case removed. `ui_overlay_draw_keyguide()` called
+  last in `ui_draw()` behind the `show_keyguide` guard (on top of all other content).
+- **`ui/ui_overlay.h` + `ui/ui_overlay.cpp`** (new, 174 lines): `ui_overlay_draw_keyguide()`
+  draws a centred 680×260 dark panel with neon-cyan border, title "MUSICAL TYPING", a
+  10-column two-row QWERTY key grid (naturals row / accidentals row with correct E–F and B–C
+  gap slots), and a footer with current octave and Z/X/F5 hints. Each cell shows the key
+  letter (uppercased) + note name (e.g. "C#4") computed via the new accessor. Black-key cells
+  are distinctly darker than white-key cells. Rects + PAX text only — no per-pixel work.
+  No engine/platform/synth deps (membrane clean).
+- **`host/CMakeLists.txt` + `main/CMakeLists.txt`**: `ui_overlay.cpp` registered (mirrors
+  how `ui_presets.cpp` is listed).
+- `make host` ✅ `make build` ✅ `make test` ✅ (153/153) `make format` ✅ membrane clean.
+  Flash delta: **+1,312 bytes** (0x110260 → 0x110780; 47% partition free). DIRAM unchanged.
+- **Next:** per Opus — Stage 4d (FX: tempo-synced delay + DaisySP ReverbSc) or other.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
