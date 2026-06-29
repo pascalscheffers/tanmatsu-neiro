@@ -29,7 +29,7 @@ typedef struct {
     float   norms[UI_NORM_TABLE_SIZE];  // normalised [0,1] shadow per param ID
     // Internal — do not modify directly:
     int     num_pages;
-    uint8_t page_groups[8];  // group enum value for each page slot
+    uint8_t page_groups[16];  // group enum value for each page slot (>= distinct ParamGroup count)
 } UIState;
 
 // Initialise UIState from the param table: build the page list, compute

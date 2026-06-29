@@ -153,7 +153,7 @@ extern "C" void ui_state_init(UIState* s) {
                 break;
             }
         }
-        if (!found && s->num_pages < 8) {
+        if (!found && s->num_pages < (int)(sizeof(s->page_groups) / sizeof(s->page_groups[0]))) {
             s->page_groups[s->num_pages++] = g;
         }
     }

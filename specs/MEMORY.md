@@ -539,6 +539,16 @@ gate/swing, schedule note on/off into the scheduler). **4b-i dispatched.**
 - **Stage 4b COMPLETE.** Next: **Stage 4d — FX: tempo-synced delay → DaisySP ReverbSc
   w/ device-CPU gate** (ADR 0015 / G4 ratified in 4b kickoff).
 
+## 2026-06-29 — fix: UI page list capped at 8 hid the Arp page (Opus, inline)
+
+- **Bug (Pascal-reported):** only the "Clock" page was visible, not "Arp". Root cause: `ui.h`
+  `page_groups[8]` + the `num_pages < 8` guard in `ui_init` capped the page list at 8, but the
+  table now has **10 ParamGroups**. CLOCK_BPM sits early in the table so its page made the cut;
+  GROUP_ARP (appended at table end) was the 9th/10th group → dropped past the cap → never rendered.
+- **Fix:** `page_groups[8] → [16]`; guard now bounds on `sizeof(page_groups)` (self-sizing, no
+  magic 8). Tab bar renders all groups. `make host`/`make test` green (146).
+- Found while answering "how do I trigger the arp" — the arp page existed in the table all along.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
