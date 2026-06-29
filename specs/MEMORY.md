@@ -422,6 +422,26 @@ scheduler → **4a-iii** clock params in table + UI. **4a-i dispatched** to a fr
   above `platform/`). `make size`: DIRAM **146 748 B (25.46%)**, Flash .text 641 KB.
 - **Next:** Stage 4a-ii — event scheduler (tick-timestamped events dispatched sub-block into the engine).
 
+## 2026-06-29 — Stage 4a-ii: event scheduler (COMPLETE)
+
+- **`engine/scheduler.h`** (new, header-only, pure): `ScheduledEvent {sample_time:u64, cmd:NoteCmd}`;
+  `Scheduler<Cap=64>` — fixed array, no alloc. `schedule()` stores; `dispatch_due(now, frames, fn)`
+  finds earliest due events in `[now, now+frames)` in ascending sample_time order, calls `fn(cmd, offset)`,
+  removes dispatched. Late events clamp to `offset=0`. O(Cap²) — correct and simple; Cap is small.
+  Header-only confirmed — no CMake ripple.
+- **`engine/synth.cpp`**: `static Scheduler<64> s_sched` + `static SpscRing<ScheduledEvent,64> s_sched_in`.
+  `synth_render` now captures `block_start = s_clock.sample_pos()` BEFORE `s_clock.advance()`, drains
+  `s_sched_in` into `s_sched`, then calls `dispatch_due(block_start, frames, fn)` — sub-block offset
+  computed but `(void)offset` per ADR 0010 (block-granular dispatch; splitting deferred).
+- **`engine/synth.h`**: `engine_schedule_note(sample_time, pitch, velocity, on)` — lock-free
+  control-thread API; mirrors `engine_note_on/off` pattern via `s_sched_in.push()`.
+- **6 new host tests** (119 total, all pass): basic dispatch + correct offsets across blocks,
+  out-of-order → ascending sort, late-event offset=0 clamp, Cap limit returns false + no corruption,
+  `clear()` empties pending, dispatched events removed (second call fires nothing).
+- `make test` ✅ (119/119) `make host` ✅ `make build` ✅ membrane clean.
+  `make size`: **1,002,042 bytes total image (~979 KB, 52% partition free)** — negligible delta.
+- **Next:** Stage 4a-iii — clock params in the table + UI (BPM/swing visible and editable on device).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
