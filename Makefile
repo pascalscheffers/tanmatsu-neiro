@@ -91,7 +91,7 @@ badgelink:
 # AppFS app identity. Override APP_SLUG/APP_TITLE to install side-by-side variants
 # (e.g. the CPU bench below installs under its own slug so the synth app stays put).
 APP_SLUG  ?= neiro
-APP_TITLE ?= Neiro
+APP_TITLE ?= Neiro Synthesizer
 APP_VER   ?= 0
 
 .PHONY: install
