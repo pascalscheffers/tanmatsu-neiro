@@ -93,7 +93,14 @@ void midi_usb_device_init(void) {
         .configuration_descriptor = s_midi_cfg_desc,
     };
 
-    ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
+    // Fail safe: a USB problem must not brick startup — the synth must still
+    // boot and play (musical typing / host MIDI). Degrade gracefully instead of
+    // aborting (and after the PHY swap there's no USB-C console to see a panic).
+    esp_err_t err = tinyusb_driver_install(&tusb_cfg);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "tinyusb_driver_install failed: %s — USB MIDI disabled", esp_err_to_name(err));
+        return;
+    }
     // Note: after this point the USB-C console is no longer available.
     // Further ESP_LOGI calls won't reach a connected terminal.
     ESP_LOGI(TAG, "USB MIDI device ready — console detached");

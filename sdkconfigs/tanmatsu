@@ -37,5 +37,11 @@ CONFIG_FATFS_ALLOC_PREFER_EXTRAM=n
 CONFIG_SPI_FLASH_SUPPORT_WINBOND_CHIP=y
 CONFIG_USB_HOST_HUBS_SUPPORTED=y
 CONFIG_BOOTLOADER_REGION_PROTECTION_ENABLE=n
-# Stage 5d: TinyUSB device — enable MIDI class (1 cable)
+# Stage 5d: TinyUSB device — enable MIDI class (1 cable).
+# Use the Full-Speed OTG1.1 controller: on the P4 esp_tinyusb defaults to the
+# High-Speed port (OTG2.0 = the USB-A host controller), but our USB-C PHY swap
+# (usb_serial_jtag_ll_phy_select(1)) routes the shared full-speed PHY to OTG1.1.
+# Without this, tinyusb_driver_install brings up the wrong controller and hangs
+# at boot.
+CONFIG_TINYUSB_RHPORT_FS=y
 CONFIG_TINYUSB_MIDI_COUNT=1

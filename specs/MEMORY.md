@@ -647,6 +647,23 @@ latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.*
   any DAW or MIDI monitor app should be able to receive notes.
 - **Remaining Stage 5:** 5b USB-A host MIDI (G1 spike: P4 driver feasibility), 5c CC/expression.
 
+## 2026-06-29 — Stage 5d FIX: boot hang (wrong USB OTG port — HS vs FS)
+
+- **Symptom (device):** synth hung on startup after 5d — `midi_usb_device_init()` (last call in
+  `platform_init()`) blocked.
+- **Root cause:** esp_tinyusb's `TINYUSB_RHPORT` Kconfig **defaults to HS (OTG2.0) on the
+  ESP32-P4**, but our USB-C PHY swap (`usb_serial_jtag_ll_phy_select(1)`) routes the shared
+  **full-speed** PHY to **OTG1.1**. So `tinyusb_driver_install` brought up the wrong/unready
+  HS controller (the USB-A host side) and blocked.
+- **Fix:** `CONFIG_TINYUSB_RHPORT_FS=y` in `sdkconfigs/tanmatsu`. **Gotcha:** IDF defaults only
+  fill *missing* keys — the stale generated `sdkconfig_tanmatsu` had HS baked in from the first
+  reconfigure, so it had to be deleted to re-apply defaults (`rm sdkconfig_tanmatsu && make build`).
+- Hardened `midi_usb_device_init()`: a `tinyusb_driver_install` failure now logs + returns
+  (fail-safe) instead of `ESP_ERROR_CHECK` aborting boot — the synth must still play if USB MIDI
+  fails (and the swap detaches the console, so a panic would be invisible).
+- `make build` ✅; generated config confirms `CONFIG_TINYUSB_RHPORT_FS=y`. Live enumeration is
+  Pascal's hardware re-check.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
