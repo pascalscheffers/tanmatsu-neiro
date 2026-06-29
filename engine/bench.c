@@ -35,6 +35,12 @@
 // Maximum voices in the load ramp (far beyond any target; we stop when >95%).
 #define MAX_BENCH_VOICES 32
 
+// Monitoring loudness for the Section-2 proxy ramp, which plays through the real
+// codec. Lower to taste — it only attenuates the audible output, not the cycle
+// measurement (each voice still does identical work). Section 3 is silent
+// (renders into scratch buffers, never reaches the audio sink). ~ -16 dB.
+#define BENCH_OUTPUT_GAIN 0.15f
+
 // Real-voice ramp: how many synth_render calls per measurement step.
 // 500 blocks × 64 samples / 48 000 Hz ≈ 667 ms — enough to average jitter
 // and keep envelopes stable across the count.
@@ -262,8 +268,9 @@ static void bench_render_fn(float* left, float* right, size_t n, void* user) {
             band += 0.15f * high;
             low  += 0.15f * band;
 
-            // Envelope multiply + stereo accumulate
-            float s    = low * env;
+            // Envelope multiply + stereo accumulate (BENCH_OUTPUT_GAIN keeps
+            // the monitored level comfortable; does not change the work done).
+            float s    = low * env * BENCH_OUTPUT_GAIN;
             left[i]   += s;
             right[i]  += s;
         }
