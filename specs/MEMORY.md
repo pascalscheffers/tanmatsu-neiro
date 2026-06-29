@@ -819,6 +819,37 @@ latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.*
 - **Next:** per Opus's judgment — Stage 4d (FX: tempo-synced delay + DaisySP ReverbSc) or
   Stage 5c (expression/CC map: bend/mod/AT/sustain/panic, CC→param via `ParamDesc.midi_cc`).
 
+## 2026-06-29 — Four chiptune factory presets added (COMPLETE)
+
+- **`engine/preset.cpp`**: 4 new factory presets (indices 8–11); 1 new routing array.
+  - **8-Bit Lead (#8):** PULSE 50%, VCA_GATE_MODE=1 (instant on/off for NES chip feel),
+    PLAY_MODE=1 (mono), filter open (20 kHz / no env mod), LFO1 6 Hz SINE delayed 0.25 s
+    for classic NES pitch vibrato. Code comment notes alt duty cycles (0.25 / 0.125).
+    `k_chip_vibrato_routings`: `LFO1→kModDestPitch +0.15 LIN` (1 slot).
+  - **Chip Arp (#9):** PULSE 50%, ARP_ON=1 (up, 1/16, 2 oct), 130 BPM, VCA_GATE_MODE=1,
+    PLAY_MODE=0 (poly so arp holds full chord). No chorus. Reuses `k_chip_vibrato_routings`
+    (vibrato no-delay for always-on-arp context).
+  - **8-Bit Bass (#10):** OSC_WAVEFORM=2 (TRI), OSC_RANGE=-12, SUB_LEVEL=0.3, LP 800 Hz/res
+    0.1, punchy env (A=0.001/D=0.15/S=0.5/R=0.05), mono, no chorus. VCF_ENV_DEPTH=0 (no
+    filter mod — authentic NES triangle tone). Reuses `k_clean_106_routings` (ENV2→cutoff
+    benign at depth=0).
+  - **Chip Noise (#11):** NOISE_LEVEL=1/OSC=0/SUB=0, FILTER_MODE=1 (BP), cutoff 2 kHz,
+    res 0.5, VCF_ENV_DEPTH=0.8 for "pew" sweep (ENV2 A=0.001/D=0.15/S=0). Code comment:
+    long note=hat/crash, short=snare, high-vel short=zap. Reuses `k_clean_106_routings`
+    (ENV2→cutoff is the sweep here). VCA_GATE_MODE=0 (envelope for percussive shape).
+- Factory preset count: **8 → 12**. All presets: `count=49`, same id-ordering as INIT.
+- `make test` ✅ (153/153 — no preset count assertion) `make host` ✅ `make build` ✅
+  `make format` ✅. Flash delta: **+3,504 bytes (+3.4 KB)** vs pre-commit (four preset
+  structs + one routing array in `.rodata`). Total: 1,107,820 bytes (47% partition free).
+- Commit: `df84aec`.
+- **Judgment calls:** Chip Arp uses VCA_GATE_MODE=1 (instant) rather than short envelope
+  for cleanest chip-style gating. Chip Noise uses BP (not HP) at 2 kHz — broadband noise
+  with a resonant peak. 8-Bit Bass uses k_clean_106_routings (benign — VCF_ENV_DEPTH=0
+  means ENV2→cutoff route has zero effect). k_chip_vibrato_routings is separate from
+  k_vibrato_lead_routings (different depth: 0.15 vs vibrato-lead's 0.10; also used by
+  Chip Arp with different LFO1 delay settings).
+- **Next:** per Opus's judgment — Stage 5c (expression/CC map) or Stage 4d (FX).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
