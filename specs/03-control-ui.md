@@ -140,6 +140,23 @@ and replaced by the F1/F2 shape buttons with hold-to-repeat. `[`, `]`, and `=` r
 - **Generic CC → param:** `engine_cc_to_param()` scans `JUNO_PARAM_TABLE` for a matching
   `midi_cc` field and calls `engine_set_param_norm()`.
 
+## CC auto-focus (controller follow, 2026-06-29)
+
+When a generic CC moves a mapped param (via `engine_cc_to_param` → `engine_set_param_norm`),
+`midi_router_poll` stashes the param id + norm in module-static state. The control loop in
+`app.c` reads this with `midi_router_take_param_focus` immediately after each `midi_router_poll`
+call and passes the result to `ui_focus_param`. The UI jumps to that param's page/row and
+updates the norm shadow so the value bar tracks the knob live.
+
+- **Always on** — no toggle. Every mapped CC automatically retargets the screen.
+- **No focus for hardwired CCs** — mod wheel (CC1), sustain (CC64), and panic (CC120/123) are
+  handled before the generic-CC path and do not trigger a page jump (mod wheel is not a table
+  param; sustain/panic are global actions with no page to jump to).
+- **Audition guard** — if the PRESET page is currently auditioning a preview, `ui_focus_param`
+  reverts the audition before switching page (same revert path as navigating away manually).
+- Implementation: `control/midi_router.{h,c}` (focus state + getter), `ui/ui_focus.cpp`
+  (PAX-free; compiled separately to allow host unit tests), `app/app.c` (wire-up).
+
 ## Presets (data detail in `specs/05`)
 - **Storage:** NVS under key `"user"` for the single user slot. Factory presets are compiled
   in as `const` arrays in `engine/preset.cpp`.

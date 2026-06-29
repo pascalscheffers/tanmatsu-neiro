@@ -23,6 +23,7 @@ Reuse-first and dedup-first by design: vetted MIT DSP (DaisySP), and a single pa
 - **Arpeggiator** — up / down / up-down / as-played / random, 1–4 octaves, clock-synced rate, gate, swing, latch.
 - **Clock** — internal master clock with adjustable BPM.
 - **MIDI I/O** — USB-A host (plug in a keyboard), USB-C device (play from a DAW), plus expression: pitch-bend, mod wheel, aftertouch, sustain (CC64), and panic.
+- **Controller follow** — 8 hardware pots (CC 21–28) map to key parameters; turning a knob jumps the screen to that parameter's page and tracks the value live.
 - **Presets** — factory bank + save-your-own.
 - **Musical typing** — make sound standalone with nothing plugged in.
 
@@ -66,6 +67,26 @@ Note input comes from a USB MIDI keyboard, a DAW over USB-C, or the badge's own 
 | `[` / `]` | Previous / next factory preset |
 | `=` | Save current sound as your user preset (same as ◇) |
 | `Esc` | Quit (back to the launcher) |
+
+### MIDI control (USB)
+
+Connect a USB MIDI controller to the badge's USB-A port. The following CCs are mapped out of the box:
+
+| Source | CC | Effect |
+|---|---|---|
+| Mod wheel | CC 1 | Brightens the filter (adds up to +8 kHz to cutoff) |
+| Pot 1 | CC 21 | Filter cutoff |
+| Pot 2 | CC 22 | Filter resonance |
+| Pot 3 | CC 23 | Filter envelope depth |
+| Pot 4 | CC 24 | Filter LFO depth |
+| Pot 5 | CC 25 | Chorus depth |
+| Pot 6 | CC 26 | Unison detune |
+| Pot 7 | CC 27 | LFO 1 rate |
+| Pot 8 | CC 28 | Release time |
+| Sustain pedal | CC 64 | Hold notes |
+| — | CC 120 / 123 | Panic (all notes off) |
+
+These CC numbers match the default pot assignments on a Novation Launchkey 37 (pots in Custom mode sending CC 21–28). Turning any mapped knob instantly jumps the screen to that parameter's page and shows the value bar moving live.
 
 **Preset page (home, page 1):** scroll the list with ↑/↓ to audition patches live — the sound changes as you browse. Press ○ or Enter to commit the highlighted preset. Press □ or navigate away without confirming to revert to the sound you had before browsing.
 

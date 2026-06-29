@@ -246,6 +246,33 @@ is no longer gated by the blit). If display smoothness suffers under heavy MIDI 
 or to cut core-0 overhead further, Stage 2B partial-rect blitting is the next lever.
 Stage 4d FX (tempo-synced delay + DaisySP ReverbSc) is the main open campaign.
 
+## 2026-06-29 — Launchkey follow: CC-driven UI focus + README MIDI section (COMPLETE)
+
+- **`control/midi_router.c/.h`**: module-static `s_focus_id/norm/pending`; stashed in the
+  generic-CC branch whenever `engine_cc_to_param` returns a non-zero id. New getter
+  `midi_router_take_param_focus(out_id, out_norm)` — one-shot read-and-clear.
+  Mod wheel (CC1), sustain (CC64), and panic (CC120/123) explicitly excluded from focus.
+- **`ui/ui_page_table.cpp/h`** (new): PAGE_TABLE, PageDef/PageKind enum, `group_params`,
+  `page_rows`, `kNumPages` extracted from `ui.cpp` into a PAX-free unit so tests can compile
+  the page-search logic without the drawing stack.
+- **`ui/ui_focus.cpp`** (new, PAX-free): `ui_focus_param` — loops pages/rows, on match
+  reverts any active audition (inline revert, same path as manual navigate-away), sets
+  `s->page/row`, updates `s->norms[id] = clamp01(norm)`, returns true. Unknown id → false,
+  no state change.
+- **`ui/ui.cpp`**: removed duplicated PAGE_TABLE/group_params/page_rows (now in
+  `ui_page_table.cpp`); added `#include "ui_page_table.h"`.
+- **`app/app.c`**: right after `midi_router_poll()`, calls `midi_router_take_param_focus`;
+  if true and `ui_focus_param` returns true, bumps `change_seq` to trigger a repaint.
+- **`tests/host/test_ui_focus.cpp`** (new, 2 tests): FILTER_CUTOFF → FILTER page (index 3),
+  correct row, norm=0.5; unknown id returns false, page/row unchanged.
+  Wired into `tests/host/CMakeLists.txt` + `main.cpp`.
+- **`README.md`**: "MIDI control (USB)" subsection with CC table + Launchkey note; added
+  "Controller follow" bullet to "What it can do".
+- **`specs/03-control-ui.md`**: "CC auto-focus" section after MIDI expression.
+- `make test` ✅ (all pass, +2 new) `make host` ✅ `make build` ✅ `make format` ✅.
+  Flash: **1,122,268 B** (+440 B vs. prior; 46% partition free). DIRAM: 156,782 B (27.2%).
+- **What's next:** Stage 4d FX (tempo-synced delay + DaisySP ReverbSc), or HPF DSP wiring.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
