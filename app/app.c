@@ -17,13 +17,23 @@
 #include "pax_fonts.h"
 #include "pax_text.h"
 #endif
+#ifdef SYNTH_PROFILE
+#include <stdio.h>
+#endif
 
 // Audio format (spec 02): 64-frame blocks at 48 kHz.
 #define SAMPLE_RATE 48000u
 #define BLOCK_SIZE  64u
 
-// ~60 Hz UI cadence; the audio thread is decoupled from this.
-#define FRAME_MS 16u
+// Input poll interval: ~1 ms so key presses aren't gated behind the full blit.
+// Render interval: ~16 ms (~60 Hz), but only when the UI is dirty.
+// To enable per-frame draw/present profiling: cmake -DSYNTH_PROFILE=ON
+// (or, for the host build: cmake -B build-host -DSYNTH_PROFILE=ON)
+// For the device build pass EXTRA_CFLAGS=-DSYNTH_PROFILE via idf.py or set it
+// in your local CMakeLists component override:  make build EXTRA=-DSYNTH_PROFILE
+// (EXTRA is not wired in the Makefile; see IDF_PARAMS in Makefile).
+#define POLL_MS   1u
+#define RENDER_MS 16u
 
 #ifdef SYNTH_BENCH_INTERACTIVE
 // Device bench is interactive: the badge console (USB-Serial-JTAG) and badgelink
@@ -94,30 +104,89 @@ void app_run(void) {
 
     pax_buf_t* fb      = platform_framebuffer();
     bool       running = true;
+
+    // SINGLE-PRODUCER INVARIANT: all engine_note_on/off calls happen on this one
+    // task (via keyboard_handle_event and midi_router_poll). The s_cmds SPSC ring
+    // in engine/command_queue.h is single-producer by design — never move keyboard
+    // or MIDI dispatch to a second task without redesigning that ring.
+    uint64_t next_render = 0;
+
+#ifdef SYNTH_PROFILE
+    // Per-render profiling accumulators (draw + present, in cycles).
+    uint64_t prof_draw_sum = 0, prof_draw_min = UINT64_MAX, prof_draw_max = 0;
+    uint64_t prof_pres_sum = 0, prof_pres_min = UINT64_MAX, prof_pres_max = 0;
+    int      prof_frames = 0;
+#endif
+
     while (running) {
+        // --- Input phase (~1 ms cadence) ---
         platform_event_t ev;
         while (platform_poll_event(&ev)) {
-            if (ev.type == PLATFORM_EV_QUIT) {
-                running = false;
-            }
+            if (ev.type == PLATFORM_EV_QUIT) running = false;
             keyboard_handle_event(&ev);
-            ui_handle_event(&ui_state, &ev);
+            if (ui_handle_event(&ui_state, &ev)) ui_state.dirty = true;
         }
         midi_router_poll();
 
-        // Update per-frame display data before drawing.
-        ui_state.active_voices = engine_active_voices();
-        ui_state.octave        = keyboard_octave();
+        // --- Render phase (~16 ms cadence, dirty-gated) ---
+        uint64_t now = platform_millis();
+        if (now >= next_render) {
+            ui_state.active_voices = engine_active_voices();
+            ui_state.octave        = keyboard_octave();
 
-        // Drive hold-to-repeat for F1/F2 shape buttons (WO-5).
-        ui_tick(&ui_state, platform_millis());
+            // Drive hold-to-repeat for F1/F2 shape buttons (WO-5).
+            ui_tick(&ui_state, now);
+            if (ui_state.held_dir != 0) ui_state.dirty = true;
 
-        if (fb) {
-            ui_draw(fb, platform_millis(), &ui_state);
-            platform_present();
+            // Mark dirty if a displayed per-frame value changed since last paint.
+            if (ui_state.active_voices != ui_state.last_drawn_voices || ui_state.octave != ui_state.last_drawn_octave) {
+                ui_state.dirty = true;
+            }
+
+            if (fb && ui_state.dirty) {
+#ifdef SYNTH_PROFILE
+                uint64_t t0 = platform_cycles_now();
+#endif
+                ui_draw(fb, now, &ui_state);
+#ifdef SYNTH_PROFILE
+                uint64_t t1 = platform_cycles_now();
+#endif
+                platform_present();
+#ifdef SYNTH_PROFILE
+                uint64_t t2       = platform_cycles_now();
+                uint64_t cyc_draw = t1 - t0;
+                uint64_t cyc_pres = t2 - t1;
+                prof_draw_sum    += cyc_draw;
+                prof_pres_sum    += cyc_pres;
+                if (cyc_draw < prof_draw_min) prof_draw_min = cyc_draw;
+                if (cyc_draw > prof_draw_max) prof_draw_max = cyc_draw;
+                if (cyc_pres < prof_pres_min) prof_pres_min = cyc_pres;
+                if (cyc_pres > prof_pres_max) prof_pres_max = cyc_pres;
+                prof_frames++;
+                if (prof_frames >= 120) {
+                    uint32_t hz  = platform_cycles_per_sec();
+                    uint32_t div = hz / 1000000u;
+                    if (div == 0) div = 1;
+                    printf("[PROFILE] draw  avg=%u min=%u max=%u us\n",
+                           (unsigned)(prof_draw_sum / (uint64_t)prof_frames / div), (unsigned)(prof_draw_min / div),
+                           (unsigned)(prof_draw_max / div));
+                    printf("[PROFILE] pres  avg=%u min=%u max=%u us\n",
+                           (unsigned)(prof_pres_sum / (uint64_t)prof_frames / div), (unsigned)(prof_pres_min / div),
+                           (unsigned)(prof_pres_max / div));
+                    prof_draw_sum = prof_pres_sum = 0;
+                    prof_draw_min = prof_pres_min = UINT64_MAX;
+                    prof_draw_max = prof_pres_max = 0;
+                    prof_frames                   = 0;
+                }
+#endif
+                ui_state.dirty             = false;
+                ui_state.last_drawn_voices = ui_state.active_voices;
+                ui_state.last_drawn_octave = ui_state.octave;
+            }
+            next_render = now + RENDER_MS;
         }
 
-        platform_sleep_ms(FRAME_MS);
+        platform_sleep_ms(POLL_MS);
     }
 
     platform_audio_stop();

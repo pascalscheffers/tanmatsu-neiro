@@ -7,6 +7,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <climits>
 #include "engine/mod_matrix.h"
 #include "engine/param_desc.h"
 #include "engine/param_id.h"
@@ -323,6 +324,11 @@ extern "C" void ui_state_init(UIState* s) {
     // Set cursor to the active factory preset (or last row for user preset).
     s->row = (s->preset_idx >= 0) ? s->preset_idx : preset_factory_count();
     ui_presets_snapshot(s);
+
+    // Force first paint; sentinel values ensure any real data differs.
+    s->dirty             = true;
+    s->last_drawn_voices = -1;
+    s->last_drawn_octave = INT_MIN;
 }
 
 // ---------------------------------------------------------------------------

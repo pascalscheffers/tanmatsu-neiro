@@ -47,6 +47,13 @@ typedef struct {
     uint64_t held_since_ms;  // timestamp when hold began
     uint64_t last_step_ms;   // timestamp of most recent repeat step
     float    repeat_accum;   // fractional norm accumulator for continuous params
+
+    // Dirty-gate render fields (input-latency fix, app.c loop).
+    // dirty = true forces a redraw on the next render slot.
+    // last_drawn_* track what was on screen so any change re-sets dirty.
+    bool dirty;              // true = redraw needed at next render slot
+    int  last_drawn_voices;  // active_voices value from the most recent paint
+    int  last_drawn_octave;  // octave value from the most recent paint
 } UIState;
 
 // Initialise UIState: compute normalised defaults from the param table,
