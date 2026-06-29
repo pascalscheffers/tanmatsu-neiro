@@ -15,6 +15,7 @@
 #include <math.h>
 #include <string.h>
 #include "Effects/chorus.h"
+#include "clock.h"
 #include "command_queue.h"
 #include "dsp/lfo.h"
 #include "dsp/saturate.h"
@@ -56,6 +57,13 @@ static dsp::Lfo s_lfo2;
 // (core 1) via this ring. 64 slots >> the few events a UI frame can produce.
 static CommandQueue<64> s_cmds;
 
+// Master musical clock (ADR 0010). Updated once per block on the audio thread.
+static Clock s_clock;
+
+// Clock transport/BPM commands cross from the control thread to the audio
+// thread via this ring. 16 slots >> the few transport events per UI frame.
+static SpscRing<ClockCmd, 16> s_clock_cmds;
+
 void synth_init(uint32_t sample_rate, size_t block_size) {
     s_sample_rate = (float)sample_rate;
     s_juno_model.init((float)sample_rate);
@@ -68,6 +76,9 @@ void synth_init(uint32_t sample_rate, size_t block_size) {
     // their table defaults — the first synth_render drain propagates these
     // to voices so the sound is identical to the Stage 1 hardcoded values.
     s_params.init(JUNO_PARAM_TABLE, kJunoParamCount, (float)sample_rate, (int)block_size);
+
+    // ADR 0010: master musical clock — derived from the audio sample counter.
+    s_clock.init((float)sample_rate);
 
     // ADR 0018: init shared LFOs from param table defaults so block 0 is correct.
     s_lfo1.init((float)sample_rate);
@@ -100,6 +111,23 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
         } else {
             s_alloc.note_off(cmd.pitch);
         }
+    }
+
+    // 1a. Drain clock commands from the control thread and advance the clock
+    //     once for this block (ADR 0010). Mirroring the NoteCmd drain above.
+    {
+        ClockCmd cc;
+        while (s_clock_cmds.pop(cc)) {
+            switch (cc.type) {
+                case ClockCmd::kSetBpm:    s_clock.set_bpm(cc.arg); break;
+                case ClockCmd::kStart:     s_clock.start();         break;
+                case ClockCmd::kStop:      s_clock.stop();          break;
+                case ClockCmd::kContinue:  s_clock.cont();          break;
+                case ClockCmd::kTap:       s_clock.tap();           break;
+            }
+        }
+        // Tick count returned here; unused until the 4a-ii event scheduler arrives.
+        (void)s_clock.advance((uint32_t)frames);
     }
 
     // 2. Advance the param store smoothers and update targets from the ring.
@@ -258,4 +286,48 @@ float engine_get_param(uint16_t id) {
     // Control-thread read of the smoothed param value. May lag the audio thread
     // by up to one block (~1.3 ms at 48k/64) — fine for display use only.
     return s_params.get(id);
+}
+
+// --- Clock API (ADR 0010) ---------------------------------------------------
+// Control-thread setters push a ClockCmd into the lock-free ring; the audio
+// thread drains and applies them at the top of each block.
+
+void engine_set_bpm(float bpm) {
+    ClockCmd c{ClockCmd::kSetBpm, bpm};
+    s_clock_cmds.push(c);
+}
+
+void engine_transport_start() {
+    ClockCmd c{ClockCmd::kStart, 0.0f};
+    s_clock_cmds.push(c);
+}
+
+void engine_transport_stop() {
+    ClockCmd c{ClockCmd::kStop, 0.0f};
+    s_clock_cmds.push(c);
+}
+
+void engine_transport_continue() {
+    ClockCmd c{ClockCmd::kContinue, 0.0f};
+    s_clock_cmds.push(c);
+}
+
+void engine_tap_tempo() {
+    ClockCmd c{ClockCmd::kTap, 0.0f};
+    s_clock_cmds.push(c);
+}
+
+// Read-only helpers — control-thread safe; may read a frame-stale value.
+// Use for display only, not for audio logic.
+
+int engine_clock_running(void) {
+    return s_clock.running() ? 1 : 0;
+}
+
+uint64_t engine_clock_tick_pos(void) {
+    return s_clock.tick_pos();
+}
+
+float engine_clock_bpm(void) {
+    return s_clock.bpm();
 }

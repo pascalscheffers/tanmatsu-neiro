@@ -61,6 +61,31 @@ float engine_get_param(uint16_t id);
 // Slots beyond `count` are cleared (set to NONE/0).
 void engine_set_routings(const struct Routing* routings, int count);
 
+// --- Master musical clock (ADR 0010) ----------------------------------------
+// Lock-free: each setter enqueues a ClockCmd for the audio thread to drain.
+// The tap is also enqueued so free_pos_ is read on the audio thread.
+
+// Set the tempo in BPM. Clamped to [20, 300] on the audio thread.
+void engine_set_bpm(float bpm);
+
+// Start transport: resets tick/sample position to 0 then begins running.
+void engine_transport_start(void);
+
+// Stop transport: halts; positions preserved.
+void engine_transport_stop(void);
+
+// Continue transport: resumes from the current position without reset.
+void engine_transport_continue(void);
+
+// Tap tempo: records a tap timestamp; two taps set BPM from the interval.
+// Enqueued so the actual timestamp is captured on the audio thread.
+void engine_tap_tempo(void);
+
+// Read-only clock queries — control-thread safe; frame-stale, display use only.
+int      engine_clock_running(void);      // 1 if transport is running, 0 if stopped
+uint64_t engine_clock_tick_pos(void);     // ticks elapsed since last start()
+float    engine_clock_bpm(void);          // current BPM
+
 #ifdef __cplusplus
 }
 #endif
