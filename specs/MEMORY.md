@@ -860,6 +860,18 @@ latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.*
 - Factory bank order unchanged (INIT stays index 0) — `test_preset.cpp`'s "factory preset 0
   is INIT" assertions untouched. `make test` ✅ `make host` ✅ `make build` ✅.
 
+## 2026-06-29 — Stage 5c-i: parser surfaces pitch-bend + channel-pressure (COMPLETE)
+
+- **`control/midi_in.h`**: two new `MidiMsgType` values added after `MIDI_CC`, before `MIDI_OTHER`:
+  `MIDI_PITCH_BEND` (data1=LSB, data2=MSB; 14-bit value = data1|(data2<<7), center 0x2000) and
+  `MIDI_CHANNEL_PRESSURE` (data1=pressure, data2=0). Header comment updated.
+- **`control/midi_in.c`**: two decode cases added to the `switch(type)` block: `MIDI_STATUS_PITCH_BEND
+  → MIDI_PITCH_BEND` and `MIDI_STATUS_CHAN_AFTERTOUCH → MIDI_CHANNEL_PRESSURE`. No state-machine or
+  `data_bytes_for_status` changes needed — those already returned correct byte counts (2/1 resp.).
+- **5 new host tests** (153 → 158): pitch-bend center/full-up/full-down/running-status + channel-pressure.
+- `make test` ✅ (158/158) `make host` ✅ `make format` ✅ membrane clean.
+- **Next:** Stage 5c-ii — engine expression path (route bend/pressure into the mod matrix / engine API).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
