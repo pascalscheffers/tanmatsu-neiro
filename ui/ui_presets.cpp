@@ -52,32 +52,37 @@ extern "C" void ui_presets_draw(pax_buf_t* fb, const UIState* s) {
     int n   = total_rows();
     int usr = user_row_idx();
 
+    // Reserve a band at the bottom of the content for the hint strip; the list
+    // scrolls within the region above it so the last row never sits under it.
+    const float hint_h = FONT_SM + 10.0f;
+    const float list_h = CONTENT_H - hint_h;
+
     // Total pixel height of the list.
     float total_h = (float)n * ROW_H;
 
-    // Scroll: keep the selected row centred, clamped to content bounds.
+    // Scroll: keep the selected row centred, clamped to the list region.
     float start_y;
-    if (total_h <= CONTENT_H) {
-        start_y = CONTENT_Y + (CONTENT_H - total_h) * 0.5f;
+    if (total_h <= list_h) {
+        start_y = CONTENT_Y + (list_h - total_h) * 0.5f;
     } else {
         float sel_centre = (float)s->row * ROW_H + ROW_H * 0.5f;
-        float ideal      = CONTENT_Y + CONTENT_H * 0.5f - sel_centre;
+        float ideal      = CONTENT_Y + list_h * 0.5f - sel_centre;
         if (ideal > CONTENT_Y) ideal = CONTENT_Y;
-        if (ideal + total_h < CONTENT_Y + CONTENT_H) ideal = CONTENT_Y + CONTENT_H - total_h;
+        if (ideal + total_h < CONTENT_Y + list_h) ideal = CONTENT_Y + list_h - total_h;
         start_y = ideal;
     }
 
-    // Clip to the content area so a partially-scrolled row can't bleed over the
-    // tab strip above or the status bar below.
-    pax_clip(fb, 0, (int)CONTENT_Y, (int)SCREEN_W, (int)CONTENT_H);
+    // Clip to the list region so a partially-scrolled row can't bleed over the
+    // tab strip above or the hint strip / status bar below.
+    pax_clip(fb, 0, (int)CONTENT_Y, (int)SCREEN_W, (int)list_h);
 
     float y = start_y;
     for (int i = 0; i < n; i++) {
         float row_top = y;
         float row_bot = y + ROW_H;
 
-        // Skip rows fully outside the content area.
-        if (row_bot <= CONTENT_Y || row_top >= CONTENT_Y + CONTENT_H) {
+        // Skip rows fully outside the list region.
+        if (row_bot <= CONTENT_Y || row_top >= CONTENT_Y + list_h) {
             y += ROW_H;
             continue;
         }
@@ -137,8 +142,13 @@ extern "C" void ui_presets_draw(pax_buf_t* fb, const UIState* s) {
 
     pax_noclip(fb);
 
-    // Hint strip near bottom of content (above status bar).
-    float hint_y = CONTENT_Y + CONTENT_H - FONT_SM - 6.0f;
+    // Hint strip in its own reserved band below the list (above the status
+    // bar). Paint the band first so clipped rows above can't bleed into it,
+    // with a separator rule along its top edge.
+    float band_y = CONTENT_Y + list_h;
+    pax_simple_rect(fb, COL_BG, 0.0f, band_y, SCREEN_W, hint_h);
+    pax_simple_rect(fb, COL_SEP, 0.0f, band_y, SCREEN_W, 1.0f);
+    float hint_y = band_y + (hint_h - (FONT_SM - 1.0f)) * 0.5f;
     pax_draw_text(fb, COL_DIM, pax_font_sky_mono, FONT_SM - 1.0f, 8.0f, hint_y,
                   "^/v: browse  F4/Enter: confirm  F3/Esc: revert  <>: page");
 }
