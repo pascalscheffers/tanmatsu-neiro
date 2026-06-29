@@ -442,6 +442,18 @@ scheduler → **4a-iii** clock params in table + UI. **4a-i dispatched** to a fr
   `make size`: **1,002,042 bytes total image (~979 KB, 52% partition free)** — negligible delta.
 - **Next:** Stage 4a-iii — clock params in the table + UI (BPM/swing visible and editable on device).
 
+## 2026-06-29 — Stage 4a-iii: CLOCK_BPM as a table param (COMPLETE)
+
+- **`engine/param_id.h`**: CLOCK group 0x00–0x0F; `CLOCK_BPM = 0x01` (0x00 reserved/invalid).
+- **`engine/param_desc.cpp`**: one new row (GROUP_GLOBAL, "Tempo"/"BPM", [20..300], def 120, CURVE_LIN, UNIT_NONE, "%.0f", cc=0xFF, smoothing=0 instant, flags=0). **kJunoParamCount: 41 → 42.**
+- **`engine/synth.cpp`**: `synth_init` seeds `s_clock.set_bpm()` from the table default; changed-param `switch` drives `s_clock.set_bpm(val)` on `CLOCK_BPM` change. `engine_set_bpm()` (tap-tempo/ClockCmd path) left as-is — both paths remain valid.
+- **`engine/preset.cpp`**: `CLOCK_BPM = 120.0` added to all 4 factory presets; count 41 → 42. Array `ids[48]` had 7 spare slots — no widening needed.
+- **`ui/ui.cpp`**: `group_name(GROUP_GLOBAL)` → `"Clock"`; the dynamic page builder surfaces the Tempo control automatically — a new "Clock" page is reachable with the BPM knob.
+- **`tests/host/test_params.cpp`**: CLOCK_BPM coverage assertion added to `test_params_table_coverage`; new `test_params_clock_bpm_row` asserts group/curve/min/max/def/smoothing. 120/120 tests pass.
+- `make test` ✅ (120/120) `make host` ✅ `make build` ✅ membrane clean.
+  Image: **1,002,470 bytes (~979 KB, 52% partition free)** — +428 bytes vs 4a-ii (one row + switch case + string).
+- **Stage 4a COMPLETE.** Next: Stage 4b — arpeggiator (clock-driven, table-param rate + mode).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
