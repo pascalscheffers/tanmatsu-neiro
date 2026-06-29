@@ -766,6 +766,32 @@ latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.*
   free number (skipping 0019 which is taken by note-generators-engine-side).
 - **Next:** dispatch Stage 3c-iii code worker with the new stage doc.
 
+## 2026-06-29 — Stage 3c-iii: OSC waveform switch + PWM wiring (COMPLETE)
+
+- **`dsp/osc.h`**: added `set_waveform(int wf)` (0=SAW/1=PULSE/2=TRI, out-of-range→SAW) and
+  `set_pw(float pw)` delegating to DaisySP `SetWaveform`/`SetPw`. Zero new DSP code.
+- **`engine/mod_matrix.h`**: added `kModDestPwm=0xFFFDu` parallel to `kModDestPitch=0xFFFE`;
+  added `float pwm_mod=0.0f` to `ModOutputs`.
+- **`engine/mod_matrix.cpp`**: seeded `out.pwm_mod=1e-20f` (ADR 0012 denormal guard); added
+  `kModDestPwm` dispatch branch in `eval()`.
+- **`engine/juno_voice.cpp`**: in `render()`, apply `osc_main_.set_waveform(p_osc_waveform_)`
+  and `osc_main_.set_pw(clamp(p_osc_pwm_+mout.pwm_mod, 0.05, 0.95))` once per block before
+  the sample loop. `osc_sub_` stays SAW per ADR 0020. Updated stale "cached only" comments.
+- **`engine/preset.cpp`**: removed `kPresetDestPwm=0xFFFD` local sentinel; replaced its one
+  usage with `kModDestPwm` from `mod_matrix.h`. Numeric value identical — no format bump.
+- **`engine/param_desc.cpp`**: updated stale "future sub-stage" comments on OSC_PWM and
+  OSC_WAVEFORM rows to reflect Stage 3c-iii wiring.
+- **`tests/host/test_osc_waveform.cpp`** (new): 8 tests — SAW/PULSE/TRI non-silence, clamp
+  to SAW for out-of-range, pw=0.2 vs pw=0.8 produce opposite DC polarity (PolyBLEP square RMS
+  is nearly duty-cycle-invariant; DC offset is the correct discriminator), extreme PW safety,
+  pwm_mod denormal seed, kModDestPwm routing math.
+- `make test` ✅ (161/161) `make host` ✅ `make build` ✅ membrane clean. Flash: 0x10dbd0 =
+  1,105,872 bytes (47% partition free — same bin, was already built with both transports).
+- **OSC_WAVEFORM int values:** 0=SAW, 1=PULSE, 2=TRI. LFO1→kModDestPwm routing from all
+  factory presets (the "Clean 106" default) is now audible. osc_sub_ unchanged (ADR 0020).
+- **Next:** Stage 4d (FX: tempo-synced delay + DaisySP ReverbSc) or Stage 5c (expression/CC
+  map), per Opus's judgment.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
