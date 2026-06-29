@@ -792,6 +792,33 @@ latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.*
 - **Next:** Stage 4d (FX: tempo-synced delay + DaisySP ReverbSc) or Stage 5c (expression/CC
   map), per Opus's judgment.
 
+## 2026-06-29 — Four iconic Juno-106 factory presets added (COMPLETE)
+
+- **`engine/preset.cpp`**: 4 new factory presets (indices 4–7); 2 new routing arrays.
+  - **106 Strings (#4):** OSC_WAVEFORM=1 (PULSE), PWM=0.5, Chorus II (2=fast/wide),
+    slow AMP env (A=0.4/D=0.8/S=0.85/R=1.2), slow ENV2 filter sweep; `k_pwm_strings_routings`:
+    `ENV2→FILTER_CUTOFF +0.20 LIN` + `LFO1→kModDestPwm +0.35 LIN` (LFO1 0.4 Hz SINE —
+    the defining Juno signature).
+  - **106 Brass (#5):** PULSE, strong filter env (VCF_ENV_DEPTH=0.6), fast punchy envs;
+    Chorus I; reuses `k_clean_106_routings`.
+  - **Juno EP (#6):** PULSE, narrow PWM=0.3, percussive zero-sustain envs, deep filter snap
+    (VCF_ENV_DEPTH=0.8); Chorus I; reuses `k_clean_106_routings`.
+  - **Solo Lead (#7):** PULSE, PLAY_MODE=2 (legato), porta 0.08 s, U=2/10¢, LFO1 5 Hz
+    SINE delayed 0.4 s; `k_vibrato_lead_routings`: `ENV2→FILTER_CUTOFF +0.35 LIN` +
+    `LFO1→kModDestPitch +0.10 LIN`.
+- Factory preset count: **4 → 8**. All 8 presets: `count=49`, `ids[64]`, `vals[64]`.
+- `make test` ✅ (all existing 153 tests pass — no new tests needed; factory count tested by
+  existing `factory_count > 0` assertion only). `make host` ✅ `make build` ✅ `make format` ✅.
+  `make size`: Flash 993 KB / DIRAM 155 KB (26.98%) — +~600 bytes from previous 5b build
+  (four preset structs + two routing arrays, all in `.rodata`).
+- **Param enum lookups confirmed from `param_desc.cpp`:** LFO SHAPE SINE=0 (comment: SINE=0,
+  TRI=1, SAW=2, SQUARE=4, SH=5); CHORUS_MODE lush/"II" value=2 (comment: "2=fast, wide");
+  PLAY_MODE 0=poly/1=mono+retrigger/2=mono+legato; VCF_ENV_POLARITY 0=positive; FILTER_MODE 0=LP.
+  (Record these for the next worker editing `preset.cpp` — chiptune presets etc.)
+- Commit: `a8d27a9`.
+- **Next:** per Opus's judgment — Stage 4d (FX: tempo-synced delay + DaisySP ReverbSc) or
+  Stage 5c (expression/CC map: bend/mod/AT/sustain/panic, CC→param via `ParamDesc.midi_cc`).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
