@@ -83,6 +83,7 @@ ModOutputs ModMatrix::eval(const ModSources& src) const {
     out.res_mod    = 1e-20f;
     out.osc_sub    = 1e-20f;
     out.osc_noise  = 1e-20f;
+    out.pwm_mod    = 1e-20f;  // denormal guard (ADR 0012)
 
     for (int i = 0; i < kMaxRoutes; i++) {
         const Routing& r = routes_[i];
@@ -109,6 +110,8 @@ ModOutputs ModMatrix::eval(const ModSources& src) const {
             out.osc_sub += shaped;
         } else if (dest == ParamId::NOISE_LEVEL) {
             out.osc_noise += shaped;
+        } else if (dest == kModDestPwm) {
+            out.pwm_mod += shaped;
         }
         // Unknown dest_param_id: silently ignored (forward-compat, ADR 0009).
     }

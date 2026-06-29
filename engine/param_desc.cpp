@@ -28,14 +28,13 @@ const ParamDesc JUNO_PARAM_TABLE[] = {
      FLAG_AUDIO_RATE | FLAG_PER_VOICE | FLAG_MOD_DEST},
     {ParamId::NOISE_LEVEL, GROUP_OSC, "Noise Level", "Noise", 0.0f, 1.0f, 0.05f, CURVE_LIN, UNIT_PCT, "%.2f", 0xFF,
      5.0f, FLAG_AUDIO_RATE | FLAG_PER_VOICE},
-    // OSC_PWM: pulse-width amount. The oscillator waveform switch (OSC_WAVEFORM)
-    // must select pulse (1) for PWM to be audible. Row exists so the mod matrix
-    // can route LFO1→OSC_PWM (the "Clean 106" patch). DSP hook: dsp/osc.h gains
-    // set_pw() in a future sub-stage; until then the value is cached only.
+    // OSC_PWM: pulse-width base value [0, 1]. OSC_WAVEFORM must be PULSE (1) for
+    // PWM to be audible. Wired in Stage 3c-iii: render() applies once per block
+    // via osc_main_.set_pw(). LFO→PWM routing (kModDestPwm) is live in "Clean 106".
     {ParamId::OSC_PWM, GROUP_OSC, "OSC PWM", "PWM", 0.0f, 1.0f, 0.50f, CURVE_LIN, UNIT_PCT, "%.2f", 0xFF, 5.0f,
      FLAG_AUDIO_RATE | FLAG_PER_VOICE | FLAG_MOD_DEST},
-    // OSC_WAVEFORM: DCO waveform select. Currently only SAW (0) is implemented
-    // in dsp/osc.h; PULSE(1) and TRI(2) are reserved for a future sub-stage.
+    // OSC_WAVEFORM: DCO waveform select. 0=SAW, 1=PULSE (variable duty via OSC_PWM),
+    // 2=TRI. Wired in Stage 3c-iii: applies to osc_main_ only; osc_sub_ stays SAW (ADR 0020).
     {ParamId::OSC_WAVEFORM, GROUP_OSC, "OSC Waveform", "Wave", 0.0f, 2.0f, 0.0f, CURVE_STEPPED, UNIT_NONE, "%.0f", 0xFF,
      0.0f, FLAG_PER_VOICE},
     // OSC_RANGE: DCO range offset in semitones (−24 = 2 oct down, +24 = 2 oct up).

@@ -6,12 +6,6 @@
 #include "param_desc.h"
 #include "param_id.h"
 
-// Virtual PWM destination (parallel to kModDestPitch = 0xFFFE in mod_matrix.h).
-// No ParamId exists yet — PWM hardware wiring is Stage 3c.  The sentinel is
-// stored in preset routings so blobs written now round-trip correctly once 3c
-// promotes it to a proper ParamId or kModDestPwm constant in mod_matrix.h.
-static constexpr uint16_t kPresetDestPwm = 0xFFFDu;
-
 // ---------------------------------------------------------------------------
 // Curve helper (mirrors ParamStore::apply_curve; kept local, no coupling)
 // ---------------------------------------------------------------------------
@@ -48,7 +42,7 @@ static float apply_curve_local(const ParamDesc& d, float norm) {
 static const Routing k_clean_106_routings[] = {
     // source             dest_param_id              depth   curve
     {(uint8_t)ModSource::ENV2, (uint16_t)ParamId::FILTER_CUTOFF, +0.35f, (uint8_t)ModCurve::LIN},
-    {(uint8_t)ModSource::LFO1, kPresetDestPwm, +0.20f, (uint8_t)ModCurve::LIN},
+    {(uint8_t)ModSource::LFO1, kModDestPwm, +0.20f, (uint8_t)ModCurve::LIN},
 };
 static constexpr int k_clean_106_count = (int)(sizeof(k_clean_106_routings) / sizeof(k_clean_106_routings[0]));
 

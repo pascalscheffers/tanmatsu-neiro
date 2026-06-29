@@ -61,6 +61,12 @@ enum class ModCurve : uint8_t {
 // The JunoVoice render() reads mod_out.pitch_semi for this.
 static constexpr uint16_t kModDestPitch = 0xFFFE;
 
+// kModDestPwm: virtual destination for pulse-width modulation.
+// Unit: bipolar offset added to OSC_PWM base value (range [-1, +1]).
+// JunoVoice render() reads mod_out.pwm_mod and adds it to p_osc_pwm_ before
+// clamping to [0.05, 0.95] and calling osc_main_.set_pw().
+static constexpr uint16_t kModDestPwm = 0xFFFDu;
+
 // ── Routing slot ──────────────────────────────────────────────────────────
 
 // 8 bytes incl. padding; serialized field-by-field 1+2+4+1 = 8 bytes (ADR 0009).
@@ -107,6 +113,7 @@ struct ModOutputs {
     float res_mod   = 0.0f;  // offset for FILTER_RES
     float osc_sub   = 0.0f;  // offset for SUB_LEVEL
     float osc_noise = 0.0f;  // offset for NOISE_LEVEL
+    float pwm_mod   = 0.0f;  // offset for OSC_PWM (kModDestPwm)
 };
 
 // ── ModMatrix ─────────────────────────────────────────────────────────────

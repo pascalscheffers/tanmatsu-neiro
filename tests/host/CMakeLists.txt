@@ -14,6 +14,7 @@ add_executable(tanmatsu-tests
     main.cpp
     test_midi_parse.cpp
     test_osc.cpp
+    test_osc_waveform.cpp
     test_voice.cpp
     test_alloc.cpp
     test_command_queue.cpp

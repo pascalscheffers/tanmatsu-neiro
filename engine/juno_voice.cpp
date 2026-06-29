@@ -93,11 +93,11 @@ void JunoVoice::set_param(int id, float value) {
         case ParamId::NOISE_LEVEL:
             p_noise_level_ = value;
             break;
-        // OSC_PWM: cached; no set_pw() on dsp::Osc yet (future sub-stage).
+        // OSC_PWM: pulse-width base value; applied in render() via osc_main_.set_pw().
         case ParamId::OSC_PWM:
             p_osc_pwm_ = value;
             break;
-        // OSC_WAVEFORM: cached; only SAW (0) supported in dsp/osc.h currently.
+        // OSC_WAVEFORM: 0=SAW, 1=PULSE, 2=TRI; applied in render() via osc_main_.set_waveform().
         case ParamId::OSC_WAVEFORM:
             p_osc_waveform_ = (int)value;
             break;
@@ -267,6 +267,16 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
     float amp_end = p_osc_level_ + mout.amp_mod;
     if (amp_end < 0.0f) amp_end = 0.0f;
     if (amp_end > 1.0f) amp_end = 1.0f;
+
+    // Waveform: apply once per block (waveform switch is not audio-rate; block-rate is fine).
+    osc_main_.set_waveform(p_osc_waveform_);
+
+    // PWM: apply once per block (block-rate, ~750 Hz @ 64/48k — ample for a slow LFO sweep).
+    // Clamp [0.05, 0.95] to avoid degenerate silent/full-duty pulse at the extremes.
+    float pw = p_osc_pwm_ + mout.pwm_mod;
+    if (pw < 0.05f) pw = 0.05f;
+    if (pw > 0.95f) pw = 0.95f;
+    osc_main_.set_pw(pw);
 
     // Sub / noise level mods (also once per block — fast enough):
     float eff_sub   = p_sub_level_ + mout.osc_sub;
