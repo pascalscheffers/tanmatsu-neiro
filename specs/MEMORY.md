@@ -292,11 +292,47 @@ restate. When this passes ~200 lines, rotate older entries into the archive.
 - Tracked open items unchanged: HPF DSP wiring; `kPresetDestPwm=0xFFFD` sentinel unification.
 - **Next:** Stage 3d-ii — unison + on-device CPU gate (🛑 needs Opus + Pascal's hardware).
 
+## 2026-06-29 — Stage 3d-ii: unison voice stacking + detune (COMPLETE — host side)
+
+- **Unison added to `VoiceAlloc`** — NOT a parallel allocator. `set_unison_count(U)` /
+  `set_unison_detune(cents)` extend the ONE existing allocator. U voices drawn from the
+  fixed pool; effective polyphony = `floor(kNumVoices / U)`; pool exhaustion falls through
+  to the normal steal policy; no `malloc`.
+- **Group tracking:** per-slot `unison_tag_[kNumVoices]` (pitch of the note, or `0xFF` =
+  ungrouped). `note_off` scans by tag and releases all U group members atomically.
+- **Detune:** U voices spread symmetrically ±(cents/2)/100 semitones via
+  `IVoice::set_pitch_offset()` (reused from 3d-i; no downcast, no `JunoVoice` visibility).
+  Spacing: voice `gi/(U-1)` in [0,1] mapped to `[-spread/2, +spread/2]` semitones.
+  Glide offset is additive on top for mono+unison.
+- **Mono + unison:** U detuned voices for the held note. Steal-back (legato or mono)
+  rebuilds the full U-voice group for the previous held note. Portamento glide applies
+  to all group members with their per-voice detune added.
+- **U=1:** identical to the 3d-i poly/mono/legato path — no code change in that branch.
+- **Two new param ids** (AMP group, `< kMax=0x80`):
+  `UNISON_COUNT=0x65` (stepped 1..8, def=1), `UNISON_DETUNE=0x66` (0..50 cents, def=7).
+  `UNIT_CENT` added to `ParamUnit` enum. **kJunoParamCount: 39 → 41.**
+- **Factory presets** (count 39→41): INIT/Bass=U1; Pad=U2/7¢ (fat shimmer);
+  Lead=U2/10¢ (thick mono lead). All INIT values match table defaults (test verified).
+- **5 new host tests** (96 total, all pass): U=4 stacks 4 voices, detune produces output,
+  note_off releases all group voices, U=4 limits polyphony to 2 notes, U=1 unchanged.
+- `make test` ✅ (96/96) `make host` ✅ `make build` ✅ membrane clean.
+  App: **0xed7d0 ≈ 973 KB / 2 MB (54% free, +21 KB from 3d-i)**.
+- Tracked open items: HPF DSP wiring; `kPresetDestPwm=0xFFFD` sentinel unification.
+- **Next (blocked by gate):** see 🛑 below — device CPU measurement needed before
+  declaring Stage 3 fully done.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
 
-_(none open)_
+🛑 Stage 3d-ii (unison / voice CPU cost) needs device measurement. The full-featured Juno
+  voice (mod matrix + ENV2 + 2 LFOs + portamento + unison detuning via set_pitch_offset) has
+  not been benched since Stage 0.5's proxy voice. Unison at U=8 maxes the pool and runs all
+  8 real voices per block — worst case CPU. ADR 0003 budget: 480k cyc/blk (P4 @ 360 MHz,
+  64/48k); Stage 0.5 proxy was 6.2%. Recommendation: run `BENCH=1` on device, measure 8 real
+  Juno voices at steady state, confirm within the 70% ceiling (chorus + fx headroom); cap
+  `UNISON_COUNT` max or reduce max polyphony only if it blows. Blocked: declaring Stage 3
+  fully done.
 
 ✅ Stage 3 — Juno default-patch voicing — **RATIFIED 2026-06-28 (Opus 4.8)**
   Sonic gate during 3b-ii. Pascal chose **"Clean 106"**: matrix default routings =
