@@ -15,6 +15,8 @@
 #include <math.h>
 #include <string.h>
 #include "Effects/chorus.h"
+#include "arp.h"
+#include "arp_clock.h"
 #include "clock.h"
 #include "command_queue.h"
 #include "scheduler.h"
@@ -66,10 +68,18 @@ static Clock s_clock;
 static SpscRing<ClockCmd, 16> s_clock_cmds;
 
 // ADR 0010: event scheduler (Stage 4a-ii). Producers (arp, sequencer, ...) push
-// ScheduledEvents timestamped in Clock::sample_pos() units into s_sched_in;
+// ScheduledEvents timestamped in Clock::free_pos() units into s_sched_in;
 // the audio thread drains them into s_sched and dispatches due events each block.
+// NOTE: free_pos() (not sample_pos()) is the scheduler time base so the arp
+// fires regardless of transport start/stop (ADR 0019 free-running convention).
 static Scheduler<64>               s_sched;
 static SpscRing<ScheduledEvent, 64> s_sched_in;
+
+// Stage 4b-iii: arpeggiator statics (audio thread only).
+static Arp      s_arp;
+static double   s_arp_phase     = 0.0;   // samples until next step; 0 = fire now
+static bool     s_arp_had_notes = false;
+static uint32_t s_arp_step      = 0;     // step counter for swing parity
 
 void synth_init(uint32_t sample_rate, size_t block_size) {
     s_sample_rate = (float)sample_rate;
@@ -89,6 +99,14 @@ void synth_init(uint32_t sample_rate, size_t block_size) {
     // Stage 4a-iii: param table is the UI/preset home for tempo; seed the clock from the
     // table default so block 0 uses the right BPM (mirrors LFO init lines below).
     s_clock.set_bpm(s_params.get(ParamId::CLOCK_BPM));
+
+    // Stage 4b-iii: seed arp config from table defaults so block 0 is correct.
+    // Mirrors the LFO seed pattern below: params are the UI/preset home for config;
+    // synth_render's step 2b keeps these in sync on subsequent blocks.
+    s_arp.init();
+    s_arp.set_mode((ArpMode)(int)s_params.get(ParamId::ARP_MODE));
+    s_arp.set_octaves((int)s_params.get(ParamId::ARP_OCTAVES));
+    s_arp.set_latch(s_params.get(ParamId::ARP_LATCH) > 0.5f);
 
     // ADR 0018: init shared LFOs from param table defaults so block 0 is correct.
     s_lfo1.init((float)sample_rate);
@@ -112,14 +130,28 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     size_t frames = n < kMaxBlock ? n : kMaxBlock;
 
     // 1. Drain control-thread note commands. This is the only place the voice
-    //    pool is mutated; voices cannot race with the UI thread.
+    //    pool is mutated (for direct notes); voices cannot race with the UI thread.
+    //
+    //    Route by ARP_ON (previous block's smoothed value — fine, one-block stale):
+    //    - arp_on=true:  feed the arp's held-note set; the arp's scheduled note-on/off
+    //      commands reach s_alloc via the scheduler dispatch in step 1b.
+    //    - arp_on=false: existing direct path to s_alloc (byte-identical to pre-arp).
+    bool arp_on = s_params.get(ParamId::ARP_ON) > 0.5f;
     NoteCmd cmd;
     while (s_cmds.pop(cmd)) {
-        if (cmd.type == NoteCmd::kNoteOn) {
-            NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
-            s_alloc.note_on(cmd.pitch, cmd.velocity, expr);
+        if (arp_on) {
+            if (cmd.type == NoteCmd::kNoteOn) {
+                s_arp.note_on(cmd.pitch, cmd.velocity);
+            } else {
+                s_arp.note_off(cmd.pitch);
+            }
         } else {
-            s_alloc.note_off(cmd.pitch);
+            if (cmd.type == NoteCmd::kNoteOn) {
+                NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+                s_alloc.note_on(cmd.pitch, cmd.velocity, expr);
+            } else {
+                s_alloc.note_off(cmd.pitch);
+            }
         }
     }
 
@@ -128,8 +160,13 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     //
     // Ordering: capture block_start BEFORE advance() so the scheduler window
     // [block_start, block_start+frames) correctly identifies events whose
-    // sample_time falls within THIS block. advance() then moves sample_pos_
+    // sample_time falls within THIS block. advance() then moves free_pos_
     // to block_start+frames (the start of the NEXT block).
+    //
+    // block_start is in Clock::free_pos() units (the free-running monotonic
+    // counter). The arp (Stage 4b-iii) and future sequencer schedule events in
+    // free_pos() units so timing is independent of transport start/stop
+    // (ADR 0019 free-running arp convention). s_sched dispatches in these units.
     uint64_t block_start;
     {
         ClockCmd cc;
@@ -142,7 +179,7 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
                 case ClockCmd::kTap:       s_clock.tap();           break;
             }
         }
-        block_start = s_clock.sample_pos();  // position at the START of this block
+        block_start = s_clock.free_pos();  // free-running position at block start
         (void)s_clock.advance((uint32_t)frames);
     }
 
@@ -195,6 +232,65 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
         s_alloc.set_unison_detune(unison_detune);
         float block_time = (float)frames / s_sample_rate;
         s_alloc.advance_glide(block_time);
+    }
+
+    // 2b. Stage 4b-iii: arpeggiator engine — only when ARP_ON.
+    //     Re-read arp_on after drain() for freshest smoothed value.
+    arp_on = s_params.get(ParamId::ARP_ON) > 0.5f;
+    if (arp_on) {
+        // Keep arp config in sync with params (block-rate; negligible cost).
+        s_arp.set_mode((ArpMode)(int)s_params.get(ParamId::ARP_MODE));
+        s_arp.set_octaves((int)s_params.get(ParamId::ARP_OCTAVES));
+        s_arp.set_latch(s_params.get(ParamId::ARP_LATCH) > 0.5f);
+
+        // Derive step period from BPM-accurate clock and rate index.
+        double spt         = s_clock.samples_per_tick();
+        double step_period = (double)arp_rate_ticks((int)s_params.get(ParamId::ARP_RATE)) * spt;
+
+        // First-note alignment: when the first note arrives, reset phase so
+        // the step fires immediately rather than waiting for a stale phase.
+        bool have = s_arp.has_notes();
+        if (have && !s_arp_had_notes) {
+            s_arp_phase = 0.0;
+            s_arp_step  = 0;
+        }
+        s_arp_had_notes = have;
+
+        if (have) {
+            ArpPhaseResult r = arp_advance_phase(&s_arp_phase, (uint32_t)frames, step_period);
+            if (r.fire) {
+                ArpNote a = s_arp.next();
+                if (a.valid) {
+                    float gate  = s_params.get(ParamId::ARP_GATE);
+                    float swing = s_params.get(ParamId::ARP_SWING);
+
+                    // Swing: delay odd steps by swing_fraction * 0.5 * step_period.
+                    uint64_t on = block_start + (uint64_t)r.offset
+                                  + ((s_arp_step & 1u)
+                                         ? (uint64_t)(swing * 0.5 * step_period)
+                                         : 0u);
+
+                    // Gate: fraction of the step period. Force at least 1 sample length.
+                    uint64_t gate_len = (uint64_t)(gate * step_period);
+                    if (gate_len == 0) gate_len = 1;
+                    uint64_t off = on + gate_len;
+
+                    s_sched.schedule(on,  NoteCmd{NoteCmd::kNoteOn,  a.pitch, a.velocity});
+                    s_sched.schedule(off, NoteCmd{NoteCmd::kNoteOff, a.pitch, 0});
+
+                    s_arp_step++;
+                }
+            }
+        }
+    } else {
+        // ARP_ON just turned off (or was never on): reset arp state so
+        // toggling back on starts fresh (no stale chord or step phase).
+        if (s_arp_had_notes || s_arp_phase != 0.0 || s_arp_step != 0) {
+            s_arp.clear();
+            s_arp_had_notes = false;
+            s_arp_step      = 0;
+            s_arp_phase     = 0.0;
+        }
     }
 
     // 3. Push only params that changed this block to all voices (block-rate).
@@ -369,7 +465,8 @@ void engine_tap_tempo() {
 // --- Event scheduler API (ADR 0010, Stage 4a-ii) ----------------------------
 // Lock-free: control thread pushes a ScheduledEvent into s_sched_in; the audio
 // thread drains and dispatches it at block_start when sample_time is due.
-// sample_time must be in Clock::sample_pos() units (samples since last start()).
+// sample_time must be in Clock::free_pos() units (monotonic; unaffected by
+// transport start/stop — same time base as the arp, ADR 0019).
 
 void engine_schedule_note(uint64_t sample_time, uint8_t pitch, uint8_t velocity, int on) {
     NoteCmd cmd;

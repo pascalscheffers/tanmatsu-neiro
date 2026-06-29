@@ -25,6 +25,7 @@ add_executable(tanmatsu-tests
     test_clock.cpp
     test_scheduler.cpp
     test_arp.cpp
+    test_arp_clock.cpp
     "${DAISYSP}/Source/Synthesis/oscillator.cpp"
     "${DAISYSP}/Source/Filters/svf.cpp"
     "${DAISYSP}/Source/Control/adsr.cpp"

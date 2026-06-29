@@ -203,8 +203,9 @@ public:
         int base_velocity = 64;
 
         if (mode_ == ArpMode::kUp || mode_ == ArpMode::kDown || mode_ == ArpMode::kUpDown) {
-            // Build a sorted (ascending by pitch) view of the held notes
-            uint8_t sorted_pitches[kMaxHeld];
+            // Build a sorted (ascending by pitch) view of the held notes.
+            // Zero-init to silence -Werror=maybe-uninitialized on device GCC.
+            uint8_t sorted_pitches[kMaxHeld] = {};
             build_sorted(sorted_pitches);
             base_pitch    = sorted_pitches[base_idx];
             base_velocity = velocity_for_pitch(sorted_pitches[base_idx]);
