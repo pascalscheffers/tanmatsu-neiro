@@ -51,18 +51,25 @@ Note input comes from a USB MIDI keyboard, a DAW over USB-C, or the badge's own 
   A S D F G H J K L  ;              ← white keys: C D E F G A B C D E
 ```
 
-| Key | Result |
-|-----|--------|
+| Key / Button | Result |
+|---|---|
 | `A`–`;` (+ `W E T Y U O P`) | Play notes (just over an octave, white + black keys) |
 | `Z` / `X` | Octave down / up |
 | `←` / `→` | Previous / next parameter page |
-| `↑` / `↓` | Select parameter on the page |
-| `,` / `.` | Nudge the selected value down / up (hold **Shift** for coarse 10% steps) |
+| `↑` / `↓` | Select parameter row on the page |
+| ✕ (F1, X button) | Nudge selected value **down** — tap = fine step; hold = ramps to full range in ~2 s |
+| △ (F2, triangle) | Nudge selected value **up** — same hold-to-ramp behaviour |
+| □ (F3, square) | **Back** — return to the PRESET page; on the PRESET page, cancel an in-progress audition |
+| ○ (F4, circle) | **Load / confirm** — commit the highlighted preset on the PRESET page |
+| ☘ (F5, three-lobe) | Toggle the **musical-typing key-guide overlay** (works on any page) |
+| ◇ (F6, diamond) | **Save** current sound as your user preset |
 | `[` / `]` | Previous / next factory preset |
-| `=` | Save current sound as your user preset |
+| `=` | Save current sound as your user preset (same as ◇) |
 | `Esc` | Quit (back to the launcher) |
 
-Parameter **pages** (OSC, FILTER, ENV, LFO, FX, AMP, ARP, …) are generated from the parameter table, so the exact set and order can shift as the synth grows — navigate by the page name shown on screen rather than by position. The status strip along the bottom shows active voices, the current octave, and the loaded preset.
+**Preset page (home, page 1):** scroll the list with ↑/↓ to audition patches live — the sound changes as you browse. Press ○ or Enter to commit the highlighted preset. Press □ or navigate away without confirming to revert to the sound you had before browsing.
+
+**Parameter pages (pages 2–9):** nine fixed pages in order — PRESET · PERFORM · OSC · FILTER · AMP ENV · MOD ENV · LFO · FX · AMP. Multi-group pages (PERFORM = Clock + Arp; FILTER = VCF + HPF) show a section sub-header before each group. The status strip at the bottom shows active voices, the current octave, and the loaded preset name.
 
 ## License
 

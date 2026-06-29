@@ -1,71 +1,156 @@
-# Control & UI (DRAFT)
+# Control & UI
 
 How the player makes notes and tweaks sound. Driven entirely by the parameter table
 (`specs/02`) so UI and MIDI never hardcode parameter knowledge.
 
 ## Note input sources (any/all → one internal note event stream)
 1. **USB-MIDI host (USB-A):** plug in a hardware MIDI keyboard/controller. Primary
-   "real instrument" path. Needs a USB-host MIDI class driver (verify IDF/BSP support).
-2. **USB-MIDI device (USB-C):** play from a computer/DAW; also the natural sequencing
-   path. TinyUSB MIDI class.
-3. **QWERTY keyboard:** built-in fallback "musical typing" (rows = piano keys) so the
-   badge makes sound standalone with nothing plugged in.
+   "real instrument" path. Class driver implemented; hardware-verified as of Stage 5b.
+2. **USB-MIDI device (USB-C):** play from a computer/DAW. TinyUSB Full-Speed MIDI device;
+   hardware-verified as of Stage 5d.
+3. **QWERTY keyboard:** built-in "musical typing" (rows = piano keys) so the badge makes
+   sound standalone with nothing plugged in. See layout below.
 4. *(Later, maybe)* BLE-MIDI over the C6 radio; expansion-header controls.
 
-All sources normalize to one `note_event` (note on/off, velocity, channel, pitch-bend,
-CC) consumed by the engine — sources are interchangeable and added without touching the
-engine.
+All sources normalize to one `note_event` (note on/off, velocity, channel) consumed by
+the engine — sources are interchangeable and added without touching the engine. Expression
+(pitch-bend, mod wheel, aftertouch, sustain CC64, panic) is also handled in Stage 5c.
 
-## Live parameter tweaking (the headline UX requirement)
-Goal: **fast, glanceable, one- or two-key access to the sound-shaping knobs while
-playing.** The 800×480 screen + QWERTY is the surface.
+## Musical-typing key layout (GarageBand-style)
 
-Proposed model (refine after first build):
-- **Parameter pages** grouped by function (OSC / FILTER / ENV / LFO / FX / MIX), rendered
-  from the parameter table. One page visible at a time; function keys (F-keys / number
-  row) jump directly to a page.
-- **Per-page controls** mapped to a fixed key cluster so muscle memory works: a row of
-  keys selects which param on the page; another axis (e.g. `,`/`.` or arrow nav) nudges
-  value, hold-Shift = coarse. Live value + a bar/dial drawn via PAX.
-- **Always-visible status strip:** active voices, MIDI activity, CPU/block load, current
-  preset. RGB LEDs mirror activity/clip.
-- **Macro knobs (optional):** a few assignable "performance" params on the home page for
-  big live moves (filter cutoff, chorus, etc.).
-- **No layout shifts / fixed positions** so the player isn't hunting mid-performance.
+```
+   W E     T Y U     O P            ← black keys (sharps)
+  A S D F G H J K L  ;              ← white keys: C D E F G A B C D E
+```
 
-> Concrete key map is a spec decision once we see PAX text/layout on the real panel.
-> Keep controls in the parameter-table-driven renderer, not bespoke per page.
+`Z` / `X` shift the octave down / up (default octave 4, range 1–7).
 
-## Presets
-- Stored on **SD card** (FATFS) as small files; the parameter table defines the schema,
-  so a preset is just the serialized value set + name + metadata. Versioned so the table
-  can grow without breaking old presets.
-- Ship a handful of factory presets that show off fat bass / sparkling highs.
+## UI page model — 9 fixed pages
 
-## Decided control features (see `specs/06` for stage order, `specs/05` for data)
-- **Performance layer (all in):** assignable **macros** (routed via the mod matrix),
-  **pitch-bend + mod wheel**, **velocity + aftertouch** response, **sustain/hold + panic**.
-- **Arpeggiator (full):** up/down/up-down/random/as-played, octave range, clock-synced
-  rate, gate length, swing, latch/hold.
-- **Sequencer (step + real-time, one model):** grid programming *and* real-time record
-  into the same pattern, with per-step parameter locks; patterns chain into songs.
-  Data model in `specs/05`; timing in ADR 0010.
-- **MIDI-file player:** pick a `.mid` (SMF type 0/1) on SD; its notes drive the current
-  patch (mono-timbral) — play with nothing plugged in.
-- **Clock:** internal master clock + **tap tempo**; pluggable so external MIDI-clock sync
-  can slave it later (ADR 0010). Drives arp, sequencer, and tempo-synced delay.
+Pages are defined in a compile-time `PAGE_TABLE[9]` (not runtime-derived) in `ui/ui.cpp`
+(`WO-1`, 2026-06-29). Left/Right arrows cycle pages; Up/Down select the row within a page.
 
-## UI paradigm — hybrid panel + pages
-A **Juno-style panel overview** (glanceable state, live performance) plus **focused edit
-pages** for detail, both rendered from the parameter table via PAX, identical on host and
-device. Always-visible status strip (voices, MIDI/clock activity, CPU/block load, preset);
-RGB LEDs mirror activity/clip. Fixed control positions — no layout shift while playing.
+| # | Page title | Contents |
+|---|---|---|
+| 1 | PRESET | Preset browser (scrollable list, audition-with-revert) |
+| 2 | PERFORM | Clock tempo (GROUP_GLOBAL) + Arp controls (GROUP_ARP) |
+| 3 | OSC | Oscillator parameters (GROUP_OSC) |
+| 4 | FILTER | VCF parameters (GROUP_FILTER) + HPF parameters (GROUP_HPF) |
+| 5 | AMP ENV | Amplitude envelope ADSR (GROUP_ENV) |
+| 6 | MOD ENV | Modulation envelope ADSR (GROUP_ENV2) |
+| 7 | LFO | LFO 1 & 2 parameters (GROUP_LFO) |
+| 8 | FX | Chorus and effects (GROUP_FX) |
+| 9 | AMP | Master level, play mode, portamento, unison (GROUP_AMP) |
 
-## Presets — full library (detail in `specs/05`)
-Factory + user banks on SD, category/tag browser, A/B compare, INIT patch, randomize/morph.
-Parameter-table-driven and versioned so the format survives feature growth.
+Multi-group pages (PERFORM, FILTER) display a **section sub-header** strip (dim background +
+magenta accent bar) before each group's rows — purely decorative; row-index math is
+unchanged.
 
-## Still to design (not blocking)
-- Exact musical-typing layout (lean: piano-style rows) and the live-tweak key map — settle
-  when the PAX UI work starts on the real panel.
-- MIDI-learn (assignable CC) — easy on top of the param table; schedule with MIDI I/O.
+## Shape buttons (F1–F6, badge physical buttons)
+
+Left-to-right on the badge face: X · triangle · square · circle · three-lobe · diamond.
+All six buttons deliver press **and** release edge events via the platform layer.
+
+| Button | Symbol | Key (host) | Action |
+|---|---|---|---|
+| F1 | ✕ (X) | F1 | Nudge selected value **down** |
+| F2 | △ (triangle) | F2 | Nudge selected value **up** |
+| F3 | □ (square) | F3 | **Back** to the PRESET page (page 1); on the PRESET page, cancel an in-progress audition (revert) |
+| F4 | ○ (circle) | F4 | **Load / confirm** — commit the highlighted preset on the PRESET page; no-op on param pages |
+| F5 | ☘ (three-lobe) | F5 | Toggle the **musical-typing key-guide overlay** (works on any page) |
+| F6 | ◇ (diamond) | F6 | **Save** current sound to the user preset slot |
+
+### Hold-to-repeat nudge (F1 / F2)
+
+Implemented in `ui_tick()`, called each frame from `app.c`:
+
+- **Initial delay:** 250 ms before repeat begins.
+- **Continuous params:** ramp rate 0.15 norm/s → 0.50 norm/s over a 500 ms ease-in window.
+  Full range (0→1) takes ~2 s at peak speed.
+- **Stepped params:** one step every 150 ms, no acceleration. Sounds click through one
+  discrete option at a time (waveform, play mode, arp mode, etc.).
+- Release of F1 or F2 stops repeat immediately. Navigating to a different row also cancels.
+
+## Preset page — audition with revert
+
+The PRESET page (page 1, home) is a special-purpose page, not a param-page:
+
+- **Browse:** ↑/↓ scrolls the list and immediately **auditions** the highlighted preset
+  (loads params + routings into the engine live). The first ↑/↓ motion also saves a
+  snapshot of the current patch.
+- **Confirm (○ or Enter):** commits the highlighted preset; refreshes the snapshot so
+  pressing □ after confirming no longer reverts.
+- **Revert (□ or Esc):** restores the pre-browse patch from the snapshot and clears
+  `auditioning` state.
+- **Navigate away (← / →):** reverts first (if auditioning), then passes the page-switch
+  through to the navigation handler.
+
+Factory presets are listed first; a "User" row at the bottom refers to the NVS-stored user
+preset. The committed preset is indicated with a cyan dot; an audition-in-progress behind a
+different committed preset shows a magenta dot.
+
+## Key-guide overlay (F5)
+
+Pressing F5 on any page toggles a centred 680×260 dark panel drawn on top of all other
+content. It shows:
+
+- A two-row QWERTY key grid (naturals + accidentals with correct gap slots for E–F, B–C).
+- Each cell: key letter + note name at the current octave (e.g. "C4", "F#4").
+- Footer: current octave number + `Z`/`X`/`F5` hints.
+
+Note names are derived at draw time from `keyboard_semitone_for_key()` (a thin public
+accessor around the existing `key_to_semitone()` table) + `keyboard_octave()`. No table
+is duplicated.
+
+## Status strip (bottom of screen, always visible)
+
+Drawn by `draw_status()` in `ui/ui.cpp`:
+
+- 8 voice-activity dots (bright = active).
+- Current octave number.
+- Loaded preset name.
+- Key hints: `<>pg  ^v row  F1/F2 nudge  F3 back  F6 save  ESC`.
+- Thin magenta→cyan gradient rule above the strip (synthwave motif).
+
+## Keyboard shortcuts (host / badge QWERTY)
+
+| Key | Action |
+|---|---|
+| `←` / `→` | Cycle pages |
+| `↑` / `↓` | Select row |
+| `[` / `]` | Previous / next factory preset |
+| `=` | Save user preset |
+| `Esc` | Quit to launcher |
+| `A`–`;` + `W E T Y U O P` | Musical typing (note input) |
+| `Z` / `X` | Octave down / up |
+
+Note: the `,` / `.` nudge keys from the original draft were **retired** in WO-5 (2026-06-29)
+and replaced by the F1/F2 shape buttons with hold-to-repeat. `[`, `]`, and `=` remain.
+
+## MIDI expression (Stage 5c)
+
+- **Pitch bend:** ±2 semitones (constant `kPitchBendRangeSemis` in `synth_config.h`).
+  Applied per-voice every block; mod-matrix sources also include pitch bend.
+- **Mod wheel (CC1):** routed as a mod-matrix source (`ModSource::MOD_WHEEL`).
+  LFO1_DEPTH no longer binds CC1 (unbound in Stage 5c-iii to avoid double-bind).
+- **Aftertouch (channel pressure):** routed as `ModSource::AFTERTOUCH`.
+- **Sustain pedal (CC64):** handled by `control/sustain.{h,c}` — defers note-offs while
+  the pedal is down; flushes all held pitches on the down→up edge.
+- **Panic (CC120 / CC123):** calls `engine_all_notes_off()` + `sustain_clear()`.
+- **Generic CC → param:** `engine_cc_to_param()` scans `JUNO_PARAM_TABLE` for a matching
+  `midi_cc` field and calls `engine_set_param_norm()`.
+
+## Presets (data detail in `specs/05`)
+- **Storage:** NVS under key `"user"` for the single user slot. Factory presets are compiled
+  in as `const` arrays in `engine/preset.cpp`.
+- **Format:** v2 blob — magic "TNMT" header, param pairs (id:u16 + value:f32), then a
+  routings block (`count:u16` + N × 8-byte routing records).
+- **At boot:** loads the default factory preset by name ("Solo Lead") and applies params +
+  routings. If a user preset exists in NVS, it overrides the factory default.
+
+## Still deferred
+- MIDI-learn (assignable CC) — easy on top of the param table; schedule with a later stage.
+- HPF DSP wiring — `HPF_CUTOFF` is a navigable row but the SVF block behind it is still
+  inert (needs a second `dsp::Filter` in `JunoVoice`; its own sub-stage).
+- Tap tempo in the UI (the engine clock already supports `engine_tap_tempo()`; no button
+  assigned yet).

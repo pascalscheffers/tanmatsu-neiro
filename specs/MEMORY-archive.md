@@ -590,3 +590,244 @@ First real AppFS bench run printed nothing. Two independent causes, both fixed:
   genuinely needs a different effort. Model is settable on both.
 - Folded into ADR 0017 (Decision), `stages/README.md` (dispatch step 1), CLAUDE.md (the loop).
 - **Next:** unchanged — dispatch **Stage 3a** as the first live worker run.
+
+## 2026-06-28 — Stage 3a: per-voice mod sources (ENV2 + LFO1/2) (COMPLETE)
+
+- **`dsp/lfo.h`** (new, pure header-only): phase-accumulator LFO, 5 waveforms
+  (SINE/TRI/SAW/SQUARE/S&H). Anti-denormal +1e-20f on continuous waves per ADR 0012.
+- **`engine/juno_voice`** updated: `env2_` (second `dsp::Env` ADSR) + `lfo1_`/`lfo2_`
+  (`dsp::Lfo`) rendered per sample in `render()`; accessors expose last-sample outputs.
+- **`engine/param_id.h`**: ENV2 group 0x40–0x43, LFO1 0x70–0x72, LFO2 0x78–0x7A.
+- **`engine/param_desc.h/cpp`**: GROUP_ENV2=8; 10 new param rows. kJunoParamCount now 24.
+- **`engine/preset.cpp`**: FactoryPreset arrays widened to [32], all 4 presets updated to 24 params.
+- **`ui/ui.cpp`**: GROUP_ENV2 and GROUP_LFO added to `group_name()`.
+- 9 new host tests (61 total). `make test` ✅ `make host` ✅ `make build` ✅. App: 964 KB / 54% free.
+
+## 2026-06-28 — Stage 3b-i: mod-matrix engine (COMPLETE)
+
+- **`engine/mod_matrix.h/cpp`** (new): `Routing` struct, `ModSource` enum, `ModMatrix` (16 slots),
+  `eval(ModSources)→ModOutputs`. Anti-denormal +1e-20f per ADR 0012.
+- Audio-rate dests (cutoff, pitch, amp) block-smoothed; control-rate dests applied once/block.
+- **`engine/juno_voice`** wired with mod_matrix_ per voice; 12 new host tests (73 total).
+- `make test` ✅ `make host` ✅ `make build` ✅. App: 965 KB / 54% free.
+
+### Seam fix: set_mod_matrix promoted to IVoice (2026-06-28)
+- Removed `IVoice*→JunoVoice*` downcast in `engine_set_routings`; `set_mod_matrix` promoted
+  to pure-virtual on `IVoice`. Restores ADR 0008/0009 seam. 79/79 tests.
+
+## 2026-06-28 — Stage 3b-ii: Juno default patch + preset format carries routings (COMPLETE)
+
+- **Preset format bumped to v2.** Routings block appended after param pairs.
+  `PRESET_BLOB_MAX` widened to 384. v1 blobs still parse (back-compat).
+- **"Clean 106" routings** shipped in all 4 factory presets: `ENV2→FILTER_CUTOFF +0.35 LIN`,
+  `LFO1→0xFFFD (PWM sentinel) +0.20 LIN`.
+- **`engine_set_routings(routings, count)`** added to `synth.h/cpp`.
+- 5 new host tests (77 total). `make test` ✅ `make host` ✅ `make build` ✅. App: 966 KB / 54% free.
+
+## 2026-06-28 — Stage 3c-i: full Juno param set as table rows (COMPLETE)
+
+- 13 new param ids; **kJunoParamCount: 24 → 37**. DSP hooks wired in JunoVoice.
+- OSC_WAVEFORM (cached only), HPF_CUTOFF (cached only — needs 2nd dsp::Filter).
+- 8 new host tests (85 total). `make test` ✅ `make host` ✅ `make build` ✅. App: 968 KB / 54% free.
+
+## 2026-06-28 — Stage 3c-ii: UI pages complete — all 37 rows reachable (COMPLETE)
+
+- **Fix:** `draw_rows` stateless "follow-selection" scroll. `visible=7`, clamped scroll_top.
+- All 37 rows reachable; no model knowledge added.
+- `make test` ✅ `make host` ✅ `make build` ✅. Flash: 968 KB / 54% free.
+
+## 2026-06-28 — Stage 3d-i: play modes (mono/portamento/legato) in the allocator (COMPLETE)
+
+- **Play modes** in `VoiceAlloc`: kPoly/kMono (retrigger)/kLegato. Last-note priority +
+  steal-back. Portamento glide via `IVoice::set_pitch_offset()`.
+- PLAY_MODE + PORTAMENTO_TIME params (GROUP_AMP). **kJunoParamCount: 37 → 39.**
+- 6 new host tests (91 total). `make test` ✅ `make host` ✅ `make build` ✅. App: 952 KB / 54% free.
+
+## 2026-06-29 — Stage 3d-ii: unison voice stacking + detune (COMPLETE — host side)
+
+- **Unison** added to `VoiceAlloc`. `set_unison_count(U)` / `set_unison_detune(cents)`.
+  Effective polyphony = floor(8/U). Detune: ±(cents/2)/100 semitones spread symmetrically.
+- UNISON_COUNT + UNISON_DETUNE params. **kJunoParamCount: 39 → 41.**
+- 5 new host tests (96 total). `make test` ✅ `make host` ✅ `make build` ✅. App: 973 KB / 54% free.
+
+## 2026-06-29 — Bug fix: unison U>=3 clipping (COMPLETE)
+
+- Equal-power `unison_gain(count) = 1/sqrt(U)` compensation in `engine/synth.cpp`.
+  5 new unison_gain tests (101 total). Flash unchanged.
+
+## 2026-06-29 — bench.c now drives real `synth_render` (Stage 3d-ii harness) (COMPLETE)
+
+- Section 3 in `engine/bench.c`: times `synth_render()` for nv=1..8 Juno voices.
+  Worst-case: U=8 + Chorus I. `make bench` ✅ (host orientation numbers).
+
+## 2026-06-29 — Stage 3 roll-up (Opus orchestration)
+
+Stage 3 code-complete (7 sub-stages, ADR 0017 model). Tests 52→101; app ~973 KB / 54% free.
+ONE OPEN ITEM: 🛑 3d-ii CPU gate pending Pascal's device bench.
+
+## 2026-06-29 — Two device CPU fixes (Fix A: -O2; Fix B: block-rate SVF cutoff)
+
+- Fix A: `CONFIG_COMPILER_OPTIMIZATION_PERF=y` (-O2). Fix B: `filter_.set_freq(cutoff_end)`
+  moved out of 64-sample inner loop (once/block). Image ~977 KB.
+
+## 2026-06-29 — Granular CPU bench: Section 4 + Section 5 (COMPLETE)
+
+- Section 4: idle synth_render overhead. Section 5 (`engine/bench_blocks.cpp`): per-block
+  costs of Osc/Filter/Env/Lfo/WhiteNoise/ModMatrix in isolation. `make bench` ✅.
+
+## 2026-06-29 — perf: LFO block-rate advance (one sinf/block) (COMPLETE)
+
+- `dsp::Lfo::process_block(n)` added; per-sample sinf in juno_voice inner loop removed.
+  Expected drop: ~23k → ~2k cyc/blk per LFO pair/voice. 1 new test (102 total).
+
+## 2026-06-29 — perf: change-gate per-block param push (COMPLETE)
+
+- `ParamStore::drain()` tracks changed params; steady state pushes nothing.
+  4 new host tests (89 total — note: test count reset from 102 to 89 reflects
+  test-file reorganisation at this point; test count climbed back from here).
+
+## 2026-06-29 — Stage 3d-ii CPU gate RATIFIED — Stage 3 COMPLETE (Opus 4.8)
+
+- 8 voices + U=8 + Chorus I = **50.8%** of 480k-cyc budget. Per-voice ~27.5k, fixed ~22k.
+  4.75× improvement arc (-O2, block-rate filter, block-rate LFO, change-gate params).
+  ADR 0003 stands; no cap needed. Numbers: `stage-3d-ii-results.md`.
+
+## 2026-06-29 — fix: shared free-running LFO (ADR 0018) — stale per-voice LFO phase bug CLOSED
+
+- `dsp::Lfo` moved from per-voice to shared pair (`s_lfo1`, `s_lfo2`) in `engine/synth.cpp`.
+  Per-note delay fade-in stays per-voice. Decision frozen in ADR 0018.
+- `make test` ✅ (102/102) `make host` ✅ `make build` ✅. Flash/DIRAM unchanged.
+
+## 2026-06-29 — investigation: residual per-note variation is free-running osc, NOT a bug
+
+- Osc phase ~100% of per-note variation. Decision (Pascal): keep oscillators free-running.
+  Bisection harness built + reverted (not committed). ENV2/filter/noise not contributing.
+
+## 2026-06-29 — Stage 3 closed; Stage 4 campaign brief authored
+
+- [`stages/stage-4-timing-arp-seq-fx.md`](stages/stage-4-timing-arp-seq-fx.md) authored.
+  5 kickoff gates (G1–G5). On resume: read brief + G1–G4, dispatch 4a clock work-order.
+
+## 2026-06-29 — Stage 4a-i: master clock core + transport API (COMPLETE)
+
+- **`engine/clock.h`** (header-only): `Clock` at 96 PPQN. `double` accumulator, tap tempo,
+  transport start/stop/cont. 11 new host tests (113 total). Flash: 146 KB DIRAM.
+
+## 2026-06-29 — Stage 4a-ii: event scheduler (COMPLETE)
+
+- **`engine/scheduler.h`** (header-only): `ScheduledEvent`, `Scheduler<Cap=64>`. Sub-block
+  offset computed, block-granular dispatch per ADR 0010. 6 new tests (119 total).
+
+## 2026-06-29 — Stage 4a-iii: CLOCK_BPM as a table param (COMPLETE)
+
+- CLOCK_BPM=0x01 in GROUP_GLOBAL; "Clock" page surfaces automatically.
+  **kJunoParamCount: 41 → 42.** 120/120 tests. Image: ~979 KB.
+
+## 2026-06-29 — ADR 0019 (note-gen seam); 4b decomposed + 4b-i dispatched (Opus 4.8)
+
+- Note generators run engine-side on audio thread. 4b split: 4b-i pure arp core →
+  4b-ii arp params → 4b-iii synth wiring.
+
+## 2026-06-29 — Stage 4b-i: arpeggiator pure core (COMPLETE)
+
+- **`engine/arp.h`** (header-only): kUp/kDown/kUpDown/kOrder/kRandom, kMaxHeld=16,
+  kMaxOctaves=4, latch. 14 new tests (134 total). Flash unchanged (not yet included).
+
+## 2026-06-29 — Stage 4b-ii: arp params + table + UI (COMPLETE — finished inline by Opus)
+
+- 7 ARP param rows (ids 0x08–0x0E), GROUP_ARP=10. **kJunoParamCount: 42 → 49.**
+  `PRESET_BLOB_MAX` 384→512. 139 tests. Image ~980 KB.
+
+## 2026-06-29 — Stage 4b-iii: arp wired into synth_render (COMPLETE)
+
+- **`engine/arp_clock.h`** (new): `arp_rate_ticks()` + `arp_advance_phase()`.
+  Note drain routes to `s_arp` when ARP_ON. Free-running clock for arp timing.
+  8 new tests (146 total). Image ~981 KB. Stage 4b COMPLETE.
+
+## 2026-06-29 — fix: UI page list capped at 8 hid the Arp page (Opus, inline)
+
+- `page_groups[8] → [16]`; guard bounds on `sizeof(page_groups)`. 146 tests still pass.
+
+## 2026-06-29 — Stage 4 PAUSED after 4b; Stage 5 (MIDI I/O) brief authored
+
+- Arp ratified by Pascal on device. Stage 4 deferred (4d FX, 4c seq).
+  [`stages/stage-5-midi-io.md`](stages/stage-5-midi-io.md) authored.
+
+## 2026-06-29 — Stage 5a-i: pure incremental MIDI parser + host tests (COMPLETE)
+
+- **`control/midi_in.h/c`** (new): `MidiMsgType` enum, `MidiMsg`, `MidiParser`.
+  Handles running status, RT byte interleave, vel-0→NoteOff normalisation.
+  7 new tests (153 total). `make test` ✅ `make host` ✅ `make build` ✅.
+
+## 2026-06-29 — Stage 5a-ii: MIDI HAL seam + RtMidi host backend + engine wire-in (COMPLETE)
+
+- **`platform/platform.h`**: `platform_midi_read()` seam added.
+- **`platform/host/midi_host.cpp`** (new): RtMidi backend, lazy-init, try/catch.
+- **`control/midi_router.h/c`** (new): owns `MidiParser`; polls + dispatches NOTE_ON/OFF omni.
+- **`app/app.c`**: `midi_router_init/poll` wired. Stage 5a COMPLETE.
+
+## 2026-06-29 — Stage 5d: USB-C MIDI device (TinyUSB) + PHY swap (COMPLETE — build-verified)
+
+- **`platform/device/midi_usb_device.h/c`** (new): PHY swap + `tinyusb_driver_install()`.
+  `platform_midi_read` = `tud_midi_stream_read()`. Flash 923 KB / DIRAM 153 KB.
+
+## 2026-06-29 — Stage 5d FIX: boot hang (wrong USB OTG port — HS vs FS)
+
+- `CONFIG_TINYUSB_RHPORT_FS=y` added; `midi_usb_device_init` hardened to fail-safe on error.
+
+## 2026-06-29 — Stage 5b-i: USB-A host MIDI bring-up spike (COMPLETE — build-verified)
+
+- **`platform/device/midi_usb_host.h/c`** (new, CC0): USB Host Library class driver spike.
+  VID/PID log + hex-dump of USB-MIDI 4-byte packets. `USBHOST_DEBUG=1` switch.
+
+## 2026-06-29 — Stage 5b-ii: USB-A host MIDI plays the synth (COMPLETE — build-verified)
+
+- de-packetize 4-byte USB-MIDI event packets → byte ring → `midi_usb_host_read()`.
+  `platform_midi_read` merges USB-C device + USB-A host. Both transports start in normal build.
+- **HARDWARE VERIFIED (Pascal, 2026-06-29):** USB-A controller plays; USB-C device +
+  USB-A host run simultaneously; Mac shows "Tanmatsu Synth". Stage 5b DONE.
+
+## 2026-06-29 — Stage 3c-iii spec authored (DOCS ONLY — ready to dispatch)
+
+- **`specs/stages/stage-3c-iii-osc-waveform-pwm.md`** (new) + **ADR 0020** authored.
+  `kModDestPwm=0xFFFD` canonical location established.
+
+## 2026-06-29 — Stage 3c-iii: OSC waveform switch + PWM wiring (COMPLETE)
+
+- `dsp/osc.h`: `set_waveform(int wf)` (0=SAW/1=PULSE/2=TRI) + `set_pw(float pw)`.
+- `engine/mod_matrix.h`: `kModDestPwm=0xFFFDu` + `pwm_mod` in `ModOutputs`.
+- `kPresetDestPwm` in `preset.cpp` removed; replaced with `kModDestPwm`.
+- 8 new tests (161 total). `make test` ✅ `make host` ✅ `make build` ✅. Flash: 1,106 KB (47% free).
+
+## 2026-06-29 — Four iconic Juno-106 factory presets added (COMPLETE)
+
+- Presets 4–7: 106 Strings (PULSE+LFO PWM+Chorus II), 106 Brass (PULSE+filter env),
+  Juno EP (PULSE+percussive), Solo Lead (PULSE+legato+U=2+vibrato routing).
+  Factory count: 4→8. Commit: `a8d27a9`.
+
+## 2026-06-29 — Four chiptune factory presets added (COMPLETE)
+
+- Presets 8–11: 8-Bit Lead (PULSE+VCA gate), Chip Arp (arp ON+130BPM), 8-Bit Bass (TRI+OCT-12),
+  Chip Noise (BP filter+VCF env). Factory count: 8→12. Commit: `df84aec`.
+
+## 2026-06-29 — Default boot patch is now "Solo Lead" (COMPLETE)
+
+- `preset_factory_default()` resolves by name; `ui_state_init` loads full preset+routings.
+
+## 2026-06-29 — Stage 5c-i: parser surfaces pitch-bend + channel-pressure (COMPLETE)
+
+- `MIDI_PITCH_BEND` + `MIDI_CHANNEL_PRESSURE` added to `MidiMsgType`. 5 new tests (158 total).
+
+## 2026-06-29 — Stage 5c-ii: engine MIDI-expression path (COMPLETE)
+
+- 5 new engine APIs: `engine_set_pitch_bend/mod_wheel/aftertouch`, `engine_all_notes_off`,
+  `engine_cc_to_param`. Direct ±2-semitone bend path per voice. Mod-wheel/AT as mod sources.
+  5 new tests (163 total). Flash: 995 KB.
+
+## 2026-06-29 — Stage 5c-iii: MIDI router dispatch + sustain pedal + CC→param (COMPLETE)
+
+- **`control/sustain.{h,c}`** (new): 128-bit bitmap defers note-offs during CC64 pedal-down.
+- `midi_router.c`: full switch dispatch on `MidiMsg.type`; bend/AT/CC/sustain/panic wired.
+- `LFO1_DEPTH` midi_cc changed 1→0xFF (unbound; CC1 is now mod-wheel special-case only).
+- 6 new tests in `test_sustain.cpp` (169 total). Flash: 1,109 KB (47% free).
+  Stage 5c COMPLETE.
