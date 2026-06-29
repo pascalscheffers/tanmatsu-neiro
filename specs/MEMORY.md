@@ -746,6 +746,26 @@ latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.*
   `ParamDesc.midi_cc`), then 5e (SMF player) and optional 5f (MIDI-clock-in). MIDI in (5a host
   RtMidi + 5d USB-C device + 5b USB-A host) is functionally complete and hardware-proven.
 
+## 2026-06-29 — Stage 3c-iii spec authored (DOCS ONLY — ready to dispatch)
+
+- **`specs/stages/stage-3c-iii-osc-waveform-pwm.md`** (new): full work-order for wiring
+  OSC_WAVEFORM, OSC_PWM, and `kModDestPwm` end-to-end. 6-file touch budget; pre-ratified
+  decisions; acceptance criteria + 9 new tests specified.
+- **`specs/decisions/0020-sub-osc-stays-saw.md`** (new): ADR 0020 records the deliberate
+  scope cut — `osc_sub_` stays SAW; main oscillator carries all three waveforms.
+  Brief chiptune feasibility note included in the stage doc.
+- **`specs/MAP.md`** updated: `dsp::Osc::set_waveform/set_pw` seam entries added; mod_matrix
+  `kModDestPwm` / `ModOutputs::pwm_mod` seam entries added.
+- **Key decision (pre-ratified):** `kPresetDestPwm=0xFFFD` in `preset.cpp` is unified with a new
+  `kModDestPwm=0xFFFD` in `mod_matrix.h`. Numeric value is identical — no preset format bump.
+- **Inconsistency found (code worker must fix):** `kPresetDestPwm` currently lives as a
+  `static constexpr` in `preset.cpp` only; it must be removed there and replaced with
+  `kModDestPwm` from `mod_matrix.h` (same value, just the canonical location moves).
+- **ADR numbering note:** ADRs 0018 has two files (`0018-shared-free-running-lfo.md` and
+  `0018-usb-c-device-midi-first.md`) — a collision. ADR 0020 is used here as the next safe
+  free number (skipping 0019 which is taken by note-generators-engine-side).
+- **Next:** dispatch Stage 3c-iii code worker with the new stage doc.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

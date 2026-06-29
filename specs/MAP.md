@@ -37,11 +37,24 @@ Paths are relative to repo root. Dependencies live in `managed_components/` (ESP
 - `engine/synth_config.h` — named constants (sample rate, block, `kNumVoices`, table sizes).
   No magic numbers in DSP — they live here.
 - `engine/bench.{c,h}` — Stage 0.5 CPU bench (built under `BENCH=1`).
+- `engine/mod_matrix.h` — **`ModMatrix`** (16-slot fixed modulation matrix, ADR 0009).
+  Key seams for Stage 3c-iii:
+  - `kModDestPitch = 0xFFFE` — virtual dest: semitone pitch offset (already wired).
+  - `kModDestPwm = 0xFFFD` — virtual dest: pulse-width offset (Stage 3c-iii). Was
+    `kPresetDestPwm` local to `preset.cpp`; promoted here so `juno_voice.cpp` can read it.
+  - `ModOutputs::pwm_mod` — new field accumulating the LFO1→PWM routing (Stage 3c-iii).
+    Applied in `JunoVoice::render()` as: `pw = clamp(p_osc_pwm_ + mout.pwm_mod, 0.05f, 0.95f)`.
+  - `ModOutputs` seeding: all accumulators start at `+1e-20f` (ADR 0012 denormal guard).
 
 ## dsp/ — pure, portable blocks (no ESP-IDF, no I/O, no globals)
 - `dsp/osc.h` / `dsp/filter.h` / `dsp/env.h` — header-only wrappers over DaisySP
   (Oscillator / SVF / Adsr) with our seam (MIDI note in, anti-denormal per ADR 0012). Wrap,
   don't edit vendor.
+  - `dsp::Osc::set_waveform(int wf)` — set main osc waveform: 0=SAW, 1=PULSE, 2=TRI
+    (maps to `WAVE_POLYBLEP_SAW/SQUARE/TRI`; out-of-range clamps to SAW). Stage 3c-iii.
+  - `dsp::Osc::set_pw(float pw)` — set pulse width for PULSE waveform; delegates to
+    `daisysp::Oscillator::SetPw()`. JunoVoice applies once per block at [0.05, 0.95]
+    after adding `mout.pwm_mod`. Stage 3c-iii.
 - `dsp/saturate.h` — `soft_clip(float)`: the master soft-clip ceiling (ADR 0016).
 - `dsp/vendor/daisysp/` — vendored DaisySP (pinned SHA in MEMORY/ledger). Read-only; don't open
   unless a work-order points at a specific file.
