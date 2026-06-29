@@ -69,6 +69,22 @@ public:
         return out;
     }
 
+    // Advance the LFO by n samples in one step and return the block-end output.
+    // Equivalent (to sub-sample phase precision) to calling process() n times and
+    // using the final value — but computes the waveform (e.g. sinf) only ONCE per
+    // block. Use this from block-rate callers (e.g. juno_voice render()).
+    float process_block(uint32_t n) {
+        phase_ += phase_inc_ * (float)n;
+        // Wrap; re-latch S&H on each cycle boundary crossed (rare at sub-audio rates).
+        while (phase_ >= 1.0f) {
+            phase_ -= 1.0f;
+            if (wave_ == LfoWave::SH) {
+                sh_value_ = ((float)rand() / (float)RAND_MAX) * 2.0f - 1.0f;
+            }
+        }
+        return compute(phase_);
+    }
+
     // Reset phase accumulator to 0 (re-sync).
     void reset() {
         phase_    = 0.0f;

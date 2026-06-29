@@ -310,17 +310,6 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
     float amp_step    = (amp_end      - p_osc_level_)   * inv_n;
 
     float e2 = env2_value_;
-    float l1 = lfo1_value_;
-    float l2 = lfo2_value_;
-
-    // LFO delay fade-in: scale applied depth based on how far past the delay
-    // threshold each LFO is. If delay == 0, scale == 1 (no delay).
-    float l1_delay_scale = (lfo1_delay_samples_ < 1.0f) ? 1.0f
-        : (lfo1_delay_pos_ >= lfo1_delay_samples_ ? 1.0f
-           : lfo1_delay_pos_ / lfo1_delay_samples_);
-    float l2_delay_scale = (lfo2_delay_samples_ < 1.0f) ? 1.0f
-        : (lfo2_delay_pos_ >= lfo2_delay_samples_ ? 1.0f
-           : lfo2_delay_pos_ / lfo2_delay_samples_);
 
     for (size_t i = 0; i < n; i++) {
         // Per-sample modulated freq (smooth pitch mod).
@@ -348,29 +337,36 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
         }
         buf[i] += filtered * env_val * p_vca_level_;
 
-        // Stage 3a: advance mod sources at audio rate so they're ready
-        // for the next block's matrix eval. Apply LFO delay fade-in scale.
+        // Stage 3a: advance ENV2 at audio rate so its per-sample state machine
+        // is exact; cache the last sample for the next block's mod-matrix eval.
         e2 = env2_.process(gate_);
-        l1 = lfo1_.process() * p_lfo1_depth_ * l1_delay_scale;
-        l2 = lfo2_.process() * p_lfo2_depth_ * l2_delay_scale;
-
-        // Advance delay position counters (capped to avoid float overflow on
-        // very long sustained notes).
-        if (gate_) {
-            if (lfo1_delay_pos_ < lfo1_delay_samples_) {
-                lfo1_delay_pos_ += 1.0f;
-                l1_delay_scale = (lfo1_delay_samples_ < 1.0f) ? 1.0f
-                    : lfo1_delay_pos_ / lfo1_delay_samples_;
-            }
-            if (lfo2_delay_pos_ < lfo2_delay_samples_) {
-                lfo2_delay_pos_ += 1.0f;
-                l2_delay_scale = (lfo2_delay_samples_ < 1.0f) ? 1.0f
-                    : lfo2_delay_pos_ / lfo2_delay_samples_;
-            }
-        }
     }
 
-    // Cache last-sample values for the mod matrix accessor.
+    // LFOs are advanced once per block (block-rate). Only the final per-block
+    // value is ever used (cached into lfo1_value_/lfo2_value_ for the next block's
+    // mod-matrix eval). Advancing per-sample would compute 63 discarded sinf calls.
+    // LFO delay fade-in: advance the position counter by the whole block, then
+    // compute the applied-depth scale once (block-granular fade is inaudible).
+    if (gate_) {
+        if (lfo1_delay_pos_ < lfo1_delay_samples_) {
+            lfo1_delay_pos_ += (float)n;
+            if (lfo1_delay_pos_ > lfo1_delay_samples_) lfo1_delay_pos_ = lfo1_delay_samples_;
+        }
+        if (lfo2_delay_pos_ < lfo2_delay_samples_) {
+            lfo2_delay_pos_ += (float)n;
+            if (lfo2_delay_pos_ > lfo2_delay_samples_) lfo2_delay_pos_ = lfo2_delay_samples_;
+        }
+    }
+    float l1_delay_scale = (lfo1_delay_samples_ < 1.0f) ? 1.0f
+        : (lfo1_delay_pos_ >= lfo1_delay_samples_ ? 1.0f
+           : lfo1_delay_pos_ / lfo1_delay_samples_);
+    float l2_delay_scale = (lfo2_delay_samples_ < 1.0f) ? 1.0f
+        : (lfo2_delay_pos_ >= lfo2_delay_samples_ ? 1.0f
+           : lfo2_delay_pos_ / lfo2_delay_samples_);
+    float l1 = lfo1_.process_block((uint32_t)n) * p_lfo1_depth_ * l1_delay_scale;
+    float l2 = lfo2_.process_block((uint32_t)n) * p_lfo2_depth_ * l2_delay_scale;
+
+    // Cache last-block values for the mod matrix accessor.
     env2_value_ = e2;
     lfo1_value_ = l1;
     lfo2_value_ = l2;

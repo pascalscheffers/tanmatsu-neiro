@@ -355,6 +355,45 @@ void test_env2_per_voice_independent() {
     test_pass();
 }
 
+/* --- 10. process_block(n) advances phase by exactly n steps (SINE) ---------- */
+void test_lfo_process_block() {
+    test_begin("dsp::Lfo: process_block(n) advances phase by n steps, output matches");
+
+    const uint32_t N = 64;
+
+    // process() returns compute(phase_before_advance), then advances phase.
+    // process_block(N) advances phase by N, then returns compute(phase_after_advance).
+    // So process_block(N) is equivalent to calling process() N+1 times and using
+    // only the LAST call — or equivalently, calling process() N times and calling
+    // process() one more time (which advances phase to the same point as process_block
+    // but also samples there).
+    //
+    // Verify: after N calls to process(), calling process() once more gives the
+    // same value as process_block(N) did (both sample at phase = N * phase_inc).
+
+    dsp::Lfo lfo_ref;
+    lfo_ref.init(kSampleRate);
+    lfo_ref.set_rate(5.3f);
+    lfo_ref.set_waveform(dsp::LfoWave::SINE);
+    // Run N per-sample steps, discard outputs (phase advances to N * phase_inc).
+    for (uint32_t i = 0; i < N; i++) lfo_ref.process();
+    // One more process() samples at phase N * phase_inc (before its own advance).
+    float ref_val = lfo_ref.process();
+
+    // Block path: process_block(N) advances phase by N then samples at that phase.
+    dsp::Lfo lfo_block;
+    lfo_block.init(kSampleRate);
+    lfo_block.set_rate(5.3f);
+    lfo_block.set_waveform(dsp::LfoWave::SINE);
+    float block_val = lfo_block.process_block(N);
+
+    // Both sampled at phase = N * phase_inc → should agree within float rounding.
+    float diff = fabsf(block_val - ref_val);
+    TEST_ASSERT(diff < 1e-5f,
+        "process_block(64) must match reference (64 process() steps + 1 sample) within 1e-5");
+    test_pass();
+}
+
 /* Entry point declared in main.cpp */
 void test_mod_sources_suite() {
     test_env2_independent_from_env1();
@@ -366,4 +405,5 @@ void test_mod_sources_suite() {
     test_lfo_sh_piecewise_constant();
     test_lfo_output_range();
     test_env2_per_voice_independent();
+    test_lfo_process_block();
 }
