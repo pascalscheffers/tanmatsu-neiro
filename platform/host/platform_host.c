@@ -217,6 +217,27 @@ bool platform_poll_event(platform_event_t* out) {
                     case SDLK_RIGHT:
                         key = PLATFORM_KEY_RIGHT;
                         break;
+                    // Shape buttons (F1–F6): map to PLATFORM_KEY_F1–F6.
+                    // Auto-repeat is already blocked for non-nav keys above, so
+                    // only real down/up edges reach here.
+                    case SDLK_F1:
+                        key = PLATFORM_KEY_F1;
+                        break;
+                    case SDLK_F2:
+                        key = PLATFORM_KEY_F2;
+                        break;
+                    case SDLK_F3:
+                        key = PLATFORM_KEY_F3;
+                        break;
+                    case SDLK_F4:
+                        key = PLATFORM_KEY_F4;
+                        break;
+                    case SDLK_F5:
+                        key = PLATFORM_KEY_F5;
+                        break;
+                    case SDLK_F6:
+                        key = PLATFORM_KEY_F6;
+                        break;
                     default:
                         break;
                 }

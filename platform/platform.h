@@ -50,6 +50,16 @@ typedef enum {
 #define PLATFORM_KEY_LEFT  0x0102
 #define PLATFORM_KEY_RIGHT 0x0103
 
+// Shape-button key codes (the six buttons above the number row on the badge,
+// left-to-right: F1=X, F2=triangle, F3=square, F4=circle, F5=three-lobe,
+// F6=diamond). On device: BSP_INPUT_NAVIGATION_KEY_F1…F6. On host: SDLK_F1…F6.
+#define PLATFORM_KEY_F1 0x0110
+#define PLATFORM_KEY_F2 0x0111
+#define PLATFORM_KEY_F3 0x0112
+#define PLATFORM_KEY_F4 0x0113
+#define PLATFORM_KEY_F5 0x0114
+#define PLATFORM_KEY_F6 0x0115
+
 // Modifier flags for PLATFORM_EV_KEY events.
 #define PLATFORM_MOD_SHIFT (1u << 0)
 

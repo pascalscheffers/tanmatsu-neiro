@@ -362,6 +362,24 @@ bool platform_poll_event(platform_event_t* out) {
             case BSP_INPUT_NAVIGATION_KEY_RIGHT:
                 mapped_key = PLATFORM_KEY_RIGHT;
                 break;
+            case BSP_INPUT_NAVIGATION_KEY_F1:
+                mapped_key = PLATFORM_KEY_F1;
+                break;
+            case BSP_INPUT_NAVIGATION_KEY_F2:
+                mapped_key = PLATFORM_KEY_F2;
+                break;
+            case BSP_INPUT_NAVIGATION_KEY_F3:
+                mapped_key = PLATFORM_KEY_F3;
+                break;
+            case BSP_INPUT_NAVIGATION_KEY_F4:
+                mapped_key = PLATFORM_KEY_F4;
+                break;
+            case BSP_INPUT_NAVIGATION_KEY_F5:
+                mapped_key = PLATFORM_KEY_F5;
+                break;
+            case BSP_INPUT_NAVIGATION_KEY_F6:
+                mapped_key = PLATFORM_KEY_F6;
+                break;
             default:
                 out->type = PLATFORM_EV_NONE;
                 return true;
