@@ -236,6 +236,23 @@ sentinel can collapse into `ParamId::OSC_PWM` (which now exists since 3c-i).
 2nd engine) — informed by the real CPU headroom the device bench reveals (the per-voice cost
 grew a lot vs the Stage 0.5 proxy).
 
+## 2026-06-29 — Two device CPU fixes (Fix A: -O2; Fix B: block-rate SVF cutoff) (COMPLETE)
+
+Root-caused by Opus (bench showed ~131k cyc/blk/voice vs 2.6k for the Stage 0.5 proxy).
+- **Fix A:** `sdkconfigs/general` → `CONFIG_COMPILER_OPTIMIZATION_PERF=y` (was debug/-Og).
+  `-O2` confirmed in `build/tanmatsu/compile_commands.json` on juno_voice compile unit.
+  `sdkconfig_tanmatsu` (generated cache) updated consistently for the current session.
+- **Fix B:** `engine/juno_voice.cpp` — `filter_.set_freq(cutoff_end)` moved out of the
+  64-sample inner loop to once per block (before the loop, after `set_res()`). Eliminates
+  a `sinf`+`powf` per sample per voice. Per-sample osc freq + amp ramps unchanged.
+  Cutoff mod bandwidth: 750 Hz at 64/48k — inaudible for Juno filter sweeps.
+- All 73 host tests pass unchanged (cutoff-mod-in-voice test asserts RMS change across
+  200 blocks — unaffected by block-rate cutoff). Membrane clean.
+- `make size`: total image 1,000,970 bytes (~977 KiB; 52% partition free).
+- **🛑 3d-ii device CPU gate stays open** — these fixes should each cut voice cost
+  substantially, but the actual device numbers require Pascal's `make bench-device` re-run.
+  Opus clears the gate after the re-bench confirms the budget.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
