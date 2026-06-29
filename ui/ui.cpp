@@ -15,6 +15,7 @@
 #include "pax_fonts.h"
 #include "pax_text.h"
 #include "platform.h"
+#include "ui_icons.h"
 #include "ui_overlay.h"
 #include "ui_presets.h"
 
@@ -783,9 +784,48 @@ static void draw_status(pax_buf_t* fb, const UIState* s) {
     // Preset name.
     pax_draw_text(fb, COL_TEXT, pax_font_sky_mono, FONT_SM, 280.0f, text_y, s->preset_name);
 
-    // Key hints.
-    pax_draw_text(fb, COL_DIM, pax_font_sky_mono, FONT_SM - 2.0f, 430.0f, text_y,
-                  "<>pg  ^v row  F1/F2 nudge  F3 back  F6 save  ESC");
+    // Key hints — icons for the badge button shapes, followed by action words.
+    // Icon size matches text height; cy is vertically centred on the text row.
+    {
+        const float isz = FONT_SM + 2.0f;           // icon bounding size
+        const float icy = text_y + FONT_SM * 0.5f;  // icon cy (centred on text)
+        const float tsz = FONT_SM - 2.0f;           // hint text size (compact)
+        float       hx  = 430.0f;
+
+        // Static prefix.
+        pax_vec2f adv = pax_draw_text(fb, COL_DIM, pax_font_sky_mono, tsz, hx, text_y, "<>pg  ^v row  ");
+        hx           += adv.x;
+
+        // △ ✕ nudge
+        ui_icon_draw(fb, UI_ICON_TRIANGLE, hx + isz * 0.5f, icy, isz, COL_DIM);
+        hx += ui_icon_width(isz);
+        ui_icon_draw(fb, UI_ICON_CROSS, hx + isz * 0.5f, icy, isz, COL_DIM);
+        hx += ui_icon_width(isz);
+        adv = pax_draw_text(fb, COL_DIM, pax_font_sky_mono, tsz, hx, text_y, "nudge  ");
+        hx += adv.x;
+
+        // □ back
+        ui_icon_draw(fb, UI_ICON_SQUARE, hx + isz * 0.5f, icy, isz, COL_DIM);
+        hx += ui_icon_width(isz);
+        adv = pax_draw_text(fb, COL_DIM, pax_font_sky_mono, tsz, hx, text_y, "back  ");
+        hx += adv.x;
+
+        // ☘ keys
+        ui_icon_draw(fb, UI_ICON_TRILOBE, hx + isz * 0.5f, icy, isz, COL_DIM);
+        hx += ui_icon_width(isz);
+        adv = pax_draw_text(fb, COL_DIM, pax_font_sky_mono, tsz, hx, text_y, "keys  ");
+        hx += adv.x;
+
+        // ◇ save
+        ui_icon_draw(fb, UI_ICON_DIAMOND, hx + isz * 0.5f, icy, isz, COL_DIM);
+        hx += ui_icon_width(isz);
+        adv = pax_draw_text(fb, COL_DIM, pax_font_sky_mono, tsz, hx, text_y, "save  ");
+        hx += adv.x;
+
+        // ESC (no shape — key cap text only).
+        (void)hx;
+        pax_draw_text(fb, COL_DIM, pax_font_sky_mono, tsz, hx, text_y, "ESC");
+    }
 }
 
 extern "C" void ui_draw(pax_buf_t* fb, uint64_t millis, const UIState* s) {

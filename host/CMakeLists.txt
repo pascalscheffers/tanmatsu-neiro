@@ -64,7 +64,8 @@ set(HOST_SRCS
     "${REPO_ROOT}/control/sustain.c"
     "${REPO_ROOT}/ui/ui_presets.cpp"
     "${REPO_ROOT}/ui/ui_presets_state.cpp"
-    "${REPO_ROOT}/ui/ui_overlay.cpp")
+    "${REPO_ROOT}/ui/ui_overlay.cpp"
+    "${REPO_ROOT}/ui/ui_icons.cpp")
 
 if(SYNTH_BENCH)
     list(APPEND HOST_SRCS "${REPO_ROOT}/engine/bench.c")

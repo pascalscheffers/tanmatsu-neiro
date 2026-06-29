@@ -9,6 +9,7 @@
 #include "engine/preset.h"
 #include "pax_fonts.h"
 #include "pax_text.h"
+#include "ui_icons.h"
 #include "ui_presets_state.h"
 
 // ---------------------------------------------------------------------------
@@ -107,11 +108,12 @@ extern "C" void ui_presets_draw(pax_buf_t* fb, const UIState* s) {
         }
 
         // Active-preset dot — shows which patch is currently committed.
+        // Drawn as a filled circle rather than a glyph (U+25CF is not in pax_font_sky_mono).
         if (is_active) {
             // Cyan dot = committed; magenta dot = snapshot behind an audition.
             uint32_t dot_col = (s->auditioning && is_cursor) ? COL_ACCENT2 : COL_ACCENT;
-            pax_draw_text(fb, dot_col, pax_font_sky_mono, FONT_MD, 28.0f, mid_y - FONT_MD * 0.5f,
-                          "\xE2\x97\x8F");  // UTF-8 U+25CF BLACK CIRCLE
+            float    dot_r   = FONT_MD * 0.18f;
+            pax_simple_circle(fb, dot_col, 28.0f + dot_r, mid_y, dot_r);
         }
 
         // Preset name.
@@ -149,6 +151,28 @@ extern "C" void ui_presets_draw(pax_buf_t* fb, const UIState* s) {
     pax_simple_rect(fb, COL_BG, 0.0f, band_y, SCREEN_W, hint_h);
     pax_simple_rect(fb, COL_SEP, 0.0f, band_y, SCREEN_W, 1.0f);
     float hint_y = band_y + (hint_h - (FONT_SM - 1.0f)) * 0.5f;
-    pax_draw_text(fb, COL_DIM, pax_font_sky_mono, FONT_SM - 1.0f, 8.0f, hint_y,
-                  "^/v: browse  F4/Enter: confirm  F3/Esc: revert  <>: page");
+    // Hint strip: arrows stay as ASCII; ○ = load/confirm, □ = back, drawn as icons.
+    {
+        const float tsz = FONT_SM - 1.0f;
+        const float isz = tsz + 2.0f;           // icon bounding size
+        const float icy = hint_y + tsz * 0.5f;  // icon cy centred on text
+        float       hx  = 8.0f;
+        pax_vec2f   adv;
+
+        adv = pax_draw_text(fb, COL_DIM, pax_font_sky_mono, tsz, hx, hint_y, "^v browse  ");
+        hx += adv.x;
+
+        ui_icon_draw(fb, UI_ICON_CIRCLE, hx + isz * 0.5f, icy, isz, COL_DIM);
+        hx += ui_icon_width(isz);
+        adv = pax_draw_text(fb, COL_DIM, pax_font_sky_mono, tsz, hx, hint_y, " load  ");
+        hx += adv.x;
+
+        ui_icon_draw(fb, UI_ICON_SQUARE, hx + isz * 0.5f, icy, isz, COL_DIM);
+        hx += ui_icon_width(isz);
+        adv = pax_draw_text(fb, COL_DIM, pax_font_sky_mono, tsz, hx, hint_y, " back  ");
+        hx += adv.x;
+
+        (void)hx;
+        pax_draw_text(fb, COL_DIM, pax_font_sky_mono, tsz, hx, hint_y, "<> page");
+    }
 }

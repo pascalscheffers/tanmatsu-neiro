@@ -8,6 +8,7 @@
 #include "control/keyboard.h"
 #include "pax_fonts.h"
 #include "pax_text.h"
+#include "ui_icons.h"
 
 // ---------------------------------------------------------------------------
 // Colors (synthwave palette — mirrors ui.cpp definitions; kept local so this
@@ -169,6 +170,15 @@ extern "C" void ui_overlay_draw_keyguide(pax_buf_t* fb, const UIState* s) {
     snprintf(oct_buf, sizeof(oct_buf), "Oct %d", oct);
     pax_draw_text(fb, COL_ACCENT, pax_font_sky_mono, FONT_SM, PANEL_X + 12.0f, footer_y, oct_buf);
 
-    pax_draw_text(fb, COL_DIM, pax_font_sky_mono, FONT_SM, PANEL_X + 70.0f, footer_y,
-                  "Z/X = oct down/up     F5 = close");
+    // "Z/X = oct down/up" stays as text; F5 (trilobe) drawn as a shape icon + "close".
+    {
+        pax_vec2f adv =
+            pax_draw_text(fb, COL_DIM, pax_font_sky_mono, FONT_SM, PANEL_X + 70.0f, footer_y, "Z/X = oct down/up     ");
+        float hx  = PANEL_X + 70.0f + adv.x;
+        float isz = FONT_SM + 2.0f;
+        float icy = footer_y + FONT_SM * 0.5f;
+        ui_icon_draw(fb, UI_ICON_TRILOBE, hx + isz * 0.5f, icy, isz, COL_DIM);
+        hx += ui_icon_width(isz);
+        pax_draw_text(fb, COL_DIM, pax_font_sky_mono, FONT_SM, hx, footer_y, " close");
+    }
 }
