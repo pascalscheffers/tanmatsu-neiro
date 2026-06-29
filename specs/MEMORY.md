@@ -737,10 +737,14 @@ latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.*
   - `make build USBHOST_DEBUG=1` ✅ debug: `0x108dd0` bytes (48% free) — host-only
   - `make test` ✅ (153/153 — no host-test/parser/engine code touched)
   - `make format` ✅ idempotent
-- **Stage 5b COMPLETE** (pending Pascal's audible hardware check): normal build — USB-A MIDI
-  controller plays the synth; USB-C MIDI from Mac still works simultaneously. Debug build —
-  same with console logs.
-- **Still open:** Stage 5c — expression/CC map (bend/mod/AT/sustain/panic, CC→param).
+- **Stage 5b VERIFIED ON HARDWARE (2026-06-29, Pascal):** normal AND debug builds both play.
+  USB-A controller plays the synth; **USB-C device + USB-A host run simultaneously** (Mac shows
+  "Tanmatsu Synth" and both sources play at once) — device(FS)+host(HS) coexistence confirmed.
+  Boots clean regardless of the launcher's inherited USB mode; USB-A controller also works when
+  already plugged in at cold start. **Stage 5b DONE.**
+- **Still open:** Stage 5c — expression/CC map (bend/mod/AT/sustain/panic, CC→param via
+  `ParamDesc.midi_cc`), then 5e (SMF player) and optional 5f (MIDI-clock-in). MIDI in (5a host
+  RtMidi + 5d USB-C device + 5b USB-A host) is functionally complete and hardware-proven.
 
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).

@@ -48,6 +48,10 @@ host-testable), so engine-side MIDI is proven before the device USB-host spike. 
 feasibility spike (Explore/triage)** precedes committing 5b scope (gate G1).
 
 ## Sub-stage decomposition (suggested — confirm at kickoff)
+**Status (2026-06-29):** ✅ 5a (host RtMidi + parser/router), ✅ 5d (USB-C device, TinyUSB),
+✅ 5b (USB-A host, vendored CC0 class driver) — all hardware-verified; device+host coexist.
+Remaining: 5c (expression/CC), 5e (SMF player), optional 5f (MIDI-clock-in).
+
 **5a — MIDI HAL seam + host (RtMidi) backend + note-event normalization (FOUNDATION).** Add the
 MIDI transport seam to `platform.h` (poll/queue incoming messages; out path stubbed). Host impl =
 RtMidi. New `control/midi_in.{c,h}`: parse MIDI bytes → `engine_note_on/off` + expression/CC,
