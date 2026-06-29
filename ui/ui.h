@@ -38,6 +38,9 @@ typedef struct {
     char  audition_preset_name[33];               // pre-audition preset_name copy
     int   audition_preset_idx;                    // pre-audition preset_idx copy
 
+    // Key-guide overlay toggle (WO-6, F5 three-lobe button).
+    bool show_keyguide;  // true = draw the musical-typing overlay on top of any page
+
     // Hold-to-repeat state (WO-5, F1/F2 shape buttons).
     int      held_dir;       // 0=none, -1=F1 (down), +1=F2 (up)
     int      held_row;       // row index when hold started (detect row change)

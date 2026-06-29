@@ -57,6 +57,7 @@ idf_component_register(
 		"../ui/ui.cpp"
 		"../ui/ui_presets.cpp"
 		"../ui/ui_presets_state.cpp"
+		"../ui/ui_overlay.cpp"
 		"../platform/device/platform_device.c"
 		"../platform/device/midi_usb_device.c"
 		"../platform/device/midi_usb_host.c"

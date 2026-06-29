@@ -100,3 +100,7 @@ bool keyboard_handle_event(const platform_event_t* ev) {
 int keyboard_octave(void) {
     return s_octave;
 }
+
+int keyboard_semitone_for_key(int key) {
+    return key_to_semitone(key);
+}

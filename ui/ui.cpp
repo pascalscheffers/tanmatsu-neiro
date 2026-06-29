@@ -15,6 +15,7 @@
 #include "pax_fonts.h"
 #include "pax_text.h"
 #include "platform.h"
+#include "ui_overlay.h"
 #include "ui_presets.h"
 
 // ---------------------------------------------------------------------------
@@ -400,6 +401,13 @@ extern "C" bool ui_handle_event(UIState* s, const platform_event_t* ev) {
 
     // From here: pressed events only.
 
+    // F5 (three-lobe): global key-guide overlay toggle — handled before page branching
+    // so it works on any page and is never swallowed by the preset handler.
+    if (ev->key == PLATFORM_KEY_F5) {
+        s->show_keyguide = !s->show_keyguide;
+        return true;
+    }
+
     // Delegate all events on the preset page to ui_presets_handle_event().
     // Left/Right are special: the preset handler reverts then returns false so
     // we fall through to do the page switch below.
@@ -438,9 +446,6 @@ extern "C" bool ui_handle_event(UIState* s, const platform_event_t* ev) {
             case PLATFORM_KEY_F4:
                 // Circle button: no-op on parameter pages (confirm is preset-page only).
                 return true;
-            case PLATFORM_KEY_F5:
-                // Three-lobe button: reserved for key-guide overlay (later WO).
-                return false;
             case PLATFORM_KEY_F6:
                 // Diamond button: save user preset.
                 save_user_preset(s);
@@ -793,4 +798,7 @@ extern "C" void ui_draw(pax_buf_t* fb, uint64_t millis, const UIState* s) {
         draw_rows(fb, s);
     }
     draw_status(fb, s);
+    if (s->show_keyguide) {
+        ui_overlay_draw_keyguide(fb, s);
+    }
 }
