@@ -46,6 +46,20 @@ static const Routing k_clean_106_routings[] = {
 };
 static constexpr int k_clean_106_count = (int)(sizeof(k_clean_106_routings) / sizeof(k_clean_106_routings[0]));
 
+// "106 Strings" routings — slow LFO PWM sweep (the Juno signature) + filter env.
+static const Routing k_pwm_strings_routings[] = {
+    {(uint8_t)ModSource::ENV2, (uint16_t)ParamId::FILTER_CUTOFF, +0.20f, (uint8_t)ModCurve::LIN},
+    {(uint8_t)ModSource::LFO1, kModDestPwm, +0.35f, (uint8_t)ModCurve::LIN},
+};
+static constexpr int k_pwm_strings_count = (int)(sizeof(k_pwm_strings_routings) / sizeof(k_pwm_strings_routings[0]));
+
+// "Solo Lead" routings — delayed vibrato (LFO1→pitch) + filter env.
+static const Routing k_vibrato_lead_routings[] = {
+    {(uint8_t)ModSource::ENV2, (uint16_t)ParamId::FILTER_CUTOFF, +0.35f, (uint8_t)ModCurve::LIN},
+    {(uint8_t)ModSource::LFO1, kModDestPitch, +0.10f, (uint8_t)ModCurve::LIN},
+};
+static constexpr int k_vibrato_lead_count = (int)(sizeof(k_vibrato_lead_routings) / sizeof(k_vibrato_lead_routings[0]));
+
 struct FactoryPreset {
     const char*    name;
     uint16_t       ids[64];  // Stage 4b-ii: widened from 48 → 64 to hold 49 params + future growth
@@ -179,6 +193,162 @@ static const FactoryPreset
                 49,
                 k_clean_106_routings,
                 k_clean_106_count,
+            },
+            // 4: 106 Strings — the defining Juno-106 sound: slow LFO PWM sweep, lush Chorus II, poly
+            // OSC_WAVEFORM=1 (PULSE), slow LFO (0.4 Hz) sweeping PWM depth 0.35; Chorus II (2=wide).
+            {
+                "106 Strings",
+                {ParamId::OSC_LEVEL,     ParamId::SUB_LEVEL,     ParamId::NOISE_LEVEL,     ParamId::OSC_PWM,
+                 ParamId::OSC_WAVEFORM,  ParamId::OSC_RANGE,     ParamId::FILTER_CUTOFF,   ParamId::FILTER_RES,
+                 ParamId::FILTER_MODE,   ParamId::HPF_CUTOFF,    ParamId::VCF_ENV_DEPTH,   ParamId::VCF_ENV_POLARITY,
+                 ParamId::VCF_KEY_TRACK, ParamId::VCF_LFO_DEPTH, ParamId::ENV_ATTACK,      ParamId::ENV_DECAY,
+                 ParamId::ENV_SUSTAIN,   ParamId::ENV_RELEASE,   ParamId::ENV2_ATTACK,     ParamId::ENV2_DECAY,
+                 ParamId::ENV2_SUSTAIN,  ParamId::ENV2_RELEASE,  ParamId::LFO1_RATE,       ParamId::LFO1_DEPTH,
+                 ParamId::LFO1_SHAPE,    ParamId::LFO1_DELAY,    ParamId::LFO2_RATE,       ParamId::LFO2_DEPTH,
+                 ParamId::LFO2_SHAPE,    ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,
+                 ParamId::CHORUS_DELAY,  ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,
+                 ParamId::VCA_LEVEL,     ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,
+                 ParamId::UNISON_DETUNE, ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,
+                 ParamId::ARP_RATE,      ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,
+                 ParamId::ARP_LATCH},
+                /* OSC: pulse wave, PWM=0.5 base, sub gentle, no noise */
+                {0.80f, 0.20f, 0.00f, 0.50f, 1.0f, 0.0f,
+                 /* FILTER: warm LP cutoff, low res, no HPF; gentle filter env mod */
+                 1800.0f, 0.15f, 0.0f, 20.0f, 0.20f, 0.0f, 0.50f, 0.0f,
+                 /* AMP ENV: slow attack and release for strings swell */
+                 0.40f, 0.80f, 0.85f, 1.20f,
+                 /* ENV2: slower sweep for filter mod — A=0.6/D=1.0/S=0.5/R=1.0 */
+                 0.60f, 1.00f, 0.50f, 1.00f,
+                 /* LFO1: slow (0.4 Hz) SINE PWM sweep; LFO2 idle */
+                 0.40f, 0.50f, 0.0f, 0.0f, 0.5f, 0.5f, 0.0f, 0.0f,
+                 /* CHORUS: Chorus II (2=fast/wide) for lush spread */
+                 0.50f, 0.80f, 0.40f, 2.0f,
+                 /* AMP: normal gain, env mode, full VCA */
+                 0.50f, 0.0f, 1.0f,
+                 /* PLAY: poly, no glide */
+                 0.0f, 0.0f, 1.0f, 0.0f,
+                 /* CLOCK + ARP: 120 BPM, arp off */
+                 120.0f, 0.0f, 0.0f, 3.0f, 1.0f, 0.5f, 0.0f, 0.0f},
+                49,
+                k_pwm_strings_routings,
+                k_pwm_strings_count,
+            },
+            // 5: 106 Brass — punchy pulse brass, strong filter env + moderate chorus, poly
+            // OSC_WAVEFORM=1 (PULSE), positive filter env with VCF_ENV_DEPTH=0.6; fast attack.
+            {
+                "106 Brass",
+                {ParamId::OSC_LEVEL,     ParamId::SUB_LEVEL,     ParamId::NOISE_LEVEL,     ParamId::OSC_PWM,
+                 ParamId::OSC_WAVEFORM,  ParamId::OSC_RANGE,     ParamId::FILTER_CUTOFF,   ParamId::FILTER_RES,
+                 ParamId::FILTER_MODE,   ParamId::HPF_CUTOFF,    ParamId::VCF_ENV_DEPTH,   ParamId::VCF_ENV_POLARITY,
+                 ParamId::VCF_KEY_TRACK, ParamId::VCF_LFO_DEPTH, ParamId::ENV_ATTACK,      ParamId::ENV_DECAY,
+                 ParamId::ENV_SUSTAIN,   ParamId::ENV_RELEASE,   ParamId::ENV2_ATTACK,     ParamId::ENV2_DECAY,
+                 ParamId::ENV2_SUSTAIN,  ParamId::ENV2_RELEASE,  ParamId::LFO1_RATE,       ParamId::LFO1_DEPTH,
+                 ParamId::LFO1_SHAPE,    ParamId::LFO1_DELAY,    ParamId::LFO2_RATE,       ParamId::LFO2_DEPTH,
+                 ParamId::LFO2_SHAPE,    ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,
+                 ParamId::CHORUS_DELAY,  ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,
+                 ParamId::VCA_LEVEL,     ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,
+                 ParamId::UNISON_DETUNE, ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,
+                 ParamId::ARP_RATE,      ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,
+                 ParamId::ARP_LATCH},
+                /* OSC: pulse, sub for body */
+                {0.80f, 0.30f, 0.00f, 0.50f, 1.0f, 0.0f,
+                 /* FILTER: mid cutoff, moderate res; strong positive filter env */
+                 1200.0f, 0.30f, 0.0f, 20.0f, 0.60f, 0.0f, 0.50f, 0.0f,
+                 /* AMP ENV: fast attack, short decay, sustain, quick release */
+                 0.02f, 0.20f, 0.70f, 0.30f,
+                 /* ENV2: fast A, quick D, mid S, quick R for snappy filter sweep */
+                 0.01f, 0.30f, 0.40f, 0.30f,
+                 /* LFO1: slow sine for subtle PWM; LFO2 idle */
+                 0.50f, 0.30f, 0.0f, 0.0f, 0.5f, 0.5f, 0.0f, 0.0f,
+                 /* CHORUS: Chorus I (1=slow/lush) moderate depth */
+                 0.50f, 0.60f, 0.40f, 1.0f,
+                 /* AMP: normal gain, env mode, full VCA */
+                 0.50f, 0.0f, 1.0f,
+                 /* PLAY: poly, no glide */
+                 0.0f, 0.0f, 1.0f, 0.0f,
+                 /* CLOCK + ARP: 120 BPM, arp off */
+                 120.0f, 0.0f, 0.0f, 3.0f, 1.0f, 0.5f, 0.0f, 0.0f},
+                49,
+                k_clean_106_routings, /* ENV2→cutoff + LFO1→PWM already covers this patch */
+                k_clean_106_count,
+            },
+            // 6: Juno EP — plucky electric piano / bell; percussive amp env, filter snap, light chorus
+            // OSC_WAVEFORM=1 (PULSE), narrow PWM=0.3; percussive zero-sustain envs.
+            {
+                "Juno EP",
+                {ParamId::OSC_LEVEL,     ParamId::SUB_LEVEL,     ParamId::NOISE_LEVEL,     ParamId::OSC_PWM,
+                 ParamId::OSC_WAVEFORM,  ParamId::OSC_RANGE,     ParamId::FILTER_CUTOFF,   ParamId::FILTER_RES,
+                 ParamId::FILTER_MODE,   ParamId::HPF_CUTOFF,    ParamId::VCF_ENV_DEPTH,   ParamId::VCF_ENV_POLARITY,
+                 ParamId::VCF_KEY_TRACK, ParamId::VCF_LFO_DEPTH, ParamId::ENV_ATTACK,      ParamId::ENV_DECAY,
+                 ParamId::ENV_SUSTAIN,   ParamId::ENV_RELEASE,   ParamId::ENV2_ATTACK,     ParamId::ENV2_DECAY,
+                 ParamId::ENV2_SUSTAIN,  ParamId::ENV2_RELEASE,  ParamId::LFO1_RATE,       ParamId::LFO1_DEPTH,
+                 ParamId::LFO1_SHAPE,    ParamId::LFO1_DELAY,    ParamId::LFO2_RATE,       ParamId::LFO2_DEPTH,
+                 ParamId::LFO2_SHAPE,    ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,
+                 ParamId::CHORUS_DELAY,  ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,
+                 ParamId::VCA_LEVEL,     ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,
+                 ParamId::UNISON_DETUNE, ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,
+                 ParamId::ARP_RATE,      ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,
+                 ParamId::ARP_LATCH},
+                /* OSC: narrow pulse for bell-like timbre, light sub */
+                {0.85f, 0.10f, 0.00f, 0.30f, 1.0f, 0.0f,
+                 /* FILTER: brighter open, moderate res; deep filter env snap */
+                 3000.0f, 0.50f, 0.0f, 20.0f, 0.80f, 0.0f, 0.50f, 0.0f,
+                 /* AMP ENV: instant attack, medium decay, zero sustain (pluck) */
+                 0.001f, 0.60f, 0.00f, 0.40f,
+                 /* ENV2: instant A, short D, no S, quick R for filter snap */
+                 0.001f, 0.40f, 0.00f, 0.30f,
+                 /* LFO1/LFO2: idle */
+                 1.0f, 0.5f, 0.0f, 0.0f, 0.5f, 0.5f, 0.0f, 0.0f,
+                 /* CHORUS: Chorus I (1) light depth */
+                 0.50f, 0.50f, 0.40f, 1.0f,
+                 /* AMP: normal gain, env mode, full VCA */
+                 0.50f, 0.0f, 1.0f,
+                 /* PLAY: poly, no glide */
+                 0.0f, 0.0f, 1.0f, 0.0f,
+                 /* CLOCK + ARP: 120 BPM, arp off */
+                 120.0f, 0.0f, 0.0f, 3.0f, 1.0f, 0.5f, 0.0f, 0.0f},
+                49,
+                k_clean_106_routings, /* ENV2→cutoff drives the filter snap */
+                k_clean_106_count,
+            },
+            // 7: Solo Lead — square-wave mono lead with delayed vibrato + unison 2 + legato glide
+            // OSC_WAVEFORM=1 (PULSE), PLAY_MODE=2 (legato), LFO1 delayed 0.4s for expressive vibrato.
+            {
+                "Solo Lead",
+                {ParamId::OSC_LEVEL,     ParamId::SUB_LEVEL,     ParamId::NOISE_LEVEL,     ParamId::OSC_PWM,
+                 ParamId::OSC_WAVEFORM,  ParamId::OSC_RANGE,     ParamId::FILTER_CUTOFF,   ParamId::FILTER_RES,
+                 ParamId::FILTER_MODE,   ParamId::HPF_CUTOFF,    ParamId::VCF_ENV_DEPTH,   ParamId::VCF_ENV_POLARITY,
+                 ParamId::VCF_KEY_TRACK, ParamId::VCF_LFO_DEPTH, ParamId::ENV_ATTACK,      ParamId::ENV_DECAY,
+                 ParamId::ENV_SUSTAIN,   ParamId::ENV_RELEASE,   ParamId::ENV2_ATTACK,     ParamId::ENV2_DECAY,
+                 ParamId::ENV2_SUSTAIN,  ParamId::ENV2_RELEASE,  ParamId::LFO1_RATE,       ParamId::LFO1_DEPTH,
+                 ParamId::LFO1_SHAPE,    ParamId::LFO1_DELAY,    ParamId::LFO2_RATE,       ParamId::LFO2_DEPTH,
+                 ParamId::LFO2_SHAPE,    ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,
+                 ParamId::CHORUS_DELAY,  ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,
+                 ParamId::VCA_LEVEL,     ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,
+                 ParamId::UNISON_DETUNE, ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,
+                 ParamId::ARP_RATE,      ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,
+                 ParamId::ARP_LATCH},
+                /* OSC: square wave (pulse 50%), bright, no sub */
+                {0.90f, 0.10f, 0.00f, 0.50f, 1.0f, 0.0f,
+                 /* FILTER: open bright cutoff, moderate res; moderate filter env */
+                 3000.0f, 0.40f, 0.0f, 20.0f, 0.40f, 0.0f, 0.50f, 0.0f,
+                 /* AMP ENV: fast attack, short decay, sustain held, quick release */
+                 0.005f, 0.20f, 0.80f, 0.20f,
+                 /* ENV2: very fast A, short D, no S, quick R */
+                 0.003f, 0.15f, 0.00f, 0.10f,
+                 /* LFO1: 5 Hz SINE for vibrato, delayed 0.4 s after note-on; LFO2 idle */
+                 5.0f, 0.40f, 0.0f, 0.40f, 0.5f, 0.5f, 0.0f, 0.0f,
+                 /* CHORUS: Chorus I (1) subtle width */
+                 0.50f, 0.50f, 0.40f, 1.0f,
+                 /* AMP: normal gain, env mode, full VCA */
+                 0.50f, 0.0f, 1.0f,
+                 /* PLAY: mono+legato, 80 ms glide; unison 2 voices, 10 cents */
+                 2.0f, 0.08f, 2.0f, 10.0f,
+                 /* CLOCK + ARP: 120 BPM, arp off */
+                 120.0f, 0.0f, 0.0f, 3.0f, 1.0f, 0.5f, 0.0f, 0.0f},
+                49,
+                k_vibrato_lead_routings,
+                k_vibrato_lead_count,
             },
 };
 
