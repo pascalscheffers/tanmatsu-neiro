@@ -322,11 +322,18 @@ efuse:
 	$(IDF_PATH)/components/efuse/efuse_table_gen.py --idf_target esp32p4 $(IDF_PATH)/components/efuse/esp32p4/esp_efuse_table.csv main/esp_efuse_custom_table.csv
 
 # Formatting
+# Canonical tool: clang-format 21. Resolve from PATH, else fall back to the macOS
+# toolchain (xcrun). Override with `make format CLANG_FORMAT=/path/to/clang-format`.
+# Covers all hand-written source (engine/dsp/control/ui/app/platform/main/tests);
+# vendored trees (dsp/vendor, platform/host/miniaudio.h) are excluded.
+CLANG_FORMAT ?= $(shell command -v clang-format 2>/dev/null || echo 'xcrun clang-format')
 
 .PHONY: format
 format:
-	find main/ engine/ ui/ app/ platform/ \( -iname '*.h' -o -iname '*.c' -o -iname '*.cpp' \) \
-		-not -path 'platform/host/miniaudio.h' | xargs clang-format -i
+	find main/ engine/ dsp/ control/ ui/ app/ platform/ tests/ \
+		\( -iname '*.h' -o -iname '*.c' -o -iname '*.cpp' \) \
+		-not -path 'platform/host/miniaudio.h' -not -path 'dsp/vendor/*' \
+		| xargs $(CLANG_FORMAT) -i
 
 # Re-compile protobuf files
 # If you are an end user, you do not need to run this;
