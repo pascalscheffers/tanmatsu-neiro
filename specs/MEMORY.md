@@ -331,6 +331,40 @@ chorus** with large headroom. Numbers + journey recorded in
   fixed ≈ 49% of budget free at full load). Non-blocking debt still open: inert HPF row (needs a
   2nd `dsp::Filter` in `JunoVoice`); `kPresetDestPwm=0xFFFD` sentinel → `ParamId::OSC_PWM`.
 
+## 2026-06-29 — 🐛 OPEN BUG: stale per-voice modulation state across notes (TO ANALYSE)
+
+Device-confirmed by Pascal after the 3d-ii perf work. **Not yet investigated — analyse in a
+fresh context.** This is a debug brief, not a fix.
+
+**Repro (device, INIT patch, UNISON_COUNT=8):**
+1. A single note played repeatedly from rest sounds **fine / consistent**.
+2. But "smash" several notes (exhaust/cycle the 8-voice pool), then play a **single note at
+   ~1 s intervals**: the first ~10 s have audible **phasing-like artifacts** and the **same
+   note does not sound identical each time**, before it stabilises.
+3. Symptom persists **even after waiting for the voice display to show idle** — i.e. some
+   per-voice state does not return to a known/zero baseline once voices go idle.
+
+**Leading hypotheses (verify, don't assume — clean-context investigation):**
+- **LFO phase not reset on `note_on`.** `JunoVoice::note_on` resets the LFO *delay* counters
+  but NOT LFO phase; `lfo*_.reset()` only runs in `reset()` (voice steal). Idle voices
+  early-return in `render()` (LFOs freeze at their last phase), so the next note starts its
+  LFO1→PWM / LFO→cutoff modulation (Clean 106 routings) from a **history-dependent frozen
+  phase** → different timbre each note + inter-voice beating at U=8. This fits "different each
+  time" + "doesn't reset when idle" best.
+- **Voice steal/reuse doesn't reset DSP state.** At U=8 one note claims the whole pool; after
+  smashing, notes steal voices that are mid-release → residual filter/osc/env/LFO state. Check
+  whether the allocator calls `reset()` on steal vs just re-gating, and whether `note_on`
+  should clear osc/filter state.
+- **Possible interaction with the recent perf changes** — rule in/out: Round A (block-rate
+  LFO `process_block`) and Round B (change-gated param push: a reused voice relies on cached
+  params, which are only re-pushed on change). Confirm these did not change reset semantics.
+
+**Note:** LFO retrigger-vs-free-run is partly a **sonic decision** (Juno LFO is classically
+free-running) — but the *non-determinism / never-settles* part is a bug regardless. Likely a
+🛑 sonic gate once root-caused (how should LFO phase behave on note_on / unison grouping).
+Start: `engine/juno_voice.cpp` (note_on/reset/render), `engine/voice_alloc.cpp` (steal +
+unison group reuse), `dsp/lfo.h`.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
