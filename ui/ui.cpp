@@ -22,11 +22,13 @@
 #define COL_BG      0xFF101018u
 #define COL_TEXT    0xFFFFFFFFu
 #define COL_DIM     0xFF7A7A8Au
-#define COL_ACCENT  0xFF30C0FFu
+#define COL_ACCENT  0xFF30C0FFu  // neon cyan
+#define COL_ACCENT2 0xFFFF2D9Du  // neon magenta/pink
 #define COL_BAR_BG  0xFF2A2A3Au
 #define COL_SEL_BG  0xFF16222Eu
 #define COL_TAB_DIM 0xFF1A1A28u
 #define COL_SEP     0xFF2A2A4Au
+#define COL_HDR_BG  0xFF1A1A2Eu  // section header background
 
 // ---------------------------------------------------------------------------
 // Layout (800 × 480 device panel, ADR 0011)
@@ -37,14 +39,41 @@
 #define STATUS_H  38.0f
 #define CONTENT_Y TAB_H
 #define CONTENT_H (SCREEN_H - TAB_H - STATUS_H)
-#define ROW_H     56.0f
+#define ROW_H     43.0f  // tighter rows: floor(402/43)=9 fit without scroll
+#define HEADER_H  18.0f  // section sub-header height (multi-group pages only)
 #define NAME_X    48.0f
 #define BAR_X     260.0f
 #define BAR_W     360.0f
-#define BAR_H     14.0f
+#define BAR_H     10.0f
 #define VAL_X     634.0f
-#define FONT_SM   14.0f
-#define FONT_MD   18.0f
+#define FONT_SM   12.0f
+#define FONT_MD   16.0f
+
+// Gradient approximation: 3-segment stacked rects cyan→magenta
+// Each segment is 1/3 of bar width, color lerped at segment midpoints.
+// Colors: segment 0 = COL_ACCENT, segment 2 = COL_ACCENT2.
+// Mid segment: lerp ARGB channels at t=0.5.
+static inline uint32_t lerp_col(uint32_t a, uint32_t b, float t) {
+    uint32_t ar = (a >> 16) & 0xFF, ag = (a >> 8) & 0xFF, ab = a & 0xFF, aa = (a >> 24) & 0xFF;
+    uint32_t br = (b >> 16) & 0xFF, bg = (b >> 8) & 0xFF, bb = b & 0xFF, ba = (b >> 24) & 0xFF;
+    uint32_t r  = (uint32_t)((float)ar + t * (float)((int)br - (int)ar));
+    uint32_t g  = (uint32_t)((float)ag + t * (float)((int)bg - (int)ag));
+    uint32_t bv = (uint32_t)((float)ab + t * (float)((int)bb - (int)ab));
+    uint32_t av = (uint32_t)((float)aa + t * (float)((int)ba - (int)aa));
+    return (av << 24) | (r << 16) | (g << 8) | bv;
+}
+
+// Draw a 3-segment horizontal gradient rect (cyan → mid → magenta).
+static void draw_gradient_bar(pax_buf_t* fb, float x, float y, float w, float h, bool sel) {
+    if (w < 0.5f) return;
+    uint32_t c0  = sel ? COL_ACCENT : lerp_col(COL_ACCENT, COL_BG, 0.4f);
+    uint32_t c2  = sel ? COL_ACCENT2 : lerp_col(COL_ACCENT2, COL_BG, 0.4f);
+    uint32_t c1  = lerp_col(c0, c2, 0.5f);
+    float    seg = w / 3.0f;
+    pax_simple_rect(fb, c0, x, y, seg, h);
+    pax_simple_rect(fb, c1, x + seg, y, seg, h);
+    pax_simple_rect(fb, c2, x + seg * 2.0f, y, w - seg * 2.0f, h);
+}
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -54,7 +83,7 @@ static const char* group_name(uint8_t g) {
         case GROUP_OSC:
             return "OSC";
         case GROUP_FILTER:
-            return "FILTER";
+            return "VCF";
         case GROUP_HPF:
             return "HPF";
         case GROUP_ENV:
@@ -68,9 +97,9 @@ static const char* group_name(uint8_t g) {
         case GROUP_AMP:
             return "AMP";
         case GROUP_GLOBAL:
-            return "Clock";
+            return "CLOCK";
         case GROUP_ARP:
-            return "Arp";
+            return "ARP";
         default:
             return "?";
     }
@@ -131,7 +160,65 @@ static int page_rows(int page_index, const ParamDesc** out, int max_out) {
     return n;
 }
 
-// Inverse of ParamStore::apply_curve — physical value → normalised [0,1].
+// ---------------------------------------------------------------------------
+// Draw-item list: interleaves headers and param rows for multi-group pages.
+// Items are purely for layout; selection semantics stay over row indices.
+// ---------------------------------------------------------------------------
+enum ItemKind : uint8_t {
+    ITEM_HEADER = 0,
+    ITEM_ROW    = 1
+};
+
+struct DrawItem {
+    ItemKind         kind;
+    const char*      header_label;  // ITEM_HEADER only
+    const ParamDesc* row;           // ITEM_ROW only
+    int              row_idx;       // global row index (for selection tracking)
+};
+
+// Build draw-item list for current page. Returns item count (≤ kMaxItems).
+static const int kMaxItems = 32;
+static int       build_items(int page_index, DrawItem* items) {
+    if (page_index < 0 || page_index >= kNumPages) return 0;
+    const PageDef& pd = PAGE_TABLE[page_index];
+    if (pd.kind != PAGE_PARAMS) return 0;
+    bool             multi = (pd.num_groups > 1);
+    int              n     = 0;
+    int              row_i = 0;
+    const ParamDesc* group_rows[24];
+    for (int g = 0; g < (int)pd.num_groups; g++) {
+        if (n >= kMaxItems) break;
+        if (multi) {
+            items[n].kind         = ITEM_HEADER;
+            items[n].header_label = group_name(pd.groups[g]);
+            items[n].row          = nullptr;
+            items[n].row_idx      = -1;
+            n++;
+        }
+        int gc = group_params(pd.groups[g], group_rows, 24);
+        for (int r = 0; r < gc && n < kMaxItems; r++) {
+            items[n].kind         = ITEM_ROW;
+            items[n].header_label = nullptr;
+            items[n].row          = group_rows[r];
+            items[n].row_idx      = row_i++;
+            n++;
+        }
+    }
+    return n;
+}
+
+// Total pixel height of item list (headers + rows).
+static float items_height(const DrawItem* items, int n) {
+    float h = 0.0f;
+    for (int i = 0; i < n; i++) {
+        h += (items[i].kind == ITEM_HEADER) ? HEADER_H : ROW_H;
+    }
+    return h;
+}
+
+// ---------------------------------------------------------------------------
+// param curve inversion — physical value → normalised [0,1]
+// ---------------------------------------------------------------------------
 static float phys_to_norm(const ParamDesc& d, float v) {
     if (v < d.min) v = d.min;
     if (v > d.max) v = d.max;
@@ -311,112 +398,190 @@ extern "C" bool ui_handle_event(UIState* s, const platform_event_t* ev) {
 // Rendering
 // ---------------------------------------------------------------------------
 static void draw_tabs(pax_buf_t* fb, const UIState* s) {
+    // Tab strip with neon cyan active tab + magenta underline glow.
     float tab_w = SCREEN_W / (float)kNumPages;
     for (int i = 0; i < kNumPages; i++) {
         bool sel = (i == s->page);
-        pax_simple_rect(fb, sel ? COL_ACCENT : COL_TAB_DIM, (float)i * tab_w, 0.0f, tab_w - 1.0f, TAB_H);
-        pax_draw_text(fb, sel ? COL_BG : COL_DIM, pax_font_sky_mono, FONT_MD, (float)i * tab_w + 10.0f,
-                      (TAB_H - FONT_MD) * 0.5f, PAGE_TABLE[i].title);
+        // Tab background.
+        pax_simple_rect(fb, sel ? COL_ACCENT : COL_TAB_DIM, (float)i * tab_w, 0.0f, tab_w - 1.0f,
+                        sel ? TAB_H - 3.0f : TAB_H - 1.0f);
+        // Magenta underline on selected tab.
+        if (sel) {
+            pax_simple_rect(fb, COL_ACCENT2, (float)i * tab_w, TAB_H - 3.0f, tab_w - 1.0f, 3.0f);
+        }
+        // Tab label — use FONT_SM for 9 tabs to fit across 800px (~88px each).
+        pax_draw_text(fb, sel ? COL_BG : COL_DIM, pax_font_sky_mono, FONT_SM, (float)i * tab_w + 6.0f,
+                      (TAB_H - FONT_SM) * 0.5f - 1.0f, PAGE_TABLE[i].title);
     }
+    // Thin cyan→magenta gradient rule under the tab strip.
+    float seg = SCREEN_W / 3.0f;
+    pax_simple_rect(fb, COL_ACCENT, 0.0f, TAB_H - 1.0f, seg, 1.0f);
+    pax_simple_rect(fb, lerp_col(COL_ACCENT, COL_ACCENT2, 0.5f), seg, TAB_H - 1.0f, seg, 1.0f);
+    pax_simple_rect(fb, COL_ACCENT2, seg * 2.0f, TAB_H - 1.0f, SCREEN_W - seg * 2.0f, 1.0f);
+}
+
+// Draw a single section sub-header at given y (multi-group pages only).
+static void draw_section_header(pax_buf_t* fb, float y, const char* label) {
+    // Dim background strip.
+    pax_simple_rect(fb, COL_HDR_BG, 0.0f, y, SCREEN_W, HEADER_H);
+    // Thin magenta left accent bar.
+    pax_simple_rect(fb, COL_ACCENT2, 0.0f, y, 3.0f, HEADER_H);
+    // Separator line at top of header.
+    pax_simple_rect(fb, COL_SEP, 0.0f, y, SCREEN_W, 1.0f);
+    // Label text, small-caps style at FONT_SM.
+    pax_draw_text(fb, COL_DIM, pax_font_sky_mono, FONT_SM, NAME_X, y + (HEADER_H - FONT_SM) * 0.5f, label);
 }
 
 static void draw_rows(pax_buf_t* fb, const UIState* s) {
-    const ParamDesc* rows[24];
-    int              n = page_rows(s->page, rows, 24);
-    if (n == 0) return;
+    // Build the mixed header+row item list for the current page.
+    DrawItem items[kMaxItems];
+    int      ni = build_items(s->page, items);
+    if (ni == 0) return;
 
-    // How many rows fit in the content area (integer, floor).
-    int visible = (int)(CONTENT_H / ROW_H);
-    if (visible < 1) visible = 1;
-    if (visible > n) visible = n;
+    float total_h = items_height(items, ni);
 
-    // Scroll to keep the selected row in view.  scroll_top is the index of
-    // the first rendered row; clamp so the window never runs past the last row.
-    int scroll_top = s->row - visible / 2;
-    if (scroll_top < 0) scroll_top = 0;
-    if (scroll_top + visible > n) scroll_top = n - visible;
+    // Determine the draw window. If everything fits, centre it. Otherwise scroll.
+    float start_y;
+    int   first_item;  // index into items[] of the first rendered item
+    int   last_item;   // exclusive upper bound
 
-    // Centre a full page (or partial if fewer rows than fit) in the content area.
-    float block_h = (float)visible * ROW_H;
-    float start_y = CONTENT_Y + (CONTENT_H - block_h) * 0.5f;
-    if (start_y < CONTENT_Y) start_y = CONTENT_Y;
+    if (total_h <= CONTENT_H) {
+        // Everything fits — centre and render all items.
+        start_y    = CONTENT_Y + (CONTENT_H - total_h) * 0.5f;
+        first_item = 0;
+        last_item  = ni;
+    } else {
+        // Scroll: find the selected row item, then walk backward to find a good
+        // first_item such that the selected row is centred / in view.
+        // Strategy: find the y-offset of the selected row within the full block,
+        // then pick start_y so it's centred, clamping so the block doesn't go
+        // past the content edges.
 
-    for (int i = scroll_top; i < scroll_top + visible; i++) {
-        const ParamDesc* d     = rows[i];
-        float            row_y = start_y + (float)(i - scroll_top) * ROW_H;
-        float            mid_y = row_y + ROW_H * 0.5f;
-        bool             sel   = (i == s->row);
+        // Find the selected row item's offset from the top of the block.
+        float sel_offset = 0.0f;
+        bool  found      = false;
+        {
+            float acc = 0.0f;
+            for (int i = 0; i < ni; i++) {
+                float ih = (items[i].kind == ITEM_HEADER) ? HEADER_H : ROW_H;
+                if (items[i].kind == ITEM_ROW && items[i].row_idx == s->row) {
+                    sel_offset = acc + ROW_H * 0.5f;  // centre of the row
+                    found      = true;
+                    break;
+                }
+                acc += ih;
+            }
+        }
+        if (!found) sel_offset = CONTENT_H * 0.5f;
 
-        if (sel) {
-            pax_simple_rect(fb, COL_SEL_BG, 0.0f, row_y, SCREEN_W, ROW_H - 1.0f);
+        // Centre the selected row in the content area.
+        float ideal_start = CONTENT_Y + CONTENT_H * 0.5f - sel_offset;
+        // Clamp: don't show before the first item or leave gap after the last.
+        if (ideal_start > CONTENT_Y) ideal_start = CONTENT_Y;
+        if (ideal_start + total_h < CONTENT_Y + CONTENT_H) {
+            ideal_start = CONTENT_Y + CONTENT_H - total_h;
+        }
+        start_y    = ideal_start;
+        first_item = 0;
+        last_item  = ni;
+    }
+
+    // Render items.
+    float y = start_y;
+    for (int i = first_item; i < last_item; i++) {
+        float ih = (items[i].kind == ITEM_HEADER) ? HEADER_H : ROW_H;
+
+        // Skip items that are fully outside the content area.
+        if (y + ih <= CONTENT_Y || y >= CONTENT_Y + CONTENT_H) {
+            y += ih;
+            continue;
         }
 
-        // Selection arrow.
-        if (sel) {
-            pax_draw_text(fb, COL_ACCENT, pax_font_sky_mono, FONT_MD, 8.0f, mid_y - FONT_MD * 0.5f, ">");
-        }
-
-        // Param name.
-        pax_draw_text(fb, sel ? COL_TEXT : COL_DIM, pax_font_sky_mono, FONT_MD, NAME_X, mid_y - FONT_MD * 0.5f,
-                      d->name);
-
-        // Value bar.
-        float norm   = (d->id < UI_NORM_TABLE_SIZE) ? s->norms[d->id] : 0.0f;
-        float bar_y  = mid_y - BAR_H * 0.5f;
-        float filled = norm * BAR_W;
-        pax_simple_rect(fb, COL_BAR_BG, BAR_X, bar_y, BAR_W, BAR_H);
-        if (filled > 0.5f) {
-            pax_simple_rect(fb, sel ? COL_ACCENT : COL_DIM, BAR_X, bar_y, filled, BAR_H);
-        }
-
-        // Value text.
-        char  val_buf[24];
-        float phys = engine_get_param(d->id);
-        if (d->display_fmt) {
-            snprintf(val_buf, sizeof(val_buf), d->display_fmt, (double)phys);
+        if (items[i].kind == ITEM_HEADER) {
+            draw_section_header(fb, y, items[i].header_label);
         } else {
-            snprintf(val_buf, sizeof(val_buf), "%.2f", (double)phys);
-        }
-        pax_draw_text(fb, sel ? COL_TEXT : COL_DIM, pax_font_sky_mono, FONT_MD, VAL_X, mid_y - FONT_MD * 0.5f, val_buf);
+            const ParamDesc* d   = items[i].row;
+            int              idx = items[i].row_idx;
+            bool             sel = (idx == s->row);
 
-        // Unit label.
-        const char* unit_str = nullptr;
-        switch (d->unit) {
-            case UNIT_HZ:
-                unit_str = "Hz";
-                break;
-            case UNIT_PCT:
-                unit_str = "%";
-                break;
-            case UNIT_DB:
-                unit_str = "dB";
-                break;
-            case UNIT_SEMI:
-                unit_str = "st";
-                break;
-            case UNIT_SEC:
-                unit_str = "s";
-                break;
-            case UNIT_MS:
-                unit_str = "ms";
-                break;
-            default:
-                break;
+            if (sel) {
+                pax_simple_rect(fb, COL_SEL_BG, 0.0f, y, SCREEN_W, ROW_H - 1.0f);
+            }
+
+            float mid_y = y + ROW_H * 0.5f;
+
+            // Selection arrow.
+            if (sel) {
+                pax_draw_text(fb, COL_ACCENT, pax_font_sky_mono, FONT_MD, 8.0f, mid_y - FONT_MD * 0.5f, ">");
+            }
+
+            // Param name.
+            pax_draw_text(fb, sel ? COL_TEXT : COL_DIM, pax_font_sky_mono, FONT_MD, NAME_X, mid_y - FONT_MD * 0.5f,
+                          d->name);
+
+            // Value bar — cyan→magenta gradient fill.
+            float norm   = (d->id < UI_NORM_TABLE_SIZE) ? s->norms[d->id] : 0.0f;
+            float bar_y  = mid_y - BAR_H * 0.5f;
+            float filled = norm * BAR_W;
+            pax_simple_rect(fb, COL_BAR_BG, BAR_X, bar_y, BAR_W, BAR_H);
+            draw_gradient_bar(fb, BAR_X, bar_y, filled, BAR_H, sel);
+
+            // Value text.
+            char  val_buf[24];
+            float phys = engine_get_param(d->id);
+            if (d->display_fmt) {
+                snprintf(val_buf, sizeof(val_buf), d->display_fmt, (double)phys);
+            } else {
+                snprintf(val_buf, sizeof(val_buf), "%.2f", (double)phys);
+            }
+            pax_draw_text(fb, sel ? COL_TEXT : COL_DIM, pax_font_sky_mono, FONT_MD, VAL_X, mid_y - FONT_MD * 0.5f,
+                          val_buf);
+
+            // Unit label.
+            const char* unit_str = nullptr;
+            switch (d->unit) {
+                case UNIT_HZ:
+                    unit_str = "Hz";
+                    break;
+                case UNIT_PCT:
+                    unit_str = "%";
+                    break;
+                case UNIT_DB:
+                    unit_str = "dB";
+                    break;
+                case UNIT_SEMI:
+                    unit_str = "st";
+                    break;
+                case UNIT_SEC:
+                    unit_str = "s";
+                    break;
+                case UNIT_MS:
+                    unit_str = "ms";
+                    break;
+                default:
+                    break;
+            }
+            if (unit_str) {
+                pax_draw_text(fb, COL_DIM, pax_font_sky_mono, FONT_SM, VAL_X + 80.0f, mid_y - FONT_SM * 0.5f, unit_str);
+            }
         }
-        if (unit_str) {
-            pax_draw_text(fb, COL_DIM, pax_font_sky_mono, FONT_SM, VAL_X + 80.0f, mid_y - FONT_SM * 0.5f, unit_str);
-        }
+
+        y += ih;
     }
 }
 
 static void draw_status(pax_buf_t* fb, const UIState* s) {
-    float y = SCREEN_H - STATUS_H;
-    pax_simple_rect(fb, COL_SEP, 0.0f, y, SCREEN_W, 1.0f);
+    float y   = SCREEN_H - STATUS_H;
+    // Thin magenta→cyan gradient rule at top of status bar (synthwave motif).
+    float seg = SCREEN_W / 3.0f;
+    pax_simple_rect(fb, COL_ACCENT2, 0.0f, y, seg, 1.0f);
+    pax_simple_rect(fb, lerp_col(COL_ACCENT2, COL_ACCENT, 0.5f), seg, y, seg, 1.0f);
+    pax_simple_rect(fb, COL_ACCENT, seg * 2.0f, y, SCREEN_W - seg * 2.0f, 1.0f);
     pax_simple_rect(fb, COL_BG, 0.0f, y + 1.0f, SCREEN_W, STATUS_H - 1.0f);
 
     float text_y = y + (STATUS_H - FONT_SM) * 0.5f;
 
-    // Voice activity dots.
+    // Voice activity dots — lit in cyan, dimmed in bar-bg.
     for (int i = 0; i < 8; i++) {
         uint32_t col = (i < s->active_voices) ? COL_ACCENT : COL_BAR_BG;
         pax_simple_rect(fb, col, 12.0f + (float)i * 14.0f, y + (STATUS_H - 10.0f) * 0.5f, 10.0f, 10.0f);
