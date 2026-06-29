@@ -191,6 +191,31 @@ Stage 4d FX (delay + ReverbSc). Next campaign: per Opus's judgment.
 - `make test` ✅ (all pass) `make host` ✅ `make build` ✅ `make format` ✅. Image **1,121,584 B**.
 - **Hardware check (Pascal):** mod wheel opens filter on any patch; pots 1–8 sweep the params above.
 
+## 2026-06-29 — Input latency fix: decouple poll from render + dirty-gate (COMPLETE)
+
+**Bug:** `app_run` polled input once per 16 ms frame, after the full-screen `ui_draw` +
+`platform_present()` (~1.15 MB blit). A key press waited behind the whole render cycle.
+
+**Fix (commits 4879169 + fa7b9e5):**
+- `sdkconfigs/tanmatsu`: `CONFIG_FREERTOS_HZ=1000` (was 100). `vTaskDelay(1)` now
+  resolves to ~1 ms, not ~10 ms. Only the canonical defaults fragment was changed.
+- `app/app.c`: loop restructured — input + MIDI polled every ~1 ms (`POLL_MS=1`);
+  render runs every ~16 ms (`RENDER_MS=16`) but **only when `ui_state.dirty`** is set.
+  `ui_handle_event` return value, `held_dir`, and per-frame `active_voices`/`octave`
+  changes all set `dirty`. `next_render` timestamp replaces the unconditional sleep.
+- `ui/ui.h` / `ui/ui.cpp`: `UIState` gains `dirty`, `last_drawn_voices`,
+  `last_drawn_octave`. `ui_state_init` sets `dirty=true`, sentinels force first paint.
+- SYNTH_PROFILE guard (off by default) wraps `ui_draw` + `platform_present` with cycle
+  counters; logs avg/min/max μs every 120 rendered frames via `printf`.
+- SINGLE-PRODUCER comment in `app_run` documents SPSC ring invariant.
+
+`make test` ✅ (153/153) `make host` ✅ (build-only; SDL window) `make build` ✅
+Image: 1,121,312 B (−272 B vs. WO-8; 47% partition free). DIRAM 156,742 B unchanged.
+
+**What's next:** Stage 4d FX (tempo-synced delay + ReverbSc). If device profiling
+(enable with `-DSYNTH_PROFILE`) shows the full-frame blit still costly during voice-
+meter animation, Stage 2B partial-rect blitting is the natural follow-on.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
