@@ -15,6 +15,7 @@
 #include "pax_fonts.h"
 #include "pax_text.h"
 #include "platform.h"
+#include "ui_presets.h"
 
 // ---------------------------------------------------------------------------
 // Colors
@@ -315,10 +316,25 @@ extern "C" void ui_state_init(UIState* s) {
             engine_set_routings(routings, r_count);
         }
     }
+
+    // Boot lands on page 0 (PRESET) with the active preset committed (not auditioning).
+    // Set cursor to the active factory preset (or last row for user preset).
+    s->row = (s->preset_idx >= 0) ? s->preset_idx : preset_factory_count();
+    ui_presets_snapshot(s);
 }
 
 extern "C" bool ui_handle_event(UIState* s, const platform_event_t* ev) {
     if (ev->type != PLATFORM_EV_KEY || !ev->pressed) return false;
+
+    // Delegate all events on the preset page to ui_presets_handle_event().
+    // Left/Right are special: the preset handler reverts then returns false so
+    // we fall through to do the page switch below.
+    if (PAGE_TABLE[s->page].kind == PAGE_PRESETS) {
+        bool consumed = ui_presets_handle_event(s, ev);
+        if (consumed) return true;
+        // ui_presets_handle_event returned false for Left/Right after revert —
+        // fall through to the page-switch logic.
+    }
 
     const ParamDesc* rows[24];
     int              n = page_rows(s->page, rows, 24);
@@ -330,14 +346,23 @@ extern "C" bool ui_handle_event(UIState* s, const platform_event_t* ev) {
         case PLATFORM_KEY_DOWN:
             if (n > 0) s->row = (s->row + 1) % n;
             return true;
-        case PLATFORM_KEY_LEFT:
+        case PLATFORM_KEY_LEFT: {
+            // Revert audition if leaving the preset page.
+            if (PAGE_TABLE[s->page].kind == PAGE_PRESETS && s->auditioning) {
+                // Already reverted by ui_presets_handle_event above; just switch page.
+            }
             s->page = (s->page - 1 + kNumPages) % kNumPages;
             s->row  = 0;
             return true;
-        case PLATFORM_KEY_RIGHT:
+        }
+        case PLATFORM_KEY_RIGHT: {
+            if (PAGE_TABLE[s->page].kind == PAGE_PRESETS && s->auditioning) {
+                // Already reverted by ui_presets_handle_event above; just switch page.
+            }
             s->page = (s->page + 1) % kNumPages;
             s->row  = 0;
             return true;
+        }
         case ',':
         case '.': {
             if (n <= 0 || s->row >= n) return true;
@@ -604,6 +629,10 @@ extern "C" void ui_draw(pax_buf_t* fb, uint64_t millis, const UIState* s) {
     (void)millis;
     pax_background(fb, COL_BG);
     draw_tabs(fb, s);
-    draw_rows(fb, s);
+    if (PAGE_TABLE[s->page].kind == PAGE_PRESETS) {
+        ui_presets_draw(fb, s);
+    } else {
+        draw_rows(fb, s);
+    }
     draw_status(fb, s);
 }

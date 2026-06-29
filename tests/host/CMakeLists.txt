@@ -29,6 +29,9 @@ add_executable(tanmatsu-tests
     test_arp.cpp
     test_arp_clock.cpp
     test_sustain.cpp
+    # WO-3: preset browser state-machine tests (no PAX dependency).
+    test_ui_presets.cpp
+    "${REPO_ROOT}/ui/ui_presets_state.cpp"
     "${REPO_ROOT}/control/sustain.c"
     "${DAISYSP}/Source/Synthesis/oscillator.cpp"
     "${DAISYSP}/Source/Filters/svf.cpp"
@@ -50,6 +53,10 @@ target_include_directories(tanmatsu-tests PRIVATE
     "${REPO_ROOT}"
     # Engine layer (juno_voice.h includes voice.h by short name).
     "${REPO_ROOT}/engine"
+    # Platform layer (platform.h, used by ui_presets_state.h).
+    "${REPO_ROOT}/platform"
+    # PAX headers (types only; pax_buf_t used in ui.h).
+    "${REPO_ROOT}/managed_components/robotman2412__pax-gfx/core/include"
     # DaisySP Source root: resolves "Synthesis/oscillator.h",
     # "Filters/svf.h", "Utility/dsp.h", "Noise/whitenoise.h" etc.
     "${DAISYSP}/Source"

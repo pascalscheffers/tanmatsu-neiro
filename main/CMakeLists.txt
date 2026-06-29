@@ -55,6 +55,8 @@ idf_component_register(
 		"../control/midi_router.c"
 		"../control/sustain.c"
 		"../ui/ui.cpp"
+		"../ui/ui_presets.cpp"
+		"../ui/ui_presets_state.cpp"
 		"../platform/device/platform_device.c"
 		"../platform/device/midi_usb_device.c"
 		"../platform/device/midi_usb_host.c"
