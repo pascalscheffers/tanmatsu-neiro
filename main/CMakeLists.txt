@@ -50,6 +50,9 @@ idf_component_register(
 		"${DAISYSP}/Source/Effects/chorus.cpp"
 		# Stage 1d: musical-typing input.
 		"../control/keyboard.c"
+		# Stage 5a: MIDI parser + router (device uses no-op platform_midi_read stub).
+		"../control/midi_in.c"
+		"../control/midi_router.c"
 		"../ui/ui.cpp"
 		"../platform/device/platform_device.c"
 		${BENCH_SRCS}

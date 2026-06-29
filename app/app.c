@@ -5,6 +5,7 @@
 // present, pace. Audio runs independently on the HAL's audio thread.
 #include "app.h"
 #include "control/keyboard.h"
+#include "control/midi_router.h"
 #include "platform.h"
 #include "synth.h"
 #include "ui.h"
@@ -77,6 +78,7 @@ void app_run(void) {
 #endif
 
     keyboard_init();
+    midi_router_init();
     synth_init(SAMPLE_RATE, BLOCK_SIZE);
 
     // Initialise UI state: builds page list and default norm values from the
@@ -101,6 +103,7 @@ void app_run(void) {
             keyboard_handle_event(&ev);
             ui_handle_event(&ui_state, &ev);
         }
+        midi_router_poll();
 
         // Update per-frame display data before drawing.
         ui_state.active_voices = engine_active_voices();

@@ -588,6 +588,38 @@ latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.*
   from MIDI parser routed to `engine_note_on/off/cc`). This is the first sub-stage that touches
   platform code.
 
+## 2026-06-29 — Stage 5a-ii: MIDI HAL seam + RtMidi host backend + engine wire-in (COMPLETE)
+
+- **`platform/platform.h`**: `platform_midi_read(buf, max_len) → size_t` seam added (in-only raw
+  byte stream; comment updated to replace the "intentionally absent" note with the Stage 5a/5d arc).
+- **`platform/host/midi_host.cpp`** (new, C++): RtMidi backend. Lazy-init on first `platform_midi_read`
+  (static `RtMidiIn*` + `tried/ok` flags); try/catch on construction + open; no port → silent, any
+  exception → silent and permanent (a missing MIDI device never crashes or blocks). getMessage loop
+  drains the internal queue each poll, appending bytes to caller buf. `extern "C"` linkage.
+- **`platform/device/platform_device.c`**: no-op `platform_midi_read` stub appended (USB transport
+  arrives in Stage 5d/5b). 6 lines, pure C.
+- **`control/midi_router.h/c`** (new): owns a file-static `MidiParser`; `midi_router_init()` inits it;
+  `midi_router_poll()` drains `platform_midi_read` into the parser and dispatches NOTE_ON/NOTE_OFF to
+  `engine_note_on/off` (omni — channel ignored). CC/expression deferred to Stage 5c. No test build
+  contamination: `midi_router.c` is NOT in the test build (only `midi_in.c` is).
+- **`app/app.c`**: `midi_router_init()` beside `keyboard_init()`; `midi_router_poll()` once per frame
+  after the `platform_poll_event` while-loop.
+- **`host/CMakeLists.txt`**: `pkg_check_modules(RTMIDI REQUIRED rtmidi)` + include/lib dirs + `${RTMIDI_LIBRARIES}`
+  (mirrors SDL2 pattern); `midi_host.cpp`, `midi_in.c`, `midi_router.c` added to `HOST_SRCS`;
+  `-framework CoreMIDI` in `if(APPLE)` block.
+- **`main/CMakeLists.txt`** (device): `midi_in.c` + `midi_router.c` added to `SRCS`.
+  (This was not listed in the work-order touch-list but was required to satisfy the device linker —
+  `app.c` calls `midi_router_init/poll`, which the device build must compile. Reported as scope
+  clarification.)
+- `make test` ✅ (153/153, parser tests unaffected). `make host` ✅ `make build` ✅.
+  `make size`: Flash 895 KB / DIRAM **151 KB (26.2%)** — small delta from `midi_in.c` + router
+  (device-only; RtMidi is host-only, zero device flash delta for that library).
+  `make format` ✅ (reformatted `midi_host.cpp` — within touch list; no out-of-touch-list files changed).
+- Membrane clean: RtMidi included only in `midi_host.cpp`; `midi_router.c` includes only
+  its own header + `midi_in.h` + `platform.h` + `synth.h`.
+- **Stage 5a COMPLETE** (5a-i parser + 5a-ii HAL + router). Next: Stage 5c (expression/CC: bend/mod/AT/
+  sustain/panic; CC→param via `ParamDesc.midi_cc`), then 5d (USB-C device / TinyUSB out path).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

@@ -29,6 +29,9 @@ add_subdirectory(
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
 
+# --- RtMidi (host-only; device uses a no-op stub in platform/device/) ---
+pkg_check_modules(RTMIDI REQUIRED rtmidi)
+
 # Stage 0.5: bench mode. Pass -DSYNTH_BENCH=ON to cmake (done by `make bench`).
 option(SYNTH_BENCH "Build the Stage 0.5 CPU profiling harness" OFF)
 
@@ -54,7 +57,10 @@ set(HOST_SRCS
     "${REPO_ROOT}/ui/ui.cpp"
     "${REPO_ROOT}/app/app.c"
     "${REPO_ROOT}/platform/host/platform_host.c"
-    "${REPO_ROOT}/platform/host/miniaudio_impl.c")
+    "${REPO_ROOT}/platform/host/miniaudio_impl.c"
+    "${REPO_ROOT}/platform/host/midi_host.cpp"
+    "${REPO_ROOT}/control/midi_in.c"
+    "${REPO_ROOT}/control/midi_router.c")
 
 if(SYNTH_BENCH)
     list(APPEND HOST_SRCS "${REPO_ROOT}/engine/bench.c")
@@ -80,20 +86,25 @@ target_include_directories(tanmatsu-synth-host PRIVATE
     "${DAISYSP}/Source"
     # DaisySP .cpp files use flat #include "dsp.h" (without "Utility/" prefix).
     "${DAISYSP}/Source/Utility"
-    ${SDL2_INCLUDE_DIRS})
+    ${SDL2_INCLUDE_DIRS}
+    ${RTMIDI_INCLUDE_DIRS})
 
-target_link_directories(tanmatsu-synth-host PRIVATE ${SDL2_LIBRARY_DIRS})
+target_link_directories(tanmatsu-synth-host PRIVATE
+    ${SDL2_LIBRARY_DIRS}
+    ${RTMIDI_LIBRARY_DIRS})
 
 target_link_libraries(tanmatsu-synth-host PRIVATE
     pax_gfx
-    ${SDL2_LIBRARIES})
+    ${SDL2_LIBRARIES}
+    ${RTMIDI_LIBRARIES})
 
 # miniaudio's backends: Core Audio on macOS, ALSA/pulse via dl on Linux.
 if(APPLE)
     target_link_libraries(tanmatsu-synth-host PRIVATE
         "-framework CoreFoundation"
         "-framework CoreAudio"
-        "-framework AudioToolbox")
+        "-framework AudioToolbox"
+        "-framework CoreMIDI")
 else()
     find_package(Threads REQUIRED)
     target_link_libraries(tanmatsu-synth-host PRIVATE Threads::Threads ${CMAKE_DL_LIBS} m)

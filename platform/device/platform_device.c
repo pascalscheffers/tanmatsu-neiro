@@ -419,3 +419,12 @@ uint32_t platform_cycles_per_sec(void) {
     // private clock headers and is correct for our fixed-frequency use case.
     return (uint32_t)(CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ * 1000000UL);
 }
+
+// ---------------------------------------------------------------------------
+// MIDI input (Stage 5a) — no-op stub; USB transport arrives in Stage 5d/5b
+// ---------------------------------------------------------------------------
+size_t platform_midi_read(uint8_t* buf, size_t max_len) {
+    (void)buf;
+    (void)max_len;
+    return 0;
+}

@@ -7,9 +7,8 @@
 // platform/device/ (ESP-IDF + badge-bsp) and platform/host/ (SDL2 + miniaudio).
 //
 // Stage 0 wires three of the five seams (audio sink, display present, input).
-// MIDI transport and storage are declared design intent (spec 04) but deferred
-// to later stages; they are intentionally absent here until a real consumer
-// needs them (CLAUDE.md: start concrete, let need pull out the seam).
+// Stage 5a adds the MIDI-in seam (platform_midi_read); the out path arrives
+// with USB-C device mode (Stage 5d). Storage was wired in Stage 2d.
 #pragma once
 
 #include <stdbool.h>
@@ -127,6 +126,15 @@ int platform_storage_save(const char* key, const void* data, size_t len);
 // Load the blob for `key` into `buf` (at most `max_len` bytes).
 // Returns bytes loaded on success, -1 if the key does not exist or on error.
 int platform_storage_load(const char* key, void* buf, size_t max_len);
+
+// ---------------------------------------------------------------------------
+// MIDI input (Stage 5a) — in-only raw byte stream
+// ---------------------------------------------------------------------------
+// Non-blocking MIDI input. Copies up to max_len raw MIDI bytes into buf and
+// returns the number copied (0 when nothing is pending). Raw stream (running
+// status possible) — control/midi_in parses it. In-only for now; the out path
+// arrives with USB-C device mode (Stage 5d). Call from the control/UI thread.
+size_t platform_midi_read(uint8_t* buf, size_t max_len);
 
 #ifdef __cplusplus
 }
