@@ -23,6 +23,16 @@
 #include "dsp/saturate.h"
 #include "Effects/chorus.h"
 #include <string.h>
+#include <math.h>
+
+// Equal-power unison gain compensation (ADR / this fix).
+// Scaling by 1/sqrt(U) keeps perceived loudness roughly constant across unison
+// settings for detuned (decorrelated) voices and keeps worst-case peaks below
+// the soft_clip hard-clamp at ±1.5 (U=8 → factor ≈0.354; worst-case sum ≈1.41 < 1.5).
+// U=1 → 1.0 (bit-identical to pre-unison output).
+static inline float unison_gain(int count) {
+    return 1.0f / sqrtf((float)(count < 1 ? 1 : count));
+}
 
 // Pre-allocated mono accumulation buffer (ADR RT rule #1: no alloc in render).
 // 256 frames is the device platform ceiling (MAX_BLOCK in platform_device.c).
@@ -83,6 +93,9 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     // 2a. Stage 3d-i/ii: update play mode, portamento, and unison from the param store,
     //     then advance the glide ramp by one block. Done after drain() so we
     //     use the freshest smoothed values. block_time is exact for this block.
+    // unison_count is hoisted out of the inner block so step 6 can use it for
+    // equal-power gain compensation (1/√U) without a second param read.
+    int unison_count;
     {
         int   play_mode = (int)s_params.get(ParamId::PLAY_MODE);
         float porto     = s_params.get(ParamId::PORTAMENTO_TIME);
@@ -90,7 +103,7 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
         s_alloc.set_portamento_time(porto);
         // Stage 3d-ii: unison (UNISON_COUNT and UNISON_DETUNE are CURVE_STEPPED/LIN;
         // block-rate update here matches the same pattern as play_mode/portamento).
-        int   unison_count  = (int)s_params.get(ParamId::UNISON_COUNT);
+        unison_count        = (int)s_params.get(ParamId::UNISON_COUNT);
         float unison_detune = s_params.get(ParamId::UNISON_DETUNE);
         s_alloc.set_unison_count(unison_count);
         s_alloc.set_unison_detune(unison_detune);
@@ -162,7 +175,9 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     }
 
     // 6. Mono bus → stereo chorus → master gain → soft-clip → output (ADR 0016).
-    float gain = s_params.get(ParamId::MASTER_GAIN);
+    // Apply equal-power unison compensation (1/√U) so U voices stacked on one note
+    // do not sum louder than a single voice. Uses unison_count from step 2a above.
+    float gain = s_params.get(ParamId::MASTER_GAIN) * unison_gain(unison_count);
     for (size_t i = 0; i < frames; i++) {
         if (chorus_mode > 0) {
             s_chorus.Process(s_mono[i]);

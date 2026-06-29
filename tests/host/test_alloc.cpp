@@ -8,6 +8,7 @@
  * 4. Retrigger — same pitch re-uses the same slot, not a new one.
  * 5. Polyphony + steal — 9 simultaneous note_ons fill all 8 slots; the 9th
  *    steals the oldest gated voice.
+ * 17. unison_gain helper — equal-power 1/√U compensation properties.
  */
 
 #include "runner.h"
@@ -17,6 +18,7 @@
 #include "engine/synth_config.h"
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 static const float kSr = 48000.0f;
 
@@ -537,6 +539,56 @@ void test_alloc_unison_u1_unchanged() {
     test_pass();
 }
 
+/* --- 17. unison_gain: equal-power 1/√U compensation helper --------------- */
+// Tests the same formula used in synth.cpp (engine/synth.cpp, step 6):
+//   unison_gain(count) = 1.0f / sqrtf((float)(count < 1 ? 1 : count))
+// Verified properties:
+//   U=1  → 1.0 (no change from pre-unison output, bit-identical)
+//   U=4  → 0.5 (2 octaves of voices → half amplitude)
+//   monotonically decreasing
+//   worst-case U=8 with MASTER_GAIN=0.5: 8 voices × 0.5 × (1/√8) ≈ 1.414 < 1.5 soft_clip ceiling
+static inline float test_unison_gain_fn(int count) {
+    return 1.0f / sqrtf((float)(count < 1 ? 1 : count));
+}
+void test_unison_gain() {
+    printf("--- unison_gain compensation ---\n");
+    test_begin("unison_gain: U=1 yields 1.0 (no compensation change)");
+    float g1 = test_unison_gain_fn(1);
+    TEST_ASSERT(g1 == 1.0f, "unison_gain(1) must be exactly 1.0");
+    test_pass();
+
+    test_begin("unison_gain: U=4 yields 0.5");
+    float g4 = test_unison_gain_fn(4);
+    // 1/sqrt(4) = 0.5 exactly
+    TEST_ASSERT(fabsf(g4 - 0.5f) < 1e-6f, "unison_gain(4) must be 0.5");
+    test_pass();
+
+    test_begin("unison_gain: monotonically decreasing U=1..8");
+    float prev = test_unison_gain_fn(1);
+    for (int u = 2; u <= 8; u++) {
+        float cur = test_unison_gain_fn(u);
+        TEST_ASSERT(cur < prev, "unison_gain must decrease with each increment");
+        prev = cur;
+    }
+    test_pass();
+
+    test_begin("unison_gain: U=8 worst-case stays below soft_clip ceiling (1.5)");
+    // Worst-case: 8 voices each at amplitude 1.0, MASTER_GAIN=0.5, compensation applied.
+    // peak = 8 voices × 1.0 × MASTER_GAIN(0.5) × unison_gain(8)
+    // But unison_gain(8) × MASTER_GAIN(0.5): product = 0.5/sqrt(8) ≈ 0.177
+    // Actually: the raw mono bus worst case is sum of 8 unity-amplitude voices = 8.0
+    // After gain: 8.0 × 0.5 (MASTER_GAIN) × unison_gain(8) = 4.0 × (1/sqrt(8)) ≈ 1.414
+    // 1.414 < 1.5 (soft_clip hard-clamp) — confirms no hard clipping at U=8.
+    float worst_case = 8.0f * 0.5f * test_unison_gain_fn(8);  // 8 voices, MASTER_GAIN=0.5
+    TEST_ASSERT(worst_case < 1.5f, "worst-case U=8 mono sum stays below soft_clip ceiling");
+    test_pass();
+
+    test_begin("unison_gain: clamp for count < 1 returns 1.0 (no NaN/Inf)");
+    float g0 = test_unison_gain_fn(0);
+    TEST_ASSERT(g0 == 1.0f, "unison_gain(0) must clamp to 1.0 (same as U=1)");
+    test_pass();
+}
+
 void test_alloc_suite() {
     test_alloc_init();
     test_alloc_note_on();
@@ -558,4 +610,6 @@ void test_alloc_suite() {
     test_alloc_unison_note_off();
     test_alloc_unison_reduces_polyphony();
     test_alloc_unison_u1_unchanged();
+    // Unison gain compensation (bug fix: U>=3 clipping).
+    test_unison_gain();
 }

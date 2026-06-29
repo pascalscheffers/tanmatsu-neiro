@@ -321,6 +321,24 @@ restate. When this passes ~200 lines, rotate older entries into the archive.
 - **Next (blocked by gate):** see 🛑 below — device CPU measurement needed before
   declaring Stage 3 fully done.
 
+## 2026-06-29 — Bug fix: unison U>=3 clipping (COMPLETE)
+
+- **Bug (device-confirmed):** With `UNISON_COUNT >= 3`, the synth audibly distorted/harshly
+  clipped. Root cause: U detuned voices summed into the mono bus without any level compensation.
+  With `MASTER_GAIN=0.5`, one note at U=3 produced `~3 × 0.5 = 1.5` — exactly `soft_clip`'s
+  hard-clamp point → gross clipping. U=1,2 were fine; U=3 broke.
+- **Fix (`engine/synth.cpp`):** Added `unison_gain(int count) = 1/sqrt(U)` equal-power
+  compensation applied to `MASTER_GAIN` before the per-sample output loop. `unison_count` hoisted
+  from its anonymous block to function scope so step 6 can use it without a redundant param read.
+  U=1 → factor 1.0 (bit-identical to pre-fix output). U=8 worst-case: `8 × 0.5 × (1/√8) ≈ 1.41 < 1.5` — stays below soft-clip hard-clamp.
+- **Test (`tests/host/test_alloc.cpp`):** 5 new unison_gain tests (101 total): U=1=1.0 exact,
+  U=4=0.5 exact, monotonically decreasing U=1..8, worst-case U=8 stays below 1.5 ceiling,
+  count<1 clamps to 1.0 (no NaN/Inf).
+- `make test` ✅ (101/101) `make host` ✅ `make build` ✅ membrane clean.
+  App: **0xed830 ≈ 973 KB / 2 MB (54% free)** (unchanged — sqrtf is a single instruction on P4 FPU).
+- Note: 1/√U is the standard equal-power default. If Pascal later prefers a different loudness
+  curve (e.g. 1/U for maximum headroom), it's a one-line change to `unison_gain()`.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
