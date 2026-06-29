@@ -162,6 +162,17 @@ Stage 4d FX (delay + ReverbSc). Next campaign: per Opus's judgment.
   Flash delta: **+1,312 bytes** (0x110260 → 0x110780; 47% partition free). DIRAM unchanged.
 - **Next:** per Opus — Stage 4d (FX: tempo-synced delay + DaisySP ReverbSc) or other.
 
+## 2026-06-29 — WO-8: vector badge-button shape icons in hint strips (COMPLETE)
+
+- **`ui/ui_icons.h` / `ui/ui_icons.cpp`** (new, ~65 lines total): `UiIconShape` enum (CROSS/TRIANGLE/SQUARE/CIRCLE/TRILOBE/DIAMOND = F1..F6); `ui_icon_draw(fb, shape, cx, cy, size, color)` draws the corresponding outline shape using PAX primitives. Geometry: `r = size*0.45`, `h = size*0.40`; CROSS = two `pax_draw_line` diagonals; TRIANGLE = `pax_outline_tri` apex-up; SQUARE = `pax_outline_rect`; CIRCLE = `pax_outline_circle`; DIAMOND = four `pax_draw_line` cardinal-point rhombus; TRILOBE = three `pax_outline_circle` arranged trefoil (lr=0.26*size, top lobe dy=0.20, bottom lobes dx=0.22/dy=0.14).
+- **`ui/ui.cpp` `draw_status`**: hint strip replaced with mixed icon+text layout, advancing x via `pax_draw_text` return value and `ui_icon_width`. Left portion stays as text (`"<>pg  ^v row  "`), then △ ✕ "nudge", □ "back", ☘ "keys", ◇ "save", "ESC". Icon cy = text_y + FONT_SM*0.5 (vertically centred).
+- **`ui/ui_presets.cpp`**: hint strip replaced with "^v browse" + ○ "load" + □ "back" + "<> page"; dot bug fixed — U+25CF glyph (tofu on device) replaced with `pax_simple_circle` (radius FONT_MD*0.18, position matching the old glyph column).
+- **`ui/ui_overlay.cpp`**: footer "F5 = close" → "Z/X = oct down/up" (text, unchanged) + ☘ icon + "close".
+- **`host/CMakeLists.txt` + `main/CMakeLists.txt`**: `ui_icons.cpp` registered in both build descriptions.
+- `make host` ✅ `make test` ✅ (All tests passed) `make format` ✅ `make build` ✅ membrane clean.
+  Flash: DIRAM 156744 B (27.19%); total image 1,121,194 B. Commit: cd0a654.
+- **Next:** per Opus — Stage 4d (FX), or other.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
