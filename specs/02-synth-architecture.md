@@ -62,8 +62,8 @@ The chorus is doing a lot of the "Juno" character and the stereo width — high 
 | Macro-oscillator (VA/wavetable/FM) | **Mutable Instruments `plaits` / `braids`** | MIT | Core engine. Vendor `dsp/vendor/mi/`. Ported to Daisy already → known-portable float DSP. |
 | DSP utilities, filters, units, ringbuf | **MI `stmlib`** | MIT | SVF, one-pole, parameter smoothing, dsp helpers. |
 | Audio out / codec / I2S | **`badge-bsp`** (ES8156) | (BSP) | Confirm API from build-env agent report. |
-| USB MIDI device | **`esp_tinyusb` / TinyUSB MIDI** | MIT/Apache | USB-C device mode. |
-| USB MIDI host | IDF USB host + MIDI class driver | (TBD) | USB-A host; may need a small driver. Verify. |
+| USB MIDI device | **`esp_tinyusb`** 1.7.6 / TinyUSB MIDI | Apache-2.0 | USB-C device mode (Stage 5d). FS port (`CONFIG_TINYUSB_RHPORT_FS`). |
+| USB MIDI host | **ESP-IDF `usb` Host Library** + vendored MIDIStreaming class driver | Apache-2.0 (lib) + **Unlicense/CC0** (driver) | USB-A host (Stage 5b). Driver adapted from esp-idf PR #12566 (`Wunderbaeumchen99817/esp-idf`, CC0); no first-party MIDI host component exists. P4-proven on hardware 2026-06-29. |
 | UI rendering | **PAX graphics** | (lib) | All drawing. |
 | FM engine (if we want full DX-grade FM) | **Dexed/MSFA** (msfa) | Apache-2.0 | Optional, heavier. Only if 2-op isn't enough. |
 

@@ -93,6 +93,11 @@ host-first. Then the USB-A spike (G1) decides whether 5b or 5d (USB-C device) co
 
 ## ✅ Kickoff gate resolutions (2026-06-29, with Pascal)
 - **First push:** 5a only (foundation) — host-testable, zero device-USB risk.
+- **G1 RESOLVED ON HARDWARE (2026-06-29):** the USB-A host risk is retired. The 5b-i spike on
+  the device enumerated a class-compliant controller (Novation, VID 0x1235), matched the
+  MIDIStreaming interface, and received 4-byte USB-MIDI packets — `usb_host_install(peripheral_map=0)`
+  targets the P4 OTG-HS = USB-A, USB-A VBUS via `bsp_power_set_usb_host_boost_enabled(true)`, no PHY
+  swap needed. Driver = vendored CC0 (PR #12566). 5b-ii wires it to the engine + coexists with 5d.
 - **G1 + ordering → [ADR 0018](../decisions/0018-usb-c-device-midi-first.md):** research showed
   USB-C device (5d) has a first-party TinyUSB example (we already vendor TinyUSB) while USB-A host
   (5b) has no mainline ESP-IDF driver. **Device order flips to USB-C device first, USB-A host
