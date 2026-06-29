@@ -55,6 +55,7 @@ idf_component_register(
 		"../control/midi_router.c"
 		"../ui/ui.cpp"
 		"../platform/device/platform_device.c"
+		"../platform/device/midi_usb_device.c"
 		${BENCH_SRCS}
 	PRIV_REQUIRES
 		esp_lcd

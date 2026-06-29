@@ -620,6 +620,33 @@ latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.*
 - **Stage 5a COMPLETE** (5a-i parser + 5a-ii HAL + router). Next: Stage 5c (expression/CC: bend/mod/AT/
   sustain/panic; CC→param via `ParamDesc.midi_cc`), then 5d (USB-C device / TinyUSB out path).
 
+## 2026-06-29 — Stage 5d: USB-C MIDI device (TinyUSB) + PHY swap (COMPLETE — build-verified)
+
+- **`platform/device/midi_usb_device.h/c`** (new, ~100 lines after format): PHY swap
+  (`usb_serial_jtag_ll_phy_select(1)` via `hal/usb_serial_jtag_ll.h`) followed by
+  `tinyusb_driver_install()` with a Full-Speed MIDI config descriptor. Strings:
+  Manufacturer="Nicolai Electronics", Product="Tanmatsu Synth". Real `platform_midi_read`
+  uses `tud_midi_stream_read()` — raw bytes, de-packetized by TinyUSB, fed directly to the
+  5a incremental parser. All USB/TinyUSB/hal symbols confined to this file (membrane clean).
+- **`platform/device/platform_device.c`**: removed no-op `platform_midi_read` stub;
+  added `#include "midi_usb_device.h"` + `midi_usb_device_init()` call at end of
+  `platform_init()` (after display/input/audio — so the 500 ms PHY disconnect delay fires
+  last).
+- **`main/idf_component.yml`**: added `espressif/esp_tinyusb: "^1.1"` (resolved to 1.7.6~2).
+- **`sdkconfigs/tanmatsu`** (extra file beyond the 7-file touch list, required): added
+  `CONFIG_TINYUSB_MIDI_COUNT=1` — this is the IDF defaults mechanism; without it cmake
+  reconfigures with 0. `sdkconfig_tanmatsu` (gitignored full config) also shows `=1` after
+  reconfigure. The TinyUSB Kconfig maps `CONFIG_TINYUSB_MIDI_COUNT → CFG_TUD_MIDI`.
+- **`main/CMakeLists.txt`**: `midi_usb_device.c` added to device SRCS.
+- **Build delta (vs pre-5d):** `0xf5b70` → `0xfc860` (+27,888 bytes ≈ +27 KB) for
+  esp_tinyusb 1.7.6~2 + TinyUSB 0.19.0~3. Flash 923 KB / DIRAM 153 KB (26.5%); 51% partition
+  free. Plenty of headroom.
+- `make build` ✅ `make test` ✅ (153/153 host tests unaffected) `make format` ✅ `make size` ✅.
+- **Enumeration is Pascal's hardware check.** USB-C console is detached after init (accepted for
+  AppFS apps). On flashing, Mac should show a new USB MIDI device ("Tanmatsu Synth");
+  any DAW or MIDI monitor app should be able to receive notes.
+- **Remaining Stage 5:** 5b USB-A host MIDI (G1 spike: P4 driver feasibility), 5c CC/expression.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

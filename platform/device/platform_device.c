@@ -23,6 +23,8 @@
 #include "nvs_flash.h"
 #include "platform.h"
 #include "sdkconfig.h"
+// Stage 5d: USB-C MIDI device (PHY swap + TinyUSB); also provides platform_midi_read.
+#include "midi_usb_device.h"
 
 static const char TAG[] = "platform";
 
@@ -157,6 +159,12 @@ bool platform_init(void) {
         ESP_LOGW(TAG, "no input queue");
         s_input_queue = NULL;
     }
+
+    // Stage 5d: swap USB-C PHY to OTG and install TinyUSB MIDI device.
+    // Done last so display/input/audio are already up before the 500 ms PHY
+    // disconnect delay fires.
+    midi_usb_device_init();
+
     return true;
 }
 
@@ -418,13 +426,4 @@ uint32_t platform_cycles_per_sec(void) {
     // (400 MHz by default). Using the compile-time constant avoids pulling in
     // private clock headers and is correct for our fixed-frequency use case.
     return (uint32_t)(CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ * 1000000UL);
-}
-
-// ---------------------------------------------------------------------------
-// MIDI input (Stage 5a) — no-op stub; USB transport arrives in Stage 5d/5b
-// ---------------------------------------------------------------------------
-size_t platform_midi_read(uint8_t* buf, size_t max_len) {
-    (void)buf;
-    (void)max_len;
-    return 0;
 }
