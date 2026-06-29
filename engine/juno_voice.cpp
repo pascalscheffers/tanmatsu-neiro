@@ -295,13 +295,18 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
     if (eff_noise < 0.0f) eff_noise = 0.0f;
     if (eff_noise > 1.0f) eff_noise = 1.0f;
 
+    // Filter cutoff updated once per block (block-rate): SetFreq computes sinf+powf,
+    // so calling it per sample is prohibitively expensive on RISC-V without hw trig.
+    // At 64-sample blocks (48 kHz) this gives 750 Hz mod bandwidth — inaudible limit
+    // for Juno-style filter sweeps. Must follow set_res() because SetFreq reads res_.
+    filter_.set_freq(cutoff_end);
+
     // Block-smooth audio-rate dests: linear interpolation from prev to end
     // value over n samples (avoids zipper noise on fast LFO modulation).
     const float inv_n  = (n > 1) ? (1.0f / (float)(n - 1)) : 1.0f;
 
     // We do per-sample freq ramp; enough for click-free modulation at 64 samples.
     float freq_step   = (mod_freq_end - base_freq)      * inv_n;
-    float cutoff_step = (cutoff_end   - p_cutoff_)      * inv_n;
     float amp_step    = (amp_end      - p_osc_level_)   * inv_n;
 
     float e2 = env2_value_;
@@ -320,12 +325,11 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
     for (size_t i = 0; i < n; i++) {
         // Per-sample modulated freq (smooth pitch mod).
         float cur_freq   = base_freq    + freq_step   * (float)i;
-        float cur_cutoff = p_cutoff_    + cutoff_step * (float)i;
         float cur_amp    = p_osc_level_ + amp_step    * (float)i;
 
         osc_main_.set_freq(cur_freq);
         osc_sub_.set_freq(cur_freq * 0.5f);
-        filter_.set_freq(cur_cutoff);
+        // filter_.set_freq is called once per block above (block-rate cutoff).
 
         float osc   = osc_main_.process() * cur_amp;
         float sub   = osc_sub_.process()  * eff_sub;
