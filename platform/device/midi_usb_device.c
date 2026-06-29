@@ -6,10 +6,12 @@
 // the USB-C console detached from the launcher).
 //
 // platform_midi_read() — moved here from the no-op stub in platform_device.c —
-// calls tud_midi_stream_read() which de-packetizes USB-MIDI 4-byte event
-// packets and returns raw MIDI bytes, satisfying the contract that midi_in.c
-// expects.  esp_tinyusb spawns its own tud_task() internally; we do not poll
-// it ourselves.
+// merges MIDI bytes from both USB transports:
+//   1. USB-C device: tud_midi_stream_read() (de-packetized by TinyUSB).
+//   2. USB-A host:   midi_usb_host_read()  (de-packetized in midi_usb_host.c).
+// The existing MidiParser in midi_router.c handles framing/running-status;
+// merging raw byte streams at this level is safe.
+// esp_tinyusb spawns its own tud_task() internally; we do not poll it ourselves.
 //
 // All USB/TinyUSB/hal symbols are confined to this file (membrane check).
 #include "midi_usb_device.h"
@@ -17,7 +19,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "hal/usb_serial_jtag_ll.h"
-#include "platform.h"  // for platform_midi_read declaration
+#include "midi_usb_host.h"  // Stage 5b-ii: USB-A host drain
+#include "platform.h"       // for platform_midi_read declaration
 #include "tinyusb.h"
 
 static const char TAG[] = "midi_usb_device";
@@ -110,10 +113,14 @@ void midi_usb_device_init(void) {
 // platform_midi_read — real implementation (replaces the no-op stub)
 // ---------------------------------------------------------------------------
 // Called each frame by midi_router_poll() (control/midi_router.c).
-// tud_midi_stream_read() de-packetizes USB-MIDI 4-byte event packets and
-// copies raw MIDI bytes into buf, returning the byte count (0 = nothing ready).
-// This exactly matches the platform_midi_read seam contract.
+// Merges raw MIDI bytes from both USB transports:
+//   - USB-C device (tud_midi_stream_read): de-packetized by TinyUSB.
+//   - USB-A host  (midi_usb_host_read):  de-packetized in midi_usb_host.c.
+// The MidiParser in midi_router.c handles running-status and framing across
+// both sources, so merging raw byte streams here is safe.
 size_t platform_midi_read(uint8_t* buf, size_t max_len) {
-    if (!tud_midi_mounted()) return 0;
-    return tud_midi_stream_read(buf, max_len);
+    size_t n = 0;
+    if (tud_midi_mounted()) n += tud_midi_stream_read(buf, max_len);
+    if (n < max_len) n += midi_usb_host_read(buf + n, max_len - n);
+    return n;
 }

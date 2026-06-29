@@ -713,6 +713,35 @@ latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.*
 5. Play some notes; watch for `I (midi_usb_host): MIDI rx [N bytes]: 09 90 3C 64 ...`
    (4-byte USB-MIDI event packets in hex)
 
+## 2026-06-29 — Stage 5b-ii: USB-A host MIDI plays the synth (COMPLETE — build-verified)
+
+- **`platform/device/midi_usb_host.c`**: replaced log-only callback with USB-MIDI
+  de-packetization. CIN length table (`s_cin_len[16]`) maps each 4-bit CIN to 0–3
+  MIDI bytes per USB spec §4. For each received 4-byte packet: `cin = pkt[0] & 0x0F`,
+  `len = s_cin_len[cin]`, push `pkt[1..len]` into a lock-free SPSC byte ring.
+  Ring: 512 bytes, static, power-of-two, C11 `_Atomic uint32_t` head/tail — producer is
+  the USB class-driver task (NOT an ISR), consumer is the control thread only. Overflow
+  drops the whole message and logs under `#ifdef SYNTH_USB_HOST_DEBUG`. Hex-dump of raw
+  packets similarly guarded. Added `midi_usb_host_read(buf, max_len)` consumer drain.
+- **`platform/device/midi_usb_host.h`**: added `size_t midi_usb_host_read(uint8_t*, size_t)`
+  declaration; updated comment to reflect both builds.
+- **`platform/device/midi_usb_device.c`**: `platform_midi_read` now merges both transports:
+  USB-C device (`tud_midi_stream_read`) first; then USB-A host (`midi_usb_host_read`) for
+  remaining buffer space. Added `#include "midi_usb_host.h"`. The existing `MidiParser` in
+  `midi_router.c` handles running-status across the merged stream.
+- **`platform/device/platform_device.c`**: normal build now starts BOTH transports —
+  `midi_usb_device_init()` (USB-C FS device, TinyUSB) then `midi_usb_host_init()` (USB-A HS
+  host, independent controller). Debug build unchanged (host-only, console alive).
+- **Build results:**
+  - `make build` ✅ normal: `0x10db30` bytes (47% free) — both transports linked
+  - `make build USBHOST_DEBUG=1` ✅ debug: `0x108dd0` bytes (48% free) — host-only
+  - `make test` ✅ (153/153 — no host-test/parser/engine code touched)
+  - `make format` ✅ idempotent
+- **Stage 5b COMPLETE** (pending Pascal's audible hardware check): normal build — USB-A MIDI
+  controller plays the synth; USB-C MIDI from Mac still works simultaneously. Debug build —
+  same with console logs.
+- **Still open:** Stage 5c — expression/CC map (bend/mod/AT/sustain/panic, CC→param).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Unlicense OR CC0-1.0
-// platform/device/midi_usb_host.c — USB-A host MIDI bring-up spike (Stage 5b-i).
+// platform/device/midi_usb_host.c — USB-A host MIDI driver (Stage 5b-i/5b-ii).
 //
 // Adapted from:
 //   Wunderbaeumchen99817/esp-idf, examples/peripherals/usb/host/midi/main/
@@ -11,14 +11,19 @@
 //   - Init entry point (midi_usb_host_init) replaces app_main.
 //   - BSP VBUS enable (bsp_power_set_usb_host_boost_enabled) before USB install.
 //   - peripheral_map = 0 (default) → P4 HS peripheral = USB-A OTG controller.
-//   - Spike behaviour only: ESP_LOGI on connect + hex-dump of received packets.
-//     Does NOT touch platform_midi_read, the parser, or the engine (that is 5b-ii).
+//   - Stage 5b-i spike: ESP_LOGI hex dump of received packets (now guarded under
+//     SYNTH_USB_HOST_DEBUG so normal builds are RT-log-free).
+//   - Stage 5b-ii: USB-MIDI de-packetization via CIN length table; lock-free SPSC
+//     byte ring; midi_usb_host_read() consumer-side drain. platform_midi_read in
+//     midi_usb_device.c calls this so both transports merge into the existing seam.
 //   - Receive-only (bulk IN); OUT path not opened.
 
 #include "midi_usb_host.h"
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include "bsp/power.h"
 #include "esp_intr_alloc.h"
 #include "esp_log.h"
@@ -33,8 +38,9 @@
 
 static const char TAG[] = "midi_usb_host";
 
-// USB-MIDI class codes (USB Audio class, MIDIStreaming subclass).
-#define USB_CLASS_AUDIO            0x01u
+// USB-MIDI subclass code (USB MIDIStreaming).
+// Note: USB_CLASS_AUDIO (0x01) is already defined in usb/usb_types_ch9.h;
+// we do not redefine it here to avoid a -Wmacro-redefined warning.
 #define USB_SUBCLASS_MIDISTREAMING 0x03u
 
 // USB direction bit: bit 7 of bEndpointAddress is 1 for IN.
@@ -49,6 +55,76 @@ static const char TAG[] = "midi_usb_host";
 #define CLASS_STACK  5120u
 #define DAEMON_PRIO  2u
 #define CLASS_PRIO   3u
+
+// ---------------------------------------------------------------------------
+// USB-MIDI de-packetization: CIN → MIDI byte count (USB MIDI 1.0 spec §4)
+//
+// Each USB-MIDI event packet is 4 bytes: byte0 = (cable<<4)|CIN; byte1..3 =
+// MIDI data.  The CIN (Code Index Number, low nibble of byte0) encodes how many
+// of byte1..3 carry real MIDI data.  Values 0x0 and 0x1 are reserved/misc
+// (used for SysEx single and cable events with no standard MIDI bytes) — we
+// skip them.  All 16 entries are listed for clarity; the table is indexed by
+// the 4-bit CIN directly.
+// ---------------------------------------------------------------------------
+static const uint8_t s_cin_len[16] = {
+    0,  // 0x0 misc/reserved — skip
+    0,  // 0x1 cable event — skip
+    2,  // 0x2 two-byte system-common (MTC quarter-frame, song-select)
+    3,  // 0x3 three-byte system-common (song position pointer)
+    3,  // 0x4 SysEx start/continue
+    1,  // 0x5 single-byte system-common / SysEx ends with 1 byte
+    2,  // 0x6 SysEx ends with 2 bytes
+    3,  // 0x7 SysEx ends with 3 bytes
+    3,  // 0x8 Note-Off
+    3,  // 0x9 Note-On
+    3,  // 0xA Poly key pressure
+    3,  // 0xB Control change
+    2,  // 0xC Program change
+    2,  // 0xD Channel pressure
+    3,  // 0xE Pitch bend
+    1,  // 0xF single byte (system real-time)
+};
+
+// ---------------------------------------------------------------------------
+// Lock-free SPSC byte ring
+//
+// Producer: midi_transfer_cb (USB client-task context — NOT an ISR).
+// Consumer: midi_usb_host_read (control thread, called from midi_router_poll).
+//
+// C11 _Atomic head/tail; no mutex; only one producer and one consumer at a
+// time.  On overflow: bytes are silently dropped (MIDI event boundary is
+// preserved: we only push whole messages, but we may drop a whole message if
+// there's no room).  Ring size must be a power of two for the mask trick.
+// ---------------------------------------------------------------------------
+#define RING_SIZE 512u  // bytes; must be power of two
+#define RING_MASK (RING_SIZE - 1u)
+
+typedef struct {
+    uint8_t          buf[RING_SIZE];
+    _Atomic uint32_t head;  // producer writes here (index of next free slot)
+    _Atomic uint32_t tail;  // consumer reads here (index of next unread byte)
+} MidiRing;
+
+static MidiRing s_ring;
+
+// Push up to `len` bytes from `data` into the ring.  Drops bytes that don't
+// fit.  Called from the USB transfer callback (producer, client-task context).
+static void ring_push(const uint8_t* data, uint8_t len) {
+    uint32_t head = atomic_load_explicit(&s_ring.head, memory_order_relaxed);
+    uint32_t tail = atomic_load_explicit(&s_ring.tail, memory_order_acquire);
+    uint32_t used = head - tail;  // wraps naturally with unsigned arithmetic
+    uint32_t free = RING_SIZE - used;
+    if (len > free) {
+#ifdef SYNTH_USB_HOST_DEBUG
+        ESP_LOGW(TAG, "ring overflow — dropped %u bytes", (unsigned)len);
+#endif
+        return;
+    }
+    for (uint8_t i = 0; i < len; i++) {
+        s_ring.buf[(head + i) & RING_MASK] = data[i];
+    }
+    atomic_store_explicit(&s_ring.head, head + len, memory_order_release);
+}
 
 // ---------------------------------------------------------------------------
 // Driver state
@@ -123,23 +199,39 @@ static bool find_midi_interface(const usb_config_desc_t* cfg, midi_intf_t* out) 
 }
 
 // ---------------------------------------------------------------------------
-// Transfer callback: log received USB-MIDI event packets
+// Transfer callback: de-packetize USB-MIDI event packets → SPSC ring
 // ---------------------------------------------------------------------------
 
-// Each USB-MIDI event packet is 4 bytes: [CIN | cable | byte1 | byte2 | byte3].
-// For the spike we just hex-dump the raw received bytes; de-packetizing is 5b-ii.
+// Each USB-MIDI event packet is 4 bytes: byte0 = (cable<<4)|CIN; byte1..3 =
+// MIDI data bytes.  We extract exactly s_cin_len[CIN] bytes and push them into
+// the ring for consumption by midi_usb_host_read().
+//
+// This callback runs in the USB class-driver task context (NOT an ISR); plain
+// C11 atomic ops on the ring are sufficient (no ISR-safe special handling needed).
 static void midi_transfer_cb(usb_transfer_t* xfer) {
     if (xfer->status == USB_TRANSFER_STATUS_COMPLETED && xfer->actual_num_bytes > 0) {
-        // Print received bytes in hex.  Up to MIDI_BULK_IN_BUF bytes per packet;
-        // each USB-MIDI event packet is 4 bytes, so at most 16 events per transfer.
-        char     hex[MIDI_BULK_IN_BUF * 3 + 1];
-        uint8_t* data = xfer->data_buffer;
-        int      pos  = 0;
+        uint8_t* data     = xfer->data_buffer;
+        int      num_pkts = xfer->actual_num_bytes / 4;  // each USB-MIDI event = 4 bytes
+
+#ifdef SYNTH_USB_HOST_DEBUG
+        // Hex-dump the raw received bytes (debug build only — RT-log in normal build).
+        char hex[MIDI_BULK_IN_BUF * 3 + 1];
+        int  pos = 0;
         for (int i = 0; i < xfer->actual_num_bytes && pos < (int)(sizeof(hex) - 3); i++) {
             pos += snprintf(&hex[pos], sizeof(hex) - pos, "%02X ", data[i]);
         }
-        if (pos > 0) hex[pos - 1] = '\0';  // trim trailing space
+        if (pos > 0) hex[pos - 1] = '\0';
         ESP_LOGI(TAG, "MIDI rx [%d bytes]: %s", xfer->actual_num_bytes, hex);
+#endif
+
+        for (int p = 0; p < num_pkts; p++) {
+            uint8_t* pkt = data + p * 4;
+            uint8_t  cin = pkt[0] & 0x0Fu;
+            uint8_t  len = s_cin_len[cin];
+            if (len > 0) {
+                ring_push(&pkt[1], len);  // byte1..byte(len) are the MIDI bytes
+            }
+        }
     } else if (xfer->status != USB_TRANSFER_STATUS_COMPLETED) {
         ESP_LOGW(TAG, "transfer status %d", (int)xfer->status);
     }
@@ -214,7 +306,7 @@ static void open_device(class_driver_t* drv) {
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "transfer_submit failed: %s", esp_err_to_name(err));
     } else {
-        ESP_LOGI(TAG, "Bulk IN transfer submitted — listening for MIDI packets");
+        ESP_LOGI(TAG, "Bulk IN transfer submitted — MIDI → ring active");
     }
 }
 
@@ -289,7 +381,7 @@ static void class_driver_task(void* arg) {
         // Block until the next client event (new device, device gone, transfer done).
         usb_host_client_handle_events(s_driver.client_hdl, portMAX_DELAY);
     }
-    // Unreachable in spike; cleanup omitted intentionally.
+    // Unreachable in normal operation; cleanup omitted intentionally.
     vTaskDelete(NULL);
 }
 
@@ -340,6 +432,10 @@ static void host_lib_daemon_task(void* arg) {
 // ---------------------------------------------------------------------------
 
 void midi_usb_host_init(void) {
+    // Step 0: zero-init the ring (static, but explicit for clarity).
+    atomic_store(&s_ring.head, 0u);
+    atomic_store(&s_ring.tail, 0u);
+
     // Step 1: enable USB-A VBUS (without this nothing enumerates).
     esp_err_t err = bsp_power_set_usb_host_boost_enabled(true);
     if (err != ESP_OK) {
@@ -370,10 +466,30 @@ void midi_usb_host_init(void) {
     ok = xTaskCreatePinnedToCore(class_driver_task, "usbh_midi", CLASS_STACK, (void*)sem, CLASS_PRIO, NULL, 0);
     if (ok != pdPASS) {
         ESP_LOGE(TAG, "Failed to create class driver task");
-        // Daemon task is already running; cannot easily clean up, but the spike
+        // Daemon task is already running; cannot easily clean up, but the driver
         // will simply be inactive.  Log and return.
         return;
     }
 
-    ESP_LOGI(TAG, "USB-A host MIDI spike initialised — plug in a class-compliant MIDI controller");
+    ESP_LOGI(TAG, "USB-A host MIDI initialised — plug in a class-compliant MIDI controller");
+}
+
+// ---------------------------------------------------------------------------
+// Consumer: drain the SPSC ring into caller's buffer (control thread only)
+// ---------------------------------------------------------------------------
+
+// Called from platform_midi_read (via midi_usb_device.c) on the control thread.
+// Returns the number of raw MIDI bytes written into buf (may be 0).
+size_t midi_usb_host_read(uint8_t* buf, size_t max_len) {
+    uint32_t tail  = atomic_load_explicit(&s_ring.tail, memory_order_relaxed);
+    uint32_t head  = atomic_load_explicit(&s_ring.head, memory_order_acquire);
+    uint32_t avail = head - tail;  // unsigned wraps correctly
+    if (avail == 0) return 0;
+
+    size_t n = (avail < max_len) ? (size_t)avail : max_len;
+    for (size_t i = 0; i < n; i++) {
+        buf[i] = s_ring.buf[(tail + i) & RING_MASK];
+    }
+    atomic_store_explicit(&s_ring.tail, tail + (uint32_t)n, memory_order_release);
+    return n;
 }

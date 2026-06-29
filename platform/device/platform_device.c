@@ -23,8 +23,8 @@
 #include "nvs_flash.h"
 #include "platform.h"
 #include "sdkconfig.h"
-// Stage 5d: USB-C MIDI device (PHY swap + TinyUSB); also provides platform_midi_read.
-// Stage 5b-i: USB-A host MIDI spike (SYNTH_USB_HOST_DEBUG build only).
+// Stage 5d: USB-C MIDI device (PHY swap + TinyUSB); owns platform_midi_read.
+// Stage 5b: USB-A host MIDI (both builds; host-only in SYNTH_USB_HOST_DEBUG).
 #include "midi_usb_device.h"
 #include "midi_usb_host.h"
 
@@ -162,16 +162,18 @@ bool platform_init(void) {
         s_input_queue = NULL;
     }
 
-    // USB init — mutually exclusive:
-    //   SYNTH_USB_HOST_DEBUG (make build USBHOST_DEBUG=1): bring up USB-A host
-    //     MIDI spike only, keeping the USB-C console alive for debugging.
-    //   Normal build: Stage 5d USB-C device (TinyUSB MIDI out, console detached).
+    // USB init:
+    //   SYNTH_USB_HOST_DEBUG (make build USBHOST_DEBUG=1): USB-A host only;
+    //     USB-C console stays alive for debugging (no PHY swap).
+    //   Normal build: USB-C device (Stage 5d, TinyUSB MIDI, console detached)
+    //     + USB-A host (Stage 5b) — independent HS/FS controllers, coexist.
     // Done last so display/input/audio are already up before the 500 ms PHY
     // disconnect delay fires.
 #ifdef SYNTH_USB_HOST_DEBUG
-    midi_usb_host_init();
+    midi_usb_host_init();  // host only; USB-C console stays alive
 #else
-    midi_usb_device_init();
+    midi_usb_device_init();  // USB-C device (5d): PHY swap + TinyUSB
+    midi_usb_host_init();    // USB-A host   (5b): independent HS controller
 #endif
 
     return true;
