@@ -45,3 +45,6 @@ CONFIG_BOOTLOADER_REGION_PROTECTION_ENABLE=n
 # at boot.
 CONFIG_TINYUSB_RHPORT_FS=y
 CONFIG_TINYUSB_MIDI_COUNT=1
+# Raise tick to 1000 Hz so vTaskDelay(1) rounds to ~1 ms, not ~10 ms (100 Hz default).
+# Required for the 1 ms input-poll loop in app.c (input-latency fix).
+CONFIG_FREERTOS_HZ=1000
