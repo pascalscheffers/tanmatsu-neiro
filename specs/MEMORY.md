@@ -375,6 +375,18 @@ different prior voice histories, neutralising one state source at a time:
   (noise is noise). `daisysp::Adsr::Retrigger(true)` *does* preserve ADSR times (verified) — keep
   in mind if a deterministic env restart is ever needed.
 
+## 2026-06-29 — Stage 3 closed; Stage 4 campaign brief authored (RESUME HERE)
+
+Stage 3 is done (voice + mod + play modes + unison, all ratified) and the post-fix
+non-determinism investigation is closed (free-running osc, by design — entry above). **Next
+campaign = Stage 4 (Timing, Arp, Sequencer, FX).** Opus authored the campaign map at
+[`stages/stage-4-timing-arp-seq-fx.md`](stages/stage-4-timing-arp-seq-fx.md): sub-stage
+decomposition (4a clock+scheduler → 4b arp → 4d FX → 4c sequencer), seams, and **five kickoff
+gates (G1–G5)** to resolve with Pascal before authoring work-orders — incl. the 🛑 reverb
+device-CPU profile (ADR 0015) and the sequencer data-model/storage format (extends spec 05).
+**On resume:** read that brief + `specs/06` + ADR 0010 + ADR 0015 + `stage-3d-ii-results.md`,
+run G1–G4 with Pascal, then dispatch the **4a** work-order (everything hangs off the clock).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
