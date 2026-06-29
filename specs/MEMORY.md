@@ -314,10 +314,35 @@ Root-caused by Opus (bench showed ~131k cyc/blk/voice vs 2.6k for the Stage 0.5 
 - 🛑 3d-ii gate stays open pending Pascal's re-bench. This completes Round A+B of the queued
   CPU optimization pair — expected device steady-state overhead to drop from ~53k → near-zero cyc/blk.
 
+## 2026-06-29 — 🛑 Stage 3d-ii CPU gate RATIFIED — Stage 3 COMPLETE (Opus 4.8)
+
+Device re-bench (`make bench-device`) confirms the full Juno voice fits **8 voices + unison +
+chorus** with large headroom. Numbers + journey recorded in
+[`stage-3d-ii-results.md`](stage-3d-ii-results.md).
+- **Section 3:** 8 voices = **243 790 cyc/blk = 50.8%**; worst case (U=8 + Chorus I, one note)
+  = **50.8%** too. Per-voice ≈ **27.5k**, fixed intercept ≈ **23.5k**. ~19 pts under the 70%
+  safe ceiling — room for Stage 4 FX + UI jitter.
+- **Section 4:** fixed overhead 53k → **22.3k** (Round B); chorus confirmed ~free (9–12 cyc).
+- **Arc:** per-voice 131k → 55k (-O2 + block-rate filter) → 27.5k (Round A LFO + Round B param
+  push) = **4.75×**. No sonic change in any of the four fixes.
+- **Verdict:** ADR 0003 (8 voices + unison) **stands, device-proven** — no poly/unison cap
+  needed. The 🛑 gate below is **cleared**. Stage 3 (Modulation + full Juno) is **done**.
+- **Next:** re-plan Stages 4–7 with Opus against the measured headroom (~27.5k/voice, ~22k
+  fixed ≈ 49% of budget free at full load). Non-blocking debt still open: inert HPF row (needs a
+  2nd `dsp::Filter` in `JunoVoice`); `kPresetDestPwm=0xFFFD` sentinel → `ParamId::OSC_PWM`.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
 
+*(none open — Stage 3d-ii CPU gate cleared 2026-06-29; see entry above and `stage-3d-ii-results.md`.)*
+
+✅ Stage 3d-ii (unison / voice CPU cost) — **RATIFIED 2026-06-29 (Opus 4.8)**. Device bench:
+  8 voices + worst-case unison+chorus = 50.8% of the 480k-cyc budget (per-voice ~27.5k, fixed
+  ~22k) after four transparent perf fixes (-O2 build, block-rate SVF cutoff, block-rate LFO,
+  change-gated param push). ADR 0003 stands; no cap needed. Numbers: `stage-3d-ii-results.md`.
+
+<!-- Historical gate text (resolved) retained for context:
 🛑 Stage 3d-ii (unison / voice CPU cost) needs device measurement. The full-featured Juno
   voice (mod matrix + ENV2 + 2 LFOs + portamento + unison detuning via set_pitch_offset) has
   not been benched since Stage 0.5's proxy voice. Unison at U=8 maxes the pool and runs all
@@ -326,6 +351,7 @@ Opus clears the entry when the gate is resolved.
   Juno voices at steady state, confirm within the 70% ceiling (chorus + fx headroom); cap
   `UNISON_COUNT` max or reduce max polyphony only if it blows. Blocked: declaring Stage 3
   fully done.
+-->
 
 ✅ Stage 3 — Juno default-patch voicing — **RATIFIED 2026-06-28 (Opus 4.8)**
   Sonic gate during 3b-ii. Pascal chose **"Clean 106"**: matrix default routings =
