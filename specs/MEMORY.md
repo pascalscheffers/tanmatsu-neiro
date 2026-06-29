@@ -466,6 +466,31 @@ held set + modes up/down/up-down/order/random + octaves + latch + `next()`; timi
 gate/swing, schedule note on/off into the scheduler). **4b-i dispatched.**
 - **Next:** review 4b-i; dispatch 4b-ii then 4b-iii; then 4d (FX: delay → ReverbSc w/ device gate).
 
+## 2026-06-29 — Stage 4b-i: arpeggiator pure core (COMPLETE)
+
+- **`engine/arp.h`** (new, header-only, pure): `Arp` class + `ArpMode` enum + `ArpNote` struct.
+  Fixed-size (`kMaxHeld=16`, `kMaxOctaves=4`). No alloc, no logging, no platform deps.
+- **Modes:** kUp/kDown (sorted ascending, forward/backward traversal of expanded list);
+  kUpDown (ping-pong, endpoints NOT repeated, period 2L-2 for L>1; L=1 stays at 0);
+  kOrder (as-played insertion order); kRandom (deterministic 64-bit LCG, Knuth MMIX coefficients,
+  same seed+chord → same sequence after `clear()`).
+- **Octaves:** outer dimension; expanded list length L = `held_count * octaves`. All base notes
+  at octave 0, then +12, etc. Out-of-range stacking clamps to [0,127].
+- **Latch semantics:** latch ON keeps released notes in the held set; first physical key-down
+  after full release (physical_count_ 0→1) clears the held set for a fresh chord. Latch OFF
+  with no physical keys down: clear the held set immediately (notes stop).
+- **step_ management:** kUp/kDown/kOrder carry step_ in [0,L); kUpDown in [0,2L-2);
+  kRandom: step_ unused. `remove_held` keeps step_ in range after shrinking.
+- **14 new host tests** (134 total, all pass): kUp wrap, kDown wrap, kUpDown period+endpoint rule,
+  kOrder as-played, octaves=2, kRandom determinism, empty→invalid, latch retain, latch fresh-chord
+  on new key, latch-off clears, dynamic mid-pattern removal, kUpDown L=1, velocity preserved,
+  pitch clamped at 127.
+- `make test` ✅ (134/134) `make host` ✅ `make build` ✅ membrane clean (no `esp_`/`bsp_`/SDL/alloc/I/O).
+- `make size`: Flash **1,002,470 bytes (52% partition free, UNCHANGED)** — arp.h not yet
+  included by any shipped TU.
+- **Next:** Stage 4b-ii — arp params in the table + UI (ARP_MODE, ARP_RATE, ARP_OCTAVES,
+  ARP_LATCH, ARP_GATE, ARP_SWING, ARP_ON).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
