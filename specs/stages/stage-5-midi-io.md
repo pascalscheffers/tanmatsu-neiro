@@ -98,6 +98,21 @@ host-first. Then the USB-A spike (G1) decides whether 5b or 5d (USB-C device) co
   (5b) has no mainline ESP-IDF driver. **Device order flips to USB-C device first, USB-A host
   later** (amends ADR 0005). G1's host-driver spike still owned by this stage, just sequenced after
   5d. New sub-stage order: 5a → 5c → 5d → 5b → 5e.
+- **G1 deep-dive — USB-A host MIDI driver (2026-06-29, current docs IDF v5.5.1):** confirmed
+  there is **no first-party ESP-IDF USB-host MIDI component** (registry host class drivers = CDC-ACM
+  / MSC / HID / UVC / UAC; UAC is audio-streaming, *not* MIDIStreaming). A small custom MIDIStreaming
+  class driver on the native **USB Host Library** is required (claim iface class 0x01/subclass 0x03,
+  bulk-IN, 4-byte USB-MIDI Event Packets). **Reuse, don't write from scratch — vendor base:**
+  esp-idf PR #12566 `examples/.../usb/host/midi/main/midi_class_driver.c` (~313 lines, **license
+  `Unlicense OR CC0-1.0`** — pristine; receive-only; targets S2/S3 but the Host Library API is
+  identical on P4). **P4-proven cross-reference (no license → reference only, do NOT vendor):**
+  `github.com/chegewara/esp32-p4-host-midi-demo` (native Host Library, runs on P4-EV board).
+  `sauloverissimo/ESP32_Host_MIDI` is Arduino/TinyUSB-host only → not usable in ESP-IDF.
+  **Architecture notes for 5b:** USB-A is the P4 **OTG-HS** controller — independent of the USB-C
+  **FS** PHY, so 5b needs **no `usb_serial_jtag_ll_phy_select` swap** (that was USB-C-only) and can
+  in principle run *alongside* the 5d device. `CONFIG_USB_HOST_*` is already enabled. Open work:
+  verify on P4 silicon, confirm host+device controller coexistence, thread bulk-IN packets through
+  the existing `platform_midi_read` → 5a parser/router. License of our port = MIT (project policy).
 - **G2 — seam shape:** mirror `platform_poll_event` — **poll-based, raw MIDI bytes** (parse in
   `control/midi_in`), **in-only** for now (out path added with 5d). Seam:
   `size_t platform_midi_read(uint8_t* buf, size_t max_len)`.
