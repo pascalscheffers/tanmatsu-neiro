@@ -510,6 +510,35 @@ gate/swing, schedule note on/off into the scheduler). **4b-i dispatched.**
 - **Next:** Stage 4b-iii — wire arp into `synth_render` (clock-driven steps, ARP_RATE→ticks, gate/swing,
   schedule note on/off into the 4a scheduler). First point the arp makes sound.
 
+## 2026-06-29 — Stage 4b-iii: arp wired into synth_render (COMPLETE)
+
+- **`engine/arp_clock.h`** (new, header-only, pure): `arp_rate_ticks(index)` maps ARP_RATE
+  0–5 → {96,48,32,24,16,12} PPQN ticks, out-of-range clamps to 24 (1/16). `ArpPhaseResult
+  arp_advance_phase(phase*, frames, period)` advances the free-running step phase by one
+  block; fires when phase crosses zero, returns offset within block + rolls phase forward.
+  Zero/negative period never fires. No platform deps.
+- **`engine/arp.h`**: zero-init `sorted_pitches[]` to silence device GCC
+  `-Werror=maybe-uninitialized` (semantically no-op; `build_sorted` always fills it).
+- **`engine/synth.cpp`** wired (ADR 0019 engine-side pattern):
+  - *Step 1 (note drain):* reads `ARP_ON` before the loop; when on, routes note-on/off to
+    `s_arp` (held set) instead of `s_alloc` directly. Direct path byte-identical when off.
+  - *Step 1a:* `block_start` switched from `s_clock.sample_pos()` → `s_clock.free_pos()`.
+    The scheduler now dispatches in free_pos units — arp fires regardless of transport state.
+    Comment updated. All downstream scheduler code unchanged.
+  - *Step 2b (new):* when `ARP_ON`, configures `s_arp` from fresh params, derives
+    `step_period = arp_rate_ticks(ARP_RATE) * samples_per_tick()`, first-note aligns phase
+    to 0, calls `arp_advance_phase`. On fire: `s_arp.next()` → schedules note-on at
+    `block_start+offset+(swing*0.5*period if odd step)` and note-off at `on+gate*period`
+    (force ≥1 sample). When `ARP_OFF`: calls `s_arp.clear()` and resets phase/step so
+    toggling back on starts fresh.
+- **Free-running arp + free_pos scheduler clock:** this is a **play-feel decision Opus
+  made** (ADR 0019) — standard hardware-arp behaviour (plays on note-hold, not on
+  transport). Conventional and reversible; noted here as Opus's call.
+- **8 new host tests** (7 arp_clock + zero period). `make test` ✅ (146/146) `make build` ✅.
+  `make size`: application.bin **0xf59b0 = 1,005,630 bytes total image (~981 KB, 52% free)**.
+- **Stage 4b COMPLETE.** Next: **Stage 4d — FX: tempo-synced delay → DaisySP ReverbSc
+  w/ device-CPU gate** (ADR 0015 / G4 ratified in 4b kickoff).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
