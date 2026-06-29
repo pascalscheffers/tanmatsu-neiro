@@ -166,11 +166,19 @@ extern "C" void ui_state_init(UIState* s) {
         }
     }
 
-    // Load the INIT factory routings ("Clean 106") into the mod matrix at startup.
-    // Overridden below if a stored user preset with routings is found.
+    // Default boot patch: load the chosen factory preset (params + routings) so
+    // the synth comes up playing it. Overridden below if a stored user preset
+    // is found.
     {
+        int      def   = preset_factory_default();
+        uint16_t ids[32];
+        float    vals[32];
+        int      count = preset_factory_params(def, ids, vals, 32);
+        if (count > 0) {
+            ui_apply_params(s, preset_factory_name(def), def, ids, vals, count);
+        }
         Routing routings[PRESET_MAX_ROUTINGS];
-        int     r_count = preset_factory_routings(0, routings, PRESET_MAX_ROUTINGS);
+        int     r_count = preset_factory_routings(def, routings, PRESET_MAX_ROUTINGS);
         engine_set_routings(routings, r_count);
     }
 

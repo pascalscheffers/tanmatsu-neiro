@@ -534,6 +534,14 @@ const char* preset_factory_name(int idx) {
     return k_factory[idx].name;
 }
 
+int preset_factory_default(void) {
+    static const char* k_default_name = "Solo Lead";
+    for (int i = 0; i < k_factory_count; i++) {
+        if (k_factory[i].name && strcmp(k_factory[i].name, k_default_name) == 0) return i;
+    }
+    return 0;  // named patch missing — fall back to INIT
+}
+
 int preset_factory_params(int idx, uint16_t* ids_out, float* vals_out, int max_count) {
     if (idx < 0 || idx >= k_factory_count) return -1;
     const FactoryPreset& fp = k_factory[idx];

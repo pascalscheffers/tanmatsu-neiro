@@ -41,6 +41,11 @@ static constexpr int PRESET_MAX_ROUTINGS = kMaxRoutes;
 int         preset_factory_count(void);
 const char* preset_factory_name(int idx);
 
+// Index of the patch loaded at boot when no user preset is stored. Resolved by
+// name so reordering the factory bank can't silently change the boot sound;
+// falls back to 0 (INIT) if the named patch is missing.
+int preset_factory_default(void);
+
 // Fill `ids_out`/`vals_out` with physical param values for factory preset `idx`.
 // Both arrays must hold at least `max_count` entries.
 // Returns the number of entries written, or -1 if idx is out of range.
