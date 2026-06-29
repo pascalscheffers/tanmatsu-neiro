@@ -387,6 +387,21 @@ device-CPU profile (ADR 0015) and the sequencer data-model/storage format (exten
 **On resume:** read that brief + `specs/06` + ADR 0010 + ADR 0015 + `stage-3d-ii-results.md`,
 run G1–G4 with Pascal, then dispatch the **4a** work-order (everything hangs off the clock).
 
+## 2026-06-29 — Stage 4 KICKOFF: G1/G2/G4 ratified; 4a decomposed; 4a-i dispatched (Opus 4.8)
+
+Stage 4 (Timing/Arp/Seq/FX) kicked off. Kickoff gates run with Pascal — recorded in
+[`stages/stage-4-timing-arp-seq-fx.md`](stages/stage-4-timing-arp-seq-fx.md):
+- **G1 ✅** order = **4a → 4b (arp) → 4d (FX) → 4c (seq)**, each sub-stage completed fully in turn.
+- **G2 ✅** **full arp** (up/down/up-down/order/random, octaves 1–4, clock-div rate, gate, swing, latch).
+- **G4 ✅** reverb algo = **DaisySP `ReverbSc`** (reuse); device-CPU profile still gates 4d commit (ADR 0015).
+- **G3 ⏳** sequencer data-model/storage gate **deferred to 4c authoring** (heavy data-format decision).
+- **G5** UI render-path profile scheduled when 4b/4c UI work begins.
+
+**4a split into 3 tight work-orders** (≤8-file budget): **4a-i** clock core + transport API
+(header-only `engine/clock.h`, reused `SpscRing<ClockCmd>`, no CMake ripple) → **4a-ii** event
+scheduler → **4a-iii** clock params in table + UI. **4a-i dispatched** to a fresh Sonnet worker.
+- **Next:** review 4a-i summary; dispatch 4a-ii (scheduler), then 4a-iii (params/UI), then 4b (arp).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

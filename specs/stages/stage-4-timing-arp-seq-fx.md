@@ -51,21 +51,37 @@ delay ≈ 384 KB; size it deliberately.
 default is **4b (arp) → 4d (FX, the audible richness ADR 0015 prioritises) → 4c (sequencer, the
 biggest, benefits from a mature clock+arp)** — but the order is a kickoff decision (G1).
 
-## 🛑 Kickoff gates — resolve with Pascal BEFORE authoring work-orders
-- **G1 — Sub-stage order & MVP slice.** Confirm 4a-first; choose arp-vs-FX-vs-seq order; decide
-  whether to ship a thin playable slice of each early or complete each in turn.
-- **G2 — Arp scope (sonic/feature).** Which modes ship; default rate/division set; swing range;
-  latch behavior; how arp composes with sustain pedal and with the sequencer.
-- **G3 — Sequencer data model + storage (architecture).** Steps/pattern, patterns count,
-  per-step fields, **which params are lockable**, and the on-disk format — this extends the
-  spec 05 preset/SD format and is preset-format-relevant (coordinate with `param_id.h`).
-- **G4 — Reverb algorithm + device CPU profile (🛑 the real budget gate).** Pick the algorithm,
-  then **profile its block cost on device** against the 70% ceiling before committing (ADR 0015).
-  Delay is cheap; reverb is not. Also decide FX **chain order** (chorus→delay→reverb?) and delay
-  sync divisions (sonic).
-- **G5 — Display/UI render-path profile (deferred dependency).** ADR 0015 wants a Stage-0.5-style
-  UI/PAX profiling pass before leaning on per-frame visual feedback; arp/seq pages add UI load.
-  Not core to 4a–4d audio, but schedule it when the UI work in 4b/4c begins.
+## Kickoff gates — RESOLVED with Pascal 2026-06-29 (Opus 4.8)
+- **G1 — Sub-stage order & MVP slice. ✅ RATIFIED.** 4a-first confirmed. Order after 4a:
+  **4b (arp) → 4d (FX) → 4c (sequencer)**. **Complete each sub-stage fully in turn** (no thin
+  cross-cutting slice) — one coherent feature per worker, cleaner gates.
+- **G2 — Arp scope. ✅ RATIFIED: full arp.** up / down / up-down / order / random; octave range
+  (1–4); rate as clock divisions; gate length; swing; latch. Matches the v1 roadmap row. Detailed
+  composition with sustain/sequencer settled in the 4b work-order.
+- **G3 — Sequencer data model + storage (architecture). ⏳ DEFERRED to 4c authoring.** This is the
+  heavy data-format decision; run it as a focused gate when 4c is reached (benefits from a mature
+  clock+arp). Still extends spec 05 / coordinates with `param_id.h`.
+- **G4 — Reverb algorithm + device CPU profile. ✅ ALGORITHM RATIFIED: DaisySP `ReverbSc`.** Reuse
+  the vendored DaisySP Sc reverb (Prime Directive 1); wrap in a `dsp/` block. **The device-CPU
+  profile against the 70% ceiling still gates the final commit** (ADR 0015) — measured in the 4d
+  work-order, not assumed. FX chain order + delay sync divisions settled in the 4d work-order.
+- **G5 — Display/UI render-path profile (deferred dependency).** Unchanged — schedule the
+  Stage-0.5-style UI/PAX profiling pass when UI work in 4b/4c begins.
+
+## 4a sub-decomposition (Opus, post-kickoff — within the ≤8-file work-order budget)
+The campaign brief treats 4a as one; the work-order budget rule splits it into three tight,
+independently-shippable work-orders. Order: **4a-i → 4a-ii → 4a-iii** (ii/iii order is free; the
+scheduler does not depend on the BPM param).
+- **4a-i — Master clock core + transport API.** Header-only `engine/clock.h` (pure: sample-counter
+  clock, BPM→samples/tick @ 96 PPQN, transport start/stop/continue, tap tempo). Cross-thread via a
+  reused `SpscRing<ClockCmd>` drained in `synth_render` (mirrors `NoteCmd` + the shared-LFO advance).
+  New `engine_*` C API (set_bpm/transport/tap + UI read). Header-only ⇒ no device/host CMake ripple.
+- **4a-ii — Event scheduler.** `engine/scheduler.{h,cpp}`: pure fixed-capacity sample-time event
+  queue; `synth_render` dispatches due events into the allocator each block. Exists + host-tested
+  before 4b (arp) consumes it.
+- **4a-iii — Clock/transport params in the table + UI.** `CLOCK_BPM` / `CLOCK_SOURCE` rows (new
+  GROUP_GLOBAL ids < kMax), wire `engine_set_param`→clock, factory-preset defaults, UI group name.
+  Makes BPM persisted + table-driven (the dedup home for the value 4a-i exposes via API).
 
 ## Continuous (every sub-stage)
 Track `make size`; keep host + device green; **profile before optimizing**; every FX/voice spend
