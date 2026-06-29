@@ -1,8 +1,8 @@
 // ui/ui.cpp — Stage 2c: parameter-page UI rendered from the param table.
 //
-// Pages are derived from the groups present in JUNO_PARAM_TABLE — no
-// model-specific knowledge here (ADR 0008). Arrows navigate pages/rows;
-// comma/dot nudge the selected parameter; Shift = coarse step.
+// Pages are defined by the static PAGE_TABLE (explicit order, multi-group pages
+// supported). No model-specific knowledge here (ADR 0008). Arrows navigate
+// pages/rows; comma/dot nudge the selected parameter; Shift = coarse step.
 #include "ui.h"
 #include <math.h>
 #include <stdio.h>
@@ -87,6 +87,50 @@ static int group_params(uint8_t group, const ParamDesc** out, int max_out) {
     return n;
 }
 
+// ---------------------------------------------------------------------------
+// Explicit page table (Stage 5d WO-1)
+// ---------------------------------------------------------------------------
+enum PageKind : uint8_t {
+    PAGE_PRESETS = 0,  // no param rows — rendered separately (WO-3)
+    PAGE_PARAMS  = 1,  // one or more ParamGroup columns concatenated
+};
+
+struct PageDef {
+    const char* title;
+    PageKind    kind;
+    uint8_t     groups[3];  // ParamGroup values; unused slots are 0xFF
+    uint8_t     num_groups;
+};
+
+// clang-format off
+static const PageDef PAGE_TABLE[] = {
+    { "PRESET",  PAGE_PRESETS, {0xFF, 0xFF, 0xFF},                      0 },
+    { "PERFORM", PAGE_PARAMS,  {GROUP_GLOBAL, GROUP_ARP,   0xFF},        2 },
+    { "OSC",     PAGE_PARAMS,  {GROUP_OSC,    0xFF,        0xFF},        1 },
+    { "FILTER",  PAGE_PARAMS,  {GROUP_FILTER, GROUP_HPF,   0xFF},        2 },
+    { "AMP ENV", PAGE_PARAMS,  {GROUP_ENV,    0xFF,        0xFF},        1 },
+    { "MOD ENV", PAGE_PARAMS,  {GROUP_ENV2,   0xFF,        0xFF},        1 },
+    { "LFO",     PAGE_PARAMS,  {GROUP_LFO,    0xFF,        0xFF},        1 },
+    { "FX",      PAGE_PARAMS,  {GROUP_FX,     0xFF,        0xFF},        1 },
+    { "AMP",     PAGE_PARAMS,  {GROUP_AMP,    0xFF,        0xFF},        1 },
+};
+// clang-format on
+
+static const int kNumPages = (int)(sizeof(PAGE_TABLE) / sizeof(PAGE_TABLE[0]));
+
+// Collect params for a page into out[] (all groups in order). Returns count.
+// For PAGE_PRESETS returns 0.  max_out should be at least 24.
+static int page_rows(int page_index, const ParamDesc** out, int max_out) {
+    if (page_index < 0 || page_index >= kNumPages) return 0;
+    const PageDef& pd = PAGE_TABLE[page_index];
+    if (pd.kind != PAGE_PARAMS) return 0;
+    int n = 0;
+    for (int g = 0; g < (int)pd.num_groups && n < max_out; g++) {
+        n += group_params(pd.groups[g], out + n, max_out - n);
+    }
+    return n;
+}
+
 // Inverse of ParamStore::apply_curve — physical value → normalised [0,1].
 static float phys_to_norm(const ParamDesc& d, float v) {
     if (v < d.min) v = d.min;
@@ -142,21 +186,7 @@ extern "C" void ui_state_init(UIState* s) {
     memset(s, 0, sizeof(*s));
     s->preset_idx = 0;
     strncpy(s->preset_name, "INIT", sizeof(s->preset_name) - 1);
-
-    // Build page list: unique groups in table order.
-    for (int i = 0; i < kJunoParamCount; i++) {
-        uint8_t g     = (uint8_t)JUNO_PARAM_TABLE[i].group;
-        bool    found = false;
-        for (int j = 0; j < s->num_pages; j++) {
-            if (s->page_groups[j] == g) {
-                found = true;
-                break;
-            }
-        }
-        if (!found && s->num_pages < (int)(sizeof(s->page_groups) / sizeof(s->page_groups[0]))) {
-            s->page_groups[s->num_pages++] = g;
-        }
-    }
+    // page=0 (PRESET), row=0 — set by memset above.
 
     // Initialise normalised shadow values from table defaults.
     for (int i = 0; i < kJunoParamCount; i++) {
@@ -203,8 +233,8 @@ extern "C" void ui_state_init(UIState* s) {
 extern "C" bool ui_handle_event(UIState* s, const platform_event_t* ev) {
     if (ev->type != PLATFORM_EV_KEY || !ev->pressed) return false;
 
-    const ParamDesc* rows[16];
-    int              n = (s->num_pages > 0) ? group_params(s->page_groups[s->page], rows, 16) : 0;
+    const ParamDesc* rows[24];
+    int              n = page_rows(s->page, rows, 24);
 
     switch (ev->key) {
         case PLATFORM_KEY_UP:
@@ -214,16 +244,12 @@ extern "C" bool ui_handle_event(UIState* s, const platform_event_t* ev) {
             if (n > 0) s->row = (s->row + 1) % n;
             return true;
         case PLATFORM_KEY_LEFT:
-            if (s->num_pages > 0) {
-                s->page = (s->page - 1 + s->num_pages) % s->num_pages;
-                s->row  = 0;
-            }
+            s->page = (s->page - 1 + kNumPages) % kNumPages;
+            s->row  = 0;
             return true;
         case PLATFORM_KEY_RIGHT:
-            if (s->num_pages > 0) {
-                s->page = (s->page + 1) % s->num_pages;
-                s->row  = 0;
-            }
+            s->page = (s->page + 1) % kNumPages;
+            s->row  = 0;
             return true;
         case ',':
         case '.': {
@@ -285,20 +311,18 @@ extern "C" bool ui_handle_event(UIState* s, const platform_event_t* ev) {
 // Rendering
 // ---------------------------------------------------------------------------
 static void draw_tabs(pax_buf_t* fb, const UIState* s) {
-    if (s->num_pages == 0) return;
-    float tab_w = SCREEN_W / (float)s->num_pages;
-    for (int i = 0; i < s->num_pages; i++) {
+    float tab_w = SCREEN_W / (float)kNumPages;
+    for (int i = 0; i < kNumPages; i++) {
         bool sel = (i == s->page);
         pax_simple_rect(fb, sel ? COL_ACCENT : COL_TAB_DIM, (float)i * tab_w, 0.0f, tab_w - 1.0f, TAB_H);
         pax_draw_text(fb, sel ? COL_BG : COL_DIM, pax_font_sky_mono, FONT_MD, (float)i * tab_w + 10.0f,
-                      (TAB_H - FONT_MD) * 0.5f, group_name(s->page_groups[i]));
+                      (TAB_H - FONT_MD) * 0.5f, PAGE_TABLE[i].title);
     }
 }
 
 static void draw_rows(pax_buf_t* fb, const UIState* s) {
-    if (s->num_pages == 0) return;
-    const ParamDesc* rows[16];
-    int              n = group_params(s->page_groups[s->page], rows, 16);
+    const ParamDesc* rows[24];
+    int              n = page_rows(s->page, rows, 24);
     if (n == 0) return;
 
     // How many rows fit in the content area (integer, floor).

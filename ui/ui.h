@@ -19,21 +19,21 @@ extern "C" {
 #define UI_NORM_TABLE_SIZE 128
 
 // Persistent UI state — owned by app.c, passed by pointer to all ui_ calls.
+// Pages are defined by the static PAGE_TABLE in ui.cpp (explicit order,
+// multi-group pages supported). kNumPages is the compile-time page count.
 typedef struct {
-    int     page;                       // selected page index (0..num_pages-1)
-    int     row;                        // selected row within the page
-    int     active_voices;              // set by app each frame
-    int     octave;                     // set by app each frame
-    char    preset_name[33];            // displayed in the status strip
-    int     preset_idx;                 // factory index (0-based) or -1 for user preset
-    float   norms[UI_NORM_TABLE_SIZE];  // normalised [0,1] shadow per param ID
-    // Internal — do not modify directly:
-    int     num_pages;
-    uint8_t page_groups[16];  // group enum value for each page slot (>= distinct ParamGroup count)
+    int   page;                       // selected page index (0..kNumPages-1)
+    int   row;                        // selected row within the page
+    int   active_voices;              // set by app each frame
+    int   octave;                     // set by app each frame
+    char  preset_name[33];            // displayed in the status strip
+    int   preset_idx;                 // factory index (0-based) or -1 for user preset
+    float norms[UI_NORM_TABLE_SIZE];  // normalised [0,1] shadow per param ID
 } UIState;
 
-// Initialise UIState from the param table: build the page list, compute
-// normalised defaults from param table defaults, set preset_name to "INIT".
+// Initialise UIState: compute normalised defaults from the param table,
+// load the boot preset, set preset_name to "INIT". Page order is fixed by
+// the PAGE_TABLE in ui.cpp; no dynamic page construction.
 void ui_state_init(UIState* s);
 
 // Feed a platform event into the UI. Consumes: arrow keys (row/page navigate),
