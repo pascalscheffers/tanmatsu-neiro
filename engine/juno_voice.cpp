@@ -9,10 +9,10 @@
 #endif
 #endif
 
-#include "juno_voice.h"
-#include "param_id.h"
-#include "mod_matrix.h"
 #include "Utility/dsp.h"  // daisysp::mtof
+#include "juno_voice.h"
+#include "mod_matrix.h"
+#include "param_id.h"
 
 void JunoVoice::init(float sample_rate) {
     sample_rate_ = sample_rate;
@@ -25,10 +25,9 @@ void JunoVoice::init(float sample_rate) {
     filter_.init(sample_rate);
     env_.init(sample_rate);
 
-    // Stage 3a: init second envelope and both LFOs.
+    // Stage 3a: init second envelope.
+    // ADR 0018: LFOs moved to engine (shared free-running); no per-voice init.
     env2_.init(sample_rate);
-    lfo1_.init(sample_rate);
-    lfo2_.init(sample_rate);
 
     filter_.set_freq(p_cutoff_);
     filter_.set_res(p_res_);
@@ -41,15 +40,9 @@ void JunoVoice::init(float sample_rate) {
     env2_.set_decay(p_env2_decay_);
     env2_.set_sustain(p_env2_sustain_);
     env2_.set_release(p_env2_release_);
-
-    lfo1_.set_rate(p_lfo1_rate_);
-    lfo1_.set_waveform(static_cast<dsp::LfoWave>(p_lfo1_shape_));
-    lfo2_.set_rate(p_lfo2_rate_);
-    lfo2_.set_waveform(static_cast<dsp::LfoWave>(p_lfo2_shape_));
 }
 
-void JunoVoice::note_on(uint8_t pitch, uint8_t velocity,
-                        NoteExpression expr) {
+void JunoVoice::note_on(uint8_t pitch, uint8_t velocity, NoteExpression expr) {
     (void)expr;  // MPE fields wired in Stage 5
 
     midi_note_ = pitch;
@@ -63,6 +56,10 @@ void JunoVoice::note_on(uint8_t pitch, uint8_t velocity,
     // Reset LFO delay fade-in counters on each new note.
     lfo1_delay_pos_ = 0.0f;
     lfo2_delay_pos_ = 0.0f;
+    // Zero the injected raw values so the one-block-latency mod-matrix read
+    // doesn't see a stale value from a previous note (ADR 0018).
+    lfo1_raw_       = 0.0f;
+    lfo2_raw_       = 0.0f;
 }
 
 void JunoVoice::note_off() {
@@ -72,12 +69,11 @@ void JunoVoice::note_off() {
 void JunoVoice::reset() {
     gate_      = false;
     vel_scale_ = 1.0f;
-    env_.reset();       // re-init to IDLE: no release tail, instant silence
+    env_.reset();  // re-init to IDLE: no release tail, instant silence
     env2_.reset();
     osc_main_.reset();
     osc_sub_.reset();
-    lfo1_.reset();
-    lfo2_.reset();
+    // ADR 0018: per-voice LFOs removed; engine owns the shared free-running LFO.
     env2_value_ = 0.0f;
     lfo1_value_ = 0.0f;
     lfo2_value_ = 0.0f;
@@ -176,36 +172,23 @@ void JunoVoice::set_param(int id, float value) {
             break;
 
         // --- Stage 3a: LFO1 ---
-        case ParamId::LFO1_RATE:
-            p_lfo1_rate_ = value;
-            lfo1_.set_rate(value);
-            break;
+        // LFO1_RATE and LFO1_SHAPE are no longer handled per-voice (ADR 0018:
+        // shared engine LFO; rate+shape configured on s_lfo1/s_lfo2 in synth.cpp).
         case ParamId::LFO1_DEPTH:
             p_lfo1_depth_ = value;
             break;
-        case ParamId::LFO1_SHAPE:
-            p_lfo1_shape_ = (int)value;
-            lfo1_.set_waveform(static_cast<dsp::LfoWave>(p_lfo1_shape_));
-            break;
         case ParamId::LFO1_DELAY:
-            p_lfo1_delay_ = value;
+            p_lfo1_delay_       = value;
             lfo1_delay_samples_ = value * sample_rate_;
             break;
 
         // --- Stage 3a: LFO2 ---
-        case ParamId::LFO2_RATE:
-            p_lfo2_rate_ = value;
-            lfo2_.set_rate(value);
-            break;
+        // LFO2_RATE and LFO2_SHAPE: engine-owned (ADR 0018); voice ignores them.
         case ParamId::LFO2_DEPTH:
             p_lfo2_depth_ = value;
             break;
-        case ParamId::LFO2_SHAPE:
-            p_lfo2_shape_ = (int)value;
-            lfo2_.set_waveform(static_cast<dsp::LfoWave>(p_lfo2_shape_));
-            break;
         case ParamId::LFO2_DELAY:
-            p_lfo2_delay_ = value;
+            p_lfo2_delay_       = value;
             lfo2_delay_samples_ = value * sample_rate_;
             break;
 
@@ -224,9 +207,9 @@ void JunoVoice::set_param(int id, float value) {
 
 IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
     // Early exit when both envelopes are idle (post-release or pre-first-note).
+    // ADR 0018: LFO phase is now engine-owned (free-running); the engine advances
+    // the shared LFO unconditionally every block and injects via set_lfo_inputs().
     if (!gate_ && env_.is_idle() && env2_.is_idle()) {
-        // LFOs still tick even when voice is idle (stay phase-coherent for
-        // re-trigger). But nothing writes to buf — skip the inner loop.
         return;
     }
 
@@ -236,13 +219,13 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
     // Key-track: center on MIDI note 69 (A4), ±1 unit per semitone / 12 → [-1,+1]
     // across a ±1-octave range. Clamped to [-1, +1].
     float key_track_raw = ((float)midi_note_ - 69.0f) / 12.0f;
-    if (key_track_raw >  1.0f) key_track_raw =  1.0f;
+    if (key_track_raw > 1.0f) key_track_raw = 1.0f;
     if (key_track_raw < -1.0f) key_track_raw = -1.0f;
 
     ModSources msrc;
     msrc.lfo1      = lfo1_value_;
     msrc.lfo2      = lfo2_value_;
-    msrc.env1      = 0.0f;        // amp env not yet cached; filled below if needed
+    msrc.env1      = 0.0f;  // amp env not yet cached; filled below if needed
     msrc.env2      = env2_value_;
     msrc.velocity  = vel_scale_;  // [0,1]
     msrc.key_track = key_track_raw;
@@ -261,25 +244,23 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
     // Pitch (semitone offset → freq). OSC_RANGE adds a fixed offset in semitones.
     // p_pitch_offset_ is a portamento glide semitone offset set by VoiceAlloc each
     // block; it is already block-rate-smoothed by the allocator.
-    float range_semi    = p_osc_range_semi_ + p_pitch_offset_;
-    float base_freq     = daisysp::mtof((float)midi_note_ + range_semi);
-    float mod_freq_end  = daisysp::mtof((float)midi_note_ + range_semi + mout.pitch_semi);
+    float range_semi   = p_osc_range_semi_ + p_pitch_offset_;
+    float base_freq    = daisysp::mtof((float)midi_note_ + range_semi);
+    float mod_freq_end = daisysp::mtof((float)midi_note_ + range_semi + mout.pitch_semi);
 
     // Cutoff: built-in panel mods (ENV depth, key-track, LFO) added on top of
     // the matrix cutoff_mod. kEnvModRange = 8000 Hz: ENV2 at depth=1 shifts
     // cutoff ±8 kHz (centered, so 2000 Hz + 8000 = 10 kHz full open).
-    static constexpr float kEnvModRange = 8000.0f;
+    static constexpr float kEnvModRange   = 8000.0f;
     // ENV polarity: 1.0f = positive, -1.0f = negative.
-    float env_sign     = (p_vcf_env_polarity_ != 0) ? -1.0f : 1.0f;
+    float                  env_sign       = (p_vcf_env_polarity_ != 0) ? -1.0f : 1.0f;
     // Key-track mod: VCF_KEY_TRACK scales the key_track_raw contribution.
     // Full (1.0) = ±1-octave shift across key range; scaled linearly by knob.
     static constexpr float kKeyTrackRange = 4000.0f;  // Hz per unit of key_track_raw
-    float cutoff_end = p_cutoff_
-        + mout.cutoff_mod
-        + env2_value_ * p_vcf_env_depth_ * env_sign * kEnvModRange
-        + key_track_raw * p_vcf_key_track_ * kKeyTrackRange
-        + lfo1_value_  * p_vcf_lfo_depth_ * kEnvModRange;
-    if (cutoff_end <    20.0f) cutoff_end =    20.0f;
+    float cutoff_end = p_cutoff_ + mout.cutoff_mod + env2_value_ * p_vcf_env_depth_ * env_sign * kEnvModRange +
+                       key_track_raw * p_vcf_key_track_ * kKeyTrackRange +
+                       lfo1_value_ * p_vcf_lfo_depth_ * kEnvModRange;
+    if (cutoff_end < 20.0f) cutoff_end = 20.0f;
     if (cutoff_end > 20000.0f) cutoff_end = 20000.0f;
 
     // Amp (OSC_LEVEL mod), clamped [0, 1]:
@@ -288,10 +269,10 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
     if (amp_end > 1.0f) amp_end = 1.0f;
 
     // Sub / noise level mods (also once per block — fast enough):
-    float eff_sub   = p_sub_level_   + mout.osc_sub;
+    float eff_sub   = p_sub_level_ + mout.osc_sub;
     float eff_noise = p_noise_level_ + mout.osc_noise;
-    if (eff_sub   < 0.0f) eff_sub   = 0.0f;
-    if (eff_sub   > 1.0f) eff_sub   = 1.0f;
+    if (eff_sub < 0.0f) eff_sub = 0.0f;
+    if (eff_sub > 1.0f) eff_sub = 1.0f;
     if (eff_noise < 0.0f) eff_noise = 0.0f;
     if (eff_noise > 1.0f) eff_noise = 1.0f;
 
@@ -303,29 +284,29 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
 
     // Block-smooth audio-rate dests: linear interpolation from prev to end
     // value over n samples (avoids zipper noise on fast LFO modulation).
-    const float inv_n  = (n > 1) ? (1.0f / (float)(n - 1)) : 1.0f;
+    const float inv_n = (n > 1) ? (1.0f / (float)(n - 1)) : 1.0f;
 
     // We do per-sample freq ramp; enough for click-free modulation at 64 samples.
-    float freq_step   = (mod_freq_end - base_freq)      * inv_n;
-    float amp_step    = (amp_end      - p_osc_level_)   * inv_n;
+    float freq_step = (mod_freq_end - base_freq) * inv_n;
+    float amp_step  = (amp_end - p_osc_level_) * inv_n;
 
     float e2 = env2_value_;
 
     for (size_t i = 0; i < n; i++) {
         // Per-sample modulated freq (smooth pitch mod).
-        float cur_freq   = base_freq    + freq_step   * (float)i;
-        float cur_amp    = p_osc_level_ + amp_step    * (float)i;
+        float cur_freq = base_freq + freq_step * (float)i;
+        float cur_amp  = p_osc_level_ + amp_step * (float)i;
 
         osc_main_.set_freq(cur_freq);
         osc_sub_.set_freq(cur_freq * 0.5f);
         // filter_.set_freq is called once per block above (block-rate cutoff).
 
         float osc   = osc_main_.process() * cur_amp;
-        float sub   = osc_sub_.process()  * eff_sub;
-        float noise = noise_.Process()     * eff_noise;
+        float sub   = osc_sub_.process() * eff_sub;
+        float noise = noise_.Process() * eff_noise;
         float mixed = osc + sub + noise;
 
-        filter_.process(mixed);           // anti-denormal inside filter.h
+        filter_.process(mixed);  // anti-denormal inside filter.h
         float filtered = filter_.output();
 
         // VCA: gate-mode selects between envelope output and raw gate (1.0).
@@ -342,9 +323,9 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
         e2 = env2_.process(gate_);
     }
 
-    // LFOs are advanced once per block (block-rate). Only the final per-block
-    // value is ever used (cached into lfo1_value_/lfo2_value_ for the next block's
-    // mod-matrix eval). Advancing per-sample would compute 63 discarded sinf calls.
+    // ADR 0018: LFO raw outputs are injected each block by synth_render via
+    // set_lfo_inputs(). The engine owns and advances the shared free-running LFO;
+    // we apply per-note delay fade-in scale and depth here (still per-voice).
     // LFO delay fade-in: advance the position counter by the whole block, then
     // compute the applied-depth scale once (block-granular fade is inaudible).
     if (gate_) {
@@ -357,14 +338,16 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
             if (lfo2_delay_pos_ > lfo2_delay_samples_) lfo2_delay_pos_ = lfo2_delay_samples_;
         }
     }
-    float l1_delay_scale = (lfo1_delay_samples_ < 1.0f) ? 1.0f
-        : (lfo1_delay_pos_ >= lfo1_delay_samples_ ? 1.0f
-           : lfo1_delay_pos_ / lfo1_delay_samples_);
-    float l2_delay_scale = (lfo2_delay_samples_ < 1.0f) ? 1.0f
-        : (lfo2_delay_pos_ >= lfo2_delay_samples_ ? 1.0f
-           : lfo2_delay_pos_ / lfo2_delay_samples_);
-    float l1 = lfo1_.process_block((uint32_t)n) * p_lfo1_depth_ * l1_delay_scale;
-    float l2 = lfo2_.process_block((uint32_t)n) * p_lfo2_depth_ * l2_delay_scale;
+    float l1_delay_scale =
+        (lfo1_delay_samples_ < 1.0f)
+            ? 1.0f
+            : (lfo1_delay_pos_ >= lfo1_delay_samples_ ? 1.0f : lfo1_delay_pos_ / lfo1_delay_samples_);
+    float l2_delay_scale =
+        (lfo2_delay_samples_ < 1.0f)
+            ? 1.0f
+            : (lfo2_delay_pos_ >= lfo2_delay_samples_ ? 1.0f : lfo2_delay_pos_ / lfo2_delay_samples_);
+    float l1 = lfo1_raw_ * p_lfo1_depth_ * l1_delay_scale;
+    float l2 = lfo2_raw_ * p_lfo2_depth_ * l2_delay_scale;
 
     // Cache last-block values for the mod matrix accessor.
     env2_value_ = e2;

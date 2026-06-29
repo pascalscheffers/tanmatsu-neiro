@@ -20,27 +20,31 @@ struct NoteExpression {
 };
 
 class IVoice {
-public:
+   public:
     virtual ~IVoice() = default;
 
     // Trigger a note. Must be allocation-free.
-    virtual void note_on(uint8_t pitch, uint8_t velocity,
-                         NoteExpression expr) = 0;
+    virtual void note_on(uint8_t pitch, uint8_t velocity, NoteExpression expr) = 0;
     // Begin release; envelope continues until idle.
-    virtual void note_off() = 0;
+    virtual void note_off()                                                    = 0;
     // Force to silent/idle immediately (steal or free).
-    virtual void reset() = 0;
+    virtual void reset()                                                       = 0;
     // Update a model-specific parameter. Stage 2 connects the param table.
-    virtual void set_param(int id, float value) = 0;
+    virtual void set_param(int id, float value)                                = 0;
     // Render n frames and *add* into buf[0..n-1] (mono). Real-time safe.
-    virtual void render(float* buf, size_t n) = 0;
+    virtual void render(float* buf, size_t n)                                  = 0;
     // True while the envelope is running (allocator uses this for stealing).
-    virtual bool is_active() const = 0;
+    virtual bool is_active() const                                             = 0;
     // Install the per-voice modulation routings (control thread; not audio-path).
-    virtual void set_mod_matrix(const ModMatrix& mat) = 0;
+    virtual void set_mod_matrix(const ModMatrix& mat)                          = 0;
 
     // Set a per-voice pitch offset in semitones (used by the allocator for
     // portamento glide). Called once per block from VoiceAlloc::advance_glide().
     // Must be allocation-free and audio-safe.
     virtual void set_pitch_offset(float semitones) = 0;
+
+    // Inject the shared engine LFO outputs for this block (called once per block
+    // from synth_render, before render()). The raw values are in [-1, +1]; the
+    // voice applies its own per-note delay fade-in scale and depth.
+    virtual void set_lfo_inputs(float lfo1_raw, float lfo2_raw) = 0;
 };

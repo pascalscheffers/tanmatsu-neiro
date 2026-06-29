@@ -331,39 +331,29 @@ chorus** with large headroom. Numbers + journey recorded in
   fixed ≈ 49% of budget free at full load). Non-blocking debt still open: inert HPF row (needs a
   2nd `dsp::Filter` in `JunoVoice`); `kPresetDestPwm=0xFFFD` sentinel → `ParamId::OSC_PWM`.
 
-## 2026-06-29 — 🐛 OPEN BUG: stale per-voice modulation state across notes (TO ANALYSE)
+## 2026-06-29 — fix: shared free-running LFO (ADR 0018) — stale per-voice LFO phase bug CLOSED
 
-Device-confirmed by Pascal after the 3d-ii perf work. **Not yet investigated — analyse in a
-fresh context.** This is a debug brief, not a fix.
+**Bug closed.** Root cause was per-voice LFO phase freezing on idle and resuming stale on
+note reuse; UNISON=8 made it audible as beating between voices.
 
-**Repro (device, INIT patch, UNISON_COUNT=8):**
-1. A single note played repeatedly from rest sounds **fine / consistent**.
-2. But "smash" several notes (exhaust/cycle the 8-voice pool), then play a **single note at
-   ~1 s intervals**: the first ~10 s have audible **phasing-like artifacts** and the **same
-   note does not sound identical each time**, before it stabilises.
-3. Symptom persists **even after waiting for the voice display to show idle** — i.e. some
-   per-voice state does not return to a known/zero baseline once voices go idle.
+**Fix:** Moved `dsp::Lfo` from per-voice to a single shared pair (`s_lfo1`, `s_lfo2`) in
+`engine/synth.cpp` (authentic Juno-106: one global LFO, all voices in lock-step). The engine
+advances both LFOs unconditionally once per block and injects the block-end raw values into
+every voice via new `IVoice::set_lfo_inputs(float, float)`. **Per-note delay fade-in stays
+per-voice** (per-note `lfo*_delay_pos_` counter, reset on `note_on`). Decision ratified by
+Pascal before dispatch; frozen in ADR 0018 (`specs/decisions/0018-shared-free-running-lfo.md`).
 
-**Leading hypotheses (verify, don't assume — clean-context investigation):**
-- **LFO phase not reset on `note_on`.** `JunoVoice::note_on` resets the LFO *delay* counters
-  but NOT LFO phase; `lfo*_.reset()` only runs in `reset()` (voice steal). Idle voices
-  early-return in `render()` (LFOs freeze at their last phase), so the next note starts its
-  LFO1→PWM / LFO→cutoff modulation (Clean 106 routings) from a **history-dependent frozen
-  phase** → different timbre each note + inter-voice beating at U=8. This fits "different each
-  time" + "doesn't reset when idle" best.
-- **Voice steal/reuse doesn't reset DSP state.** At U=8 one note claims the whole pool; after
-  smashing, notes steal voices that are mid-release → residual filter/osc/env/LFO state. Check
-  whether the allocator calls `reset()` on steal vs just re-gating, and whether `note_on`
-  should clear osc/filter state.
-- **Possible interaction with the recent perf changes** — rule in/out: Round A (block-rate
-  LFO `process_block`) and Round B (change-gated param push: a reused voice relies on cached
-  params, which are only re-pushed on change). Confirm these did not change reset semantics.
+**Files changed:** `engine/voice.h` (new virtual), `engine/juno_voice.h` (removed `lfo1_`/
+`lfo2_` members + rate/shape caches, added `lfo1_raw_`/`lfo2_raw_`), `engine/juno_voice.cpp`
+(removed LFO init/reset/set_param cases, swapped `lfo*.process_block()` for `lfo*_raw_` in
+render), `engine/synth.cpp` (added `s_lfo1`/`s_lfo2`, init from defaults, rate/shape config
+in changed-param loop, inject before voice render loop), `tests/host/test_mod_sources.cpp`
+(replaced oscillation/waveform/rate voice tests with injection/depth/delay/determinism tests).
 
-**Note:** LFO retrigger-vs-free-run is partly a **sonic decision** (Juno LFO is classically
-free-running) — but the *non-determinism / never-settles* part is a bug regardless. Likely a
-🛑 sonic gate once root-caused (how should LFO phase behave on note_on / unison grouping).
-Start: `engine/juno_voice.cpp` (note_on/reset/render), `engine/voice_alloc.cpp` (steal +
-unison group reuse), `dsp/lfo.h`.
+- `make test` ✅ (102/102) `make host` ✅ `make build` ✅ membrane clean.
+  Flash 893 KB / DIRAM 145 KB — unchanged (fewer per-voice LFO objects, two new shared ones).
+- **Next:** re-plan Stages 4–7 (non-blocking debt still open: inert HPF row, `kPresetDestPwm`
+  sentinel).
 
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).

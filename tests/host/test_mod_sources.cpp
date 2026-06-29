@@ -5,25 +5,31 @@
  * 1. ENV2 runs independently of ENV1 — tweaking ENV2 params doesn't change
  *    the amp-envelope output, and ENV2 accumulates its own attack/decay.
  * 2. ENV2 follows gate: rises on note_on, falls on note_off.
- * 3. LFO produces oscillation at the set rate (zero-crossings within range).
- * 4. LFO waveform change alters the shape of the output.
- * 5. LFO depth scales the output amplitude.
- * 6. set_param changes mod source output (param change → output change).
+ * 3. LFO injection path: injected raw value is scaled by depth (no delay).
+ * 4. LFO depth: depth param scales the applied LFO output amplitude.
+ * 5. LFO delay fade-in: lfo1_value_ ramps 0→1 over the delay window.
+ * 6. LFO determinism: two voices fed identical set_lfo_inputs() produce
+ *    identical lfo1_value() (structural fix for the stale-phase bug, ADR 0018).
  * 7. LFO S&H waveform: output is piecewise constant (held within a cycle).
  * 8. dsp::Lfo direct: all waveform types produce output in [-1, +1].
  * 9. ENV2 is independent across two voices (per-voice, not shared).
+ *
+ * Tests 3-6 reworked for ADR 0018 (shared engine LFO, per-voice injection).
+ * The old oscillation / waveform / rate tests were voice-level and assumed the
+ * voice owns the oscillator — that contract is now in synth.cpp + dsp::Lfo.
+ * The pure dsp::Lfo unit tests (7, 8, process_block) remain unchanged.
  *
  * ADR 0012 (FTZ-off): CMakeLists enforces -fno-fast-math; tests run without
  * hardware flush-to-zero so denormal behaviour matches the device.
  */
 
-#include "runner.h"
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+#include "dsp/lfo.h"
 #include "juno_voice.h"
 #include "param_id.h"
-#include "dsp/lfo.h"
-#include <math.h>
-#include <string.h>
-#include <stdio.h>
+#include "runner.h"
 
 static const float kSampleRate = 48000.0f;
 
@@ -43,8 +49,8 @@ void test_env2_independent_from_env1() {
     auto measure_env1_rms = [](float env2_attack) -> float {
         JunoVoice v;
         v.init(kSampleRate);
-        v.set_param((int)ParamId::ENV_ATTACK,   0.010f);
-        v.set_param((int)ParamId::ENV2_ATTACK,  env2_attack);
+        v.set_param((int)ParamId::ENV_ATTACK, 0.010f);
+        v.set_param((int)ParamId::ENV2_ATTACK, env2_attack);
         NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
         v.note_on(69, 127, expr);
         float buf[64];
@@ -63,8 +69,7 @@ void test_env2_independent_from_env1() {
 
     // ENV1 sustain output should be near-identical regardless of ENV2 attack.
     float ratio = (rms_a > rms_b) ? (rms_a / rms_b) : (rms_b / rms_a);
-    TEST_ASSERT(ratio < 1.1f,
-                "ENV2 attack change must not affect ENV1 sustain amplitude");
+    TEST_ASSERT(ratio < 1.1f, "ENV2 attack change must not affect ENV1 sustain amplitude");
     test_pass();
 }
 
@@ -75,8 +80,8 @@ void test_env2_follows_gate() {
     JunoVoice v;
     v.init(kSampleRate);
     // Short attack so ENV2 reaches sustain quickly.
-    v.set_param((int)ParamId::ENV2_ATTACK,  0.001f);
-    v.set_param((int)ParamId::ENV2_DECAY,   0.001f);
+    v.set_param((int)ParamId::ENV2_ATTACK, 0.001f);
+    v.set_param((int)ParamId::ENV2_DECAY, 0.001f);
     v.set_param((int)ParamId::ENV2_SUSTAIN, 0.800f);
 
     NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
@@ -91,8 +96,7 @@ void test_env2_follows_gate() {
 
     // ENV2 value at sustain should be near 0.8 (sustain level).
     float env2_at_sustain = v.env2_value();
-    TEST_ASSERT(env2_at_sustain > 0.5f,
-                "ENV2 value at sustain must be > 0.5 (sustain level=0.8)");
+    TEST_ASSERT(env2_at_sustain > 0.5f, "ENV2 value at sustain must be > 0.5 (sustain level=0.8)");
 
     // After note_off + release tail, ENV2 should drop toward zero.
     v.set_param((int)ParamId::ENV2_RELEASE, 0.05f);
@@ -102,155 +106,154 @@ void test_env2_follows_gate() {
         v.render(buf, 64);
     }
     float env2_after_release = v.env2_value();
-    TEST_ASSERT(env2_after_release < 0.05f,
-                "ENV2 must decay to near-zero after release");
+    TEST_ASSERT(env2_after_release < 0.05f, "ENV2 must decay to near-zero after release");
     test_pass();
 }
 
-/* --- 3. LFO produces oscillation ---------------------------------------- */
-void test_lfo_oscillation() {
-    printf("--- Stage 3a: LFOs ---\n");
-    test_begin("LFO1: produces oscillation at set rate (zero-crossings)");
+/* --- 3. LFO injection: injected raw value is depth-scaled ---------------- */
+void test_lfo_injection_depth() {
+    printf("--- Stage 3a: LFOs (ADR 0018: shared-LFO injection path) ---\n");
+    test_begin("LFO1: set_lfo_inputs(raw) → lfo1_value() ≈ raw * depth (no delay)");
 
     JunoVoice v;
     v.init(kSampleRate);
-    // Rate: 10 Hz → period = 4800 samples = 75 blocks.
-    v.set_param((int)ParamId::LFO1_RATE,  10.0f);
-    v.set_param((int)ParamId::LFO1_DEPTH, 1.0f);
-    v.set_param((int)ParamId::LFO1_SHAPE, 0.0f);  // SINE
+    v.set_param((int)ParamId::LFO1_DEPTH, 0.75f);
+    v.set_param((int)ParamId::LFO1_DELAY, 0.0f);  // no delay → scale = 1.0
 
     NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
     v.note_on(69, 127, expr);
 
     float buf[64];
-    // Collect LFO1 values over 150 blocks (~2 full cycles at 10 Hz).
-    float prev = 0.0f;
-    int sign_changes = 0;
-    for (int b = 0; b < 150; b++) {
+    // Test with a positive and a negative raw value.
+    float raw_vals[] = {0.8f, -0.5f, 1.0f, 0.0f};
+    for (int i = 0; i < 4; i++) {
+        float raw = raw_vals[i];
+        v.set_lfo_inputs(raw, 0.0f);
         memset(buf, 0, sizeof(buf));
         v.render(buf, 64);
-        float cur = v.lfo1_value();
-        // Count sign changes (zero-crossings).
-        if (b > 0 && ((prev < 0.0f && cur > 0.0f) || (prev > 0.0f && cur < 0.0f))) {
-            sign_changes++;
-        }
-        prev = cur;
+        float expected = raw * 0.75f;
+        float got      = v.lfo1_value();
+        float err      = fabsf(got - expected);
+        TEST_ASSERT(err < 1e-5f, "lfo1_value() must equal raw * depth within 1e-5");
+    }
+    test_pass();
+}
+
+/* --- 4. LFO depth param scales the injected output ----------------------- */
+void test_lfo_depth_scaling() {
+    test_begin("LFO1: LFO1_DEPTH param scales set_lfo_inputs output");
+
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+    float          buf[64];
+
+    auto measure_value = [&](float depth, float raw) -> float {
+        JunoVoice v;
+        v.init(kSampleRate);
+        v.set_param((int)ParamId::LFO1_DEPTH, depth);
+        v.set_param((int)ParamId::LFO1_DELAY, 0.0f);
+        v.note_on(69, 127, expr);
+        v.set_lfo_inputs(raw, 0.0f);
+        memset(buf, 0, sizeof(buf));
+        v.render(buf, 64);
+        return v.lfo1_value();
+    };
+
+    float raw      = 1.0f;
+    float val_full = measure_value(1.0f, raw);
+    float val_half = measure_value(0.5f, raw);
+
+    TEST_ASSERT(fabsf(val_full - 1.0f) < 1e-5f, "depth=1.0, raw=1.0 → lfo1_value() must be ~1.0");
+    TEST_ASSERT(fabsf(val_half - 0.5f) < 1e-5f, "depth=0.5, raw=1.0 → lfo1_value() must be ~0.5");
+    test_pass();
+}
+
+/* --- 5. LFO delay fade-in: value ramps 0→full over delay window ---------- */
+void test_lfo_delay_fade_in() {
+    test_begin("LFO1: delay param causes lfo1_value() to ramp from 0→depth over delay");
+
+    JunoVoice v;
+    v.init(kSampleRate);
+    v.set_param((int)ParamId::LFO1_DEPTH, 1.0f);
+    // 1-second delay → 48000 samples = 750 blocks of 64.
+    v.set_param((int)ParamId::LFO1_DELAY, 1.0f);
+
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+    v.note_on(69, 127, expr);
+
+    float buf[64];
+    // Inject raw=1.0 each block; at start scale=0, at end scale=1.
+    float first_val = 0.0f;
+    float late_val  = 0.0f;
+
+    // First block: delay scale should be near 0 (just started).
+    v.set_lfo_inputs(1.0f, 0.0f);
+    memset(buf, 0, sizeof(buf));
+    v.render(buf, 64);
+    first_val = v.lfo1_value();
+
+    // Advance most of the delay window (740 blocks out of 750).
+    for (int b = 1; b < 740; b++) {
+        v.set_lfo_inputs(1.0f, 0.0f);
+        memset(buf, 0, sizeof(buf));
+        v.render(buf, 64);
+    }
+    float mid_val = v.lfo1_value();
+
+    // After the full delay (run beyond 750 blocks).
+    for (int b = 740; b < 800; b++) {
+        v.set_lfo_inputs(1.0f, 0.0f);
+        memset(buf, 0, sizeof(buf));
+        v.render(buf, 64);
+    }
+    late_val = v.lfo1_value();
+
+    // At the very start the scale must be near zero.
+    TEST_ASSERT(first_val < 0.02f, "LFO1 with delay=1s must start near 0");
+    // Mid-way (740/750) must be meaningfully higher than start but not full.
+    TEST_ASSERT(mid_val > first_val, "LFO1 delay scale must increase over time");
+    // After the delay window the value must be at full depth (raw=1, depth=1).
+    TEST_ASSERT(late_val > 0.99f, "LFO1 delay must reach full depth after 1s");
+    test_pass();
+}
+
+/* --- 6. LFO determinism: two voices fed same inputs → identical values --- */
+void test_lfo_voice_determinism() {
+    test_begin("LFO1 determinism: two voices with same inputs produce identical lfo1_value()");
+
+    JunoVoice v1, v2;
+    v1.init(kSampleRate);
+    v2.init(kSampleRate);
+
+    // Identical params.
+    for (auto* v : {&v1, &v2}) {
+        v->set_param((int)ParamId::LFO1_DEPTH, 0.8f);
+        v->set_param((int)ParamId::LFO1_DELAY, 0.0f);
     }
 
-    // At 10 Hz over 150 blocks (= 9600 samples ≈ 0.2 s), expect ~4 zero
-    // crossings (2 per cycle × 2 cycles). Accept ≥ 2 to allow boundary effects.
-    TEST_ASSERT(sign_changes >= 2,
-                "LFO1 at 10 Hz must produce ≥2 sign changes over 150 blocks");
-    test_pass();
-}
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+    v1.note_on(69, 127, expr);
+    v2.note_on(69, 127, expr);
 
-/* --- 4. LFO waveform change alters output -------------------------------- */
-void test_lfo_waveform_change() {
-    test_begin("LFO1: waveform change (SINE vs SQUARE) alters output shape");
+    float    buf1[64], buf2[64];
+    // Feed both voices an identical sequence of LFO raw values (simulating
+    // what synth_render does with s_lfo1.process_block each block).
+    dsp::Lfo shared_lfo;
+    shared_lfo.init(kSampleRate);
+    shared_lfo.set_rate(3.0f);
+    shared_lfo.set_waveform(dsp::LfoWave::SINE);
 
-    // Collect 1 second of LFO output for each waveform.
-    // SQUARE should produce values very close to ±1 (bimodal).
-    // SINE should produce a smoother distribution.
-    auto collect_abs_mean = [](int shape) -> float {
-        JunoVoice v;
-        v.init(kSampleRate);
-        v.set_param((int)ParamId::LFO1_RATE,  1.0f);
-        v.set_param((int)ParamId::LFO1_DEPTH, 1.0f);
-        v.set_param((int)ParamId::LFO1_SHAPE, (float)shape);
-        NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
-        v.note_on(69, 127, expr);
-        float buf[64];
-        float sum = 0.0f;
-        int count = 0;
-        // Collect 2 full cycles at 1 Hz = 750 blocks.
-        for (int b = 0; b < 750; b++) {
-            memset(buf, 0, sizeof(buf));
-            v.render(buf, 64);
-            float val = v.lfo1_value();
-            sum += fabsf(val);
-            count++;
-        }
-        return sum / (float)count;
-    };
-
-    // LfoWave: SINE=0 → |sin| mean ≈ 2/π ≈ 0.637
-    //           SQUARE=4 → mean of |±1| = 1.0
-    float mean_sine   = collect_abs_mean(0);
-    float mean_square = collect_abs_mean(4);
-
-    // Square must have higher |mean| than sine (nearer to 1.0).
-    TEST_ASSERT(mean_square > mean_sine * 1.2f,
-                "SQUARE waveform mean|x| must exceed SINE (≥1.2×)");
-    test_pass();
-}
-
-/* --- 5. LFO depth scales amplitude --------------------------------------- */
-void test_lfo_depth_scaling() {
-    test_begin("LFO1: depth param scales output amplitude");
-
-    auto collect_peak = [](float depth) -> float {
-        JunoVoice v;
-        v.init(kSampleRate);
-        v.set_param((int)ParamId::LFO1_RATE,  5.0f);
-        v.set_param((int)ParamId::LFO1_DEPTH, depth);
-        v.set_param((int)ParamId::LFO1_SHAPE, 0.0f);  // SINE
-        NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
-        v.note_on(69, 127, expr);
-        float buf[64];
-        float peak = 0.0f;
-        for (int b = 0; b < 200; b++) {
-            memset(buf, 0, sizeof(buf));
-            v.render(buf, 64);
-            float val = fabsf(v.lfo1_value());
-            if (val > peak) peak = val;
-        }
-        return peak;
-    };
-
-    float peak_full = collect_peak(1.0f);
-    float peak_half = collect_peak(0.5f);
-
-    // Half depth → peak should be about half.
-    TEST_ASSERT(peak_full > 0.5f,  "LFO at depth=1 must reach > 0.5");
-    TEST_ASSERT(peak_half < peak_full * 0.75f,
-                "LFO at depth=0.5 peak must be <75% of depth=1 peak");
-    test_pass();
-}
-
-/* --- 6. set_param changes LFO rate --------------------------------------- */
-void test_lfo_rate_set_param() {
-    test_begin("LFO1: set_param(LFO1_RATE) changes oscillation frequency");
-
-    // Count zero-crossings over a fixed window at two different rates.
-    auto count_crossings = [](float rate) -> int {
-        JunoVoice v;
-        v.init(kSampleRate);
-        v.set_param((int)ParamId::LFO1_RATE,  rate);
-        v.set_param((int)ParamId::LFO1_DEPTH, 1.0f);
-        v.set_param((int)ParamId::LFO1_SHAPE, 2.0f);  // SAW — reliable crossings
-        NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
-        v.note_on(69, 127, expr);
-        float buf[64];
-        float prev = 0.0f;
-        int count = 0;
-        for (int b = 0; b < 750; b++) {
-            memset(buf, 0, sizeof(buf));
-            v.render(buf, 64);
-            float cur = v.lfo1_value();
-            if (b > 0 && ((prev < 0.0f && cur > 0.0f) || (prev > 0.0f && cur < 0.0f))) {
-                count++;
-            }
-            prev = cur;
-        }
-        return count;
-    };
-
-    int cross_1hz  = count_crossings(1.0f);
-    int cross_5hz  = count_crossings(5.0f);
-
-    // 5 Hz should produce ~5× more crossings than 1 Hz.
-    TEST_ASSERT(cross_5hz > cross_1hz * 3,
-                "LFO at 5 Hz must produce >3× more zero-crossings than at 1 Hz");
+    for (int b = 0; b < 200; b++) {
+        float raw = shared_lfo.process_block(64);
+        v1.set_lfo_inputs(raw, 0.0f);
+        v2.set_lfo_inputs(raw, 0.0f);
+        memset(buf1, 0, sizeof(buf1));
+        memset(buf2, 0, sizeof(buf2));
+        v1.render(buf1, 64);
+        v2.render(buf2, 64);
+        // lfo1_value() must be identical (no per-voice phase divergence).
+        float diff = fabsf(v1.lfo1_value() - v2.lfo1_value());
+        TEST_ASSERT(diff < 1e-6f, "Two voices fed same set_lfo_inputs must have identical lfo1_value()");
+    }
     test_pass();
 }
 
@@ -265,7 +268,7 @@ void test_lfo_sh_piecewise_constant() {
 
     // Within one cycle (480 samples), all values should be identical.
     float first_val = lfo.process();
-    bool held = true;
+    bool  held      = true;
     for (int i = 1; i < 479; i++) {
         float v = lfo.process();
         if (v != first_val) {
@@ -279,12 +282,11 @@ void test_lfo_sh_piecewise_constant() {
     // Run through the rest of this cycle and a bit of the next.
     float after = lfo.process();  // sample 479 — may still be first cycle
     float post  = lfo.process();  // sample 480 — should be in next cycle
-    (void)after;  // may or may not have changed at exactly sample 479
+    (void)after;                  // may or may not have changed at exactly sample 479
     // Just run a few more to confirm the value is now well into the next cycle.
     for (int i = 0; i < 240; i++) post = lfo.process();
     // We can only assert that it is within [-1, +1].
-    TEST_ASSERT(post >= -1.001f && post <= 1.001f,
-                "S&H LFO value must remain in [-1, +1]");
+    TEST_ASSERT(post >= -1.001f && post <= 1.001f, "S&H LFO value must remain in [-1, +1]");
     test_pass();
 }
 
@@ -293,11 +295,7 @@ void test_lfo_output_range() {
     test_begin("dsp::Lfo: all waveforms stay in [-1, +1]");
 
     dsp::LfoWave waves[] = {
-        dsp::LfoWave::SINE,
-        dsp::LfoWave::TRI,
-        dsp::LfoWave::SAW,
-        dsp::LfoWave::SQUARE,
-        dsp::LfoWave::SH,
+        dsp::LfoWave::SINE, dsp::LfoWave::TRI, dsp::LfoWave::SAW, dsp::LfoWave::SQUARE, dsp::LfoWave::SH,
     };
 
     for (auto wave : waves) {
@@ -308,8 +306,7 @@ void test_lfo_output_range() {
 
         for (int i = 0; i < 48000; i++) {  // 1 second
             float v = lfo.process();
-            TEST_ASSERT(v >= -1.001f && v <= 1.001f,
-                        "Lfo output must stay within [-1, +1]");
+            TEST_ASSERT(v >= -1.001f && v <= 1.001f, "Lfo output must stay within [-1, +1]");
         }
     }
     test_pass();
@@ -324,11 +321,11 @@ void test_env2_per_voice_independent() {
     v2.init(kSampleRate);
 
     // v1 gets a very short ENV2, v2 gets a long one.
-    v1.set_param((int)ParamId::ENV2_ATTACK,  0.001f);
-    v1.set_param((int)ParamId::ENV2_DECAY,   0.001f);
+    v1.set_param((int)ParamId::ENV2_ATTACK, 0.001f);
+    v1.set_param((int)ParamId::ENV2_DECAY, 0.001f);
     v1.set_param((int)ParamId::ENV2_SUSTAIN, 0.8f);
 
-    v2.set_param((int)ParamId::ENV2_ATTACK,  2.0f);  // very long attack
+    v2.set_param((int)ParamId::ENV2_ATTACK, 2.0f);  // very long attack
     v2.set_param((int)ParamId::ENV2_SUSTAIN, 0.8f);
 
     NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
@@ -348,10 +345,8 @@ void test_env2_per_voice_independent() {
     float e2_v2 = v2.env2_value();
 
     // v1 should be near sustain (0.8), v2 still climbing from near 0.
-    TEST_ASSERT(e2_v1 > 0.5f,
-                "Voice1 ENV2 (short attack) must be near sustain after 100 blocks");
-    TEST_ASSERT(e2_v2 < e2_v1,
-                "Voice2 ENV2 (long attack) must still be below Voice1 ENV2");
+    TEST_ASSERT(e2_v1 > 0.5f, "Voice1 ENV2 (short attack) must be near sustain after 100 blocks");
+    TEST_ASSERT(e2_v2 < e2_v1, "Voice2 ENV2 (long attack) must still be below Voice1 ENV2");
     test_pass();
 }
 
@@ -389,8 +384,7 @@ void test_lfo_process_block() {
 
     // Both sampled at phase = N * phase_inc → should agree within float rounding.
     float diff = fabsf(block_val - ref_val);
-    TEST_ASSERT(diff < 1e-5f,
-        "process_block(64) must match reference (64 process() steps + 1 sample) within 1e-5");
+    TEST_ASSERT(diff < 1e-5f, "process_block(64) must match reference (64 process() steps + 1 sample) within 1e-5");
     test_pass();
 }
 
@@ -398,10 +392,10 @@ void test_lfo_process_block() {
 void test_mod_sources_suite() {
     test_env2_independent_from_env1();
     test_env2_follows_gate();
-    test_lfo_oscillation();
-    test_lfo_waveform_change();
+    test_lfo_injection_depth();
     test_lfo_depth_scaling();
-    test_lfo_rate_set_param();
+    test_lfo_delay_fade_in();
+    test_lfo_voice_determinism();
     test_lfo_sh_piecewise_constant();
     test_lfo_output_range();
     test_env2_per_voice_independent();

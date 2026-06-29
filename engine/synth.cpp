@@ -12,18 +12,19 @@
 #endif
 #endif
 
-#include "synth.h"
-#include "juno_model.h"
-#include "voice_alloc.h"
+#include <math.h>
+#include <string.h>
+#include "Effects/chorus.h"
 #include "command_queue.h"
+#include "dsp/lfo.h"
+#include "dsp/saturate.h"
+#include "juno_model.h"
 #include "param_desc.h"
 #include "param_id.h"
 #include "param_store.h"
+#include "synth.h"
 #include "synth_config.h"
-#include "dsp/saturate.h"
-#include "Effects/chorus.h"
-#include <string.h>
-#include <math.h>
+#include "voice_alloc.h"
 
 // Equal-power unison gain compensation (ADR / this fix).
 // Scaling by 1/sqrt(U) keeps perceived loudness roughly constant across unison
@@ -39,11 +40,17 @@ static inline float unison_gain(int count) {
 static const size_t kMaxBlock = 256;
 static float        s_mono[kMaxBlock];
 
-static JunoModel        s_juno_model;
-static VoiceAlloc       s_alloc;
-static daisysp::Chorus  s_chorus;
-static ParamStore       s_params;
-static float            s_sample_rate = 48000.0f;
+static JunoModel       s_juno_model;
+static VoiceAlloc      s_alloc;
+static daisysp::Chorus s_chorus;
+static ParamStore      s_params;
+static float           s_sample_rate = 48000.0f;
+
+// ADR 0018: shared free-running LFOs — one pair for the whole engine.
+// All voices receive the same block-end value (authentic Juno-106 behaviour:
+// LFO1/2 are global, not per-voice). Per-note delay fade-in stays in JunoVoice.
+static dsp::Lfo s_lfo1;
+static dsp::Lfo s_lfo2;
 
 // Note events cross from the control thread (core 0) to the audio thread
 // (core 1) via this ring. 64 slots >> the few events a UI frame can produce.
@@ -61,6 +68,14 @@ void synth_init(uint32_t sample_rate, size_t block_size) {
     // their table defaults — the first synth_render drain propagates these
     // to voices so the sound is identical to the Stage 1 hardcoded values.
     s_params.init(JUNO_PARAM_TABLE, kJunoParamCount, (float)sample_rate, (int)block_size);
+
+    // ADR 0018: init shared LFOs from param table defaults so block 0 is correct.
+    s_lfo1.init((float)sample_rate);
+    s_lfo1.set_rate(s_params.get(ParamId::LFO1_RATE));
+    s_lfo1.set_waveform((dsp::LfoWave)(int)s_params.get(ParamId::LFO1_SHAPE));
+    s_lfo2.init((float)sample_rate);
+    s_lfo2.set_rate(s_params.get(ParamId::LFO2_RATE));
+    s_lfo2.set_waveform((dsp::LfoWave)(int)s_params.get(ParamId::LFO2_SHAPE));
 }
 
 // Render the full voice pool + chorus + master gain.
@@ -115,6 +130,7 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     //    Steady state pushes nothing; a knob sweep pushes only that param.
     //    Idle voices receive the push too (cheap now) so a newly triggered
     //    voice always holds current values. Voices ignore ids they don't handle.
+    //    ADR 0018: LFO1/2 rate+shape also configure the shared engine LFOs here.
     const VoiceSlot* slots = s_alloc.slots();
     {
         int nch = s_params.changed_count();
@@ -124,6 +140,33 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
             for (int v = 0; v < kNumVoices; v++) {
                 slots[v].voice->set_param(id, val);
             }
+            // Configure shared LFOs for rate/shape changes.
+            switch (id) {
+                case ParamId::LFO1_RATE:
+                    s_lfo1.set_rate(val);
+                    break;
+                case ParamId::LFO1_SHAPE:
+                    s_lfo1.set_waveform((dsp::LfoWave)(int)val);
+                    break;
+                case ParamId::LFO2_RATE:
+                    s_lfo2.set_rate(val);
+                    break;
+                case ParamId::LFO2_SHAPE:
+                    s_lfo2.set_waveform((dsp::LfoWave)(int)val);
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+
+    // 3a. ADR 0018: advance shared LFOs once for the whole block (unconditional —
+    //     free-running regardless of voice activity) and inject into every voice.
+    {
+        float l1 = s_lfo1.process_block((uint32_t)frames);
+        float l2 = s_lfo2.process_block((uint32_t)frames);
+        for (int v = 0; v < kNumVoices; v++) {
+            slots[v].voice->set_lfo_inputs(l1, l2);
         }
     }
 
@@ -155,11 +198,11 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     for (size_t i = 0; i < frames; i++) {
         if (chorus_mode > 0) {
             s_chorus.Process(s_mono[i]);
-            left[i]  = soft_clip(s_chorus.GetLeft()  * gain);
+            left[i]  = soft_clip(s_chorus.GetLeft() * gain);
             right[i] = soft_clip(s_chorus.GetRight() * gain);
         } else {
             // Chorus off: output mono signal to both channels (no stereo spread).
-            float v = soft_clip(s_mono[i] * gain);
+            float v  = soft_clip(s_mono[i] * gain);
             left[i]  = v;
             right[i] = v;
         }
@@ -187,7 +230,7 @@ void engine_set_param_norm(uint16_t id, float norm) {
 
 int engine_active_voices(void) {
     const VoiceSlot* slots = s_alloc.slots();
-    int count = 0;
+    int              count = 0;
     for (int v = 0; v < kNumVoices; v++) {
         if (slots[v].voice->is_active()) count++;
     }
