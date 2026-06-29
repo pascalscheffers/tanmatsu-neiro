@@ -86,6 +86,9 @@ void synth_init(uint32_t sample_rate, size_t block_size) {
 
     // ADR 0010: master musical clock — derived from the audio sample counter.
     s_clock.init((float)sample_rate);
+    // Stage 4a-iii: param table is the UI/preset home for tempo; seed the clock from the
+    // table default so block 0 uses the right BPM (mirrors LFO init lines below).
+    s_clock.set_bpm(s_params.get(ParamId::CLOCK_BPM));
 
     // ADR 0018: init shared LFOs from param table defaults so block 0 is correct.
     s_lfo1.init((float)sample_rate);
@@ -208,8 +211,14 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
             for (int v = 0; v < kNumVoices; v++) {
                 slots[v].voice->set_param(id, val);
             }
-            // Configure shared LFOs for rate/shape changes.
+            // Configure shared LFOs for rate/shape changes, and drive the clock from the
+            // param table (Stage 4a-iii: CLOCK_BPM is the UI/preset home for tempo;
+            // engine_set_bpm() via ClockCmd remains valid for tap-tempo and future
+            // MIDI-clock write-back — both paths converge on s_clock.set_bpm()).
             switch (id) {
+                case ParamId::CLOCK_BPM:
+                    s_clock.set_bpm(val);
+                    break;
                 case ParamId::LFO1_RATE:
                     s_lfo1.set_rate(val);
                     break;

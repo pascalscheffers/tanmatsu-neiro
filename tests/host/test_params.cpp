@@ -95,6 +95,9 @@ void test_params_table_coverage() {
     TEST_ASSERT(find_param(ParamId::VCA_GATE_MODE) != nullptr, "VCA_GATE_MODE missing");
     TEST_ASSERT(find_param(ParamId::VCA_LEVEL) != nullptr, "VCA_LEVEL missing");
 
+    /* CLOCK group (Stage 4a-iii) */
+    TEST_ASSERT(find_param(ParamId::CLOCK_BPM) != nullptr, "CLOCK_BPM missing");
+
     test_pass();
 }
 
@@ -272,6 +275,22 @@ void test_params_vcf_env_depth() {
     test_pass();
 }
 
+/* 7. CLOCK_BPM row: present in GROUP_GLOBAL, CURVE_LIN, min 20 / max 300 / def 120. */
+void test_params_clock_bpm_row() {
+    test_begin("CLOCK_BPM row: GROUP_GLOBAL, CURVE_LIN, min=20 max=300 def=120");
+    const ParamDesc* p = find_param(ParamId::CLOCK_BPM);
+    TEST_ASSERT(p != nullptr, "CLOCK_BPM not in table");
+    TEST_ASSERT(p->id == 0x01, "CLOCK_BPM id must be 0x01");
+    TEST_ASSERT(p->group == GROUP_GLOBAL, "CLOCK_BPM must be in GROUP_GLOBAL");
+    TEST_ASSERT(p->curve == CURVE_LIN, "CLOCK_BPM must use CURVE_LIN");
+    TEST_ASSERT(p->min == 20.0f, "CLOCK_BPM min must be 20");
+    TEST_ASSERT(p->max == 300.0f, "CLOCK_BPM max must be 300");
+    TEST_ASSERT(p->def == 120.0f, "CLOCK_BPM def must be 120");
+    TEST_ASSERT(p->smoothing_ms == 0.0f, "CLOCK_BPM smoothing must be 0 (instant)");
+    TEST_ASSERT(p->id < ParamId::kMax, "CLOCK_BPM id must be < kMax");
+    test_pass();
+}
+
 /* Entry point declared in main.cpp */
 void test_params_suite() {
     test_params_table_coverage();
@@ -282,4 +301,5 @@ void test_params_suite() {
     test_params_osc_range_shifts_freq();
     test_params_vca_gate_mode();
     test_params_vcf_env_depth();
+    test_params_clock_bpm_row();
 }

@@ -11,6 +11,14 @@
 
 // NOLINTBEGIN — the initialiser list is intentionally wide for readability.
 const ParamDesc JUNO_PARAM_TABLE[] = {
+    // --- CLOCK (global tempo) ---
+    // CLOCK_BPM: the param-table home for tempo (Stage 4a-iii). BPM is also settable via
+    // engine_set_bpm() (tap-tempo / MIDI-clock path) — those remain valid direct paths.
+    // smoothing_ms=0: tempo must not zipper-glide. flags=0: global, not per-voice, not a
+    // mod dest, not audio-rate.
+    {ParamId::CLOCK_BPM, GROUP_GLOBAL, "Tempo", "BPM", 20.0f, 300.0f, 120.0f, CURVE_LIN, UNIT_NONE, "%.0f", 0xFF, 0.0f,
+     0},
+
     // --- OSC ---
     // id                       grp          name                  short     min     max       def    curve         unit
     // fmt      cc    smooth  flags

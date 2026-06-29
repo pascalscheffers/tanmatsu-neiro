@@ -13,6 +13,10 @@
 
 namespace ParamId {
 
+// CLOCK group (0x00-0x0F) — master musical clock (Stage 4a)
+// 0x00 reserved (invalid/sentinel).
+static constexpr uint16_t CLOCK_BPM = 0x01;  // tempo in BPM [20..300]; UI/preset home for tempo
+
 // OSC group  (0x10-0x1F) — oscillator section
 static constexpr uint16_t OSC_LEVEL    = 0x10;  // main oscillator mix level
 static constexpr uint16_t SUB_LEVEL    = 0x11;  // sub-oscillator level
