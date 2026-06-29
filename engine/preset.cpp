@@ -60,6 +60,13 @@ static const Routing k_vibrato_lead_routings[] = {
 };
 static constexpr int k_vibrato_lead_count = (int)(sizeof(k_vibrato_lead_routings) / sizeof(k_vibrato_lead_routings[0]));
 
+// "8-Bit Lead" / "Chip Arp" routings — delayed LFO1 pitch vibrato, no filter env.
+// One route (LFO1→pitch) gives the classic NES delayed-vibrato character.
+static const Routing k_chip_vibrato_routings[] = {
+    {(uint8_t)ModSource::LFO1, kModDestPitch, +0.15f, (uint8_t)ModCurve::LIN},
+};
+static constexpr int k_chip_vibrato_count = (int)(sizeof(k_chip_vibrato_routings) / sizeof(k_chip_vibrato_routings[0]));
+
 struct FactoryPreset {
     const char*    name;
     uint16_t       ids[64];  // Stage 4b-ii: widened from 48 → 64 to hold 49 params + future growth
@@ -349,6 +356,170 @@ static const FactoryPreset
                 49,
                 k_vibrato_lead_routings,
                 k_vibrato_lead_count,
+            },
+            // 8: 8-Bit Lead — NES pulse channel square wave, instant on/off (VCA_GATE_MODE=1),
+            // mono, no chorus. LFO1 delayed vibrato (0.25 s) for expressive leads.
+            // Alt duty cycles: OSC_PWM=0.25 (nasal 25%) or 0.125 (thin 12.5%).
+            {
+                "8-Bit Lead",
+                {ParamId::OSC_LEVEL,     ParamId::SUB_LEVEL,     ParamId::NOISE_LEVEL,     ParamId::OSC_PWM,
+                 ParamId::OSC_WAVEFORM,  ParamId::OSC_RANGE,     ParamId::FILTER_CUTOFF,   ParamId::FILTER_RES,
+                 ParamId::FILTER_MODE,   ParamId::HPF_CUTOFF,    ParamId::VCF_ENV_DEPTH,   ParamId::VCF_ENV_POLARITY,
+                 ParamId::VCF_KEY_TRACK, ParamId::VCF_LFO_DEPTH, ParamId::ENV_ATTACK,      ParamId::ENV_DECAY,
+                 ParamId::ENV_SUSTAIN,   ParamId::ENV_RELEASE,   ParamId::ENV2_ATTACK,     ParamId::ENV2_DECAY,
+                 ParamId::ENV2_SUSTAIN,  ParamId::ENV2_RELEASE,  ParamId::LFO1_RATE,       ParamId::LFO1_DEPTH,
+                 ParamId::LFO1_SHAPE,    ParamId::LFO1_DELAY,    ParamId::LFO2_RATE,       ParamId::LFO2_DEPTH,
+                 ParamId::LFO2_SHAPE,    ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,
+                 ParamId::CHORUS_DELAY,  ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,
+                 ParamId::VCA_LEVEL,     ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,
+                 ParamId::UNISON_DETUNE, ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,
+                 ParamId::ARP_RATE,      ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,
+                 ParamId::ARP_LATCH},
+                /* OSC: hollow square (50% duty), no sub, no noise */
+                {0.90f, 0.00f, 0.00f, 0.50f, 1.0f, 0.0f,
+                 /* FILTER: wide open (chip has no filter), no res, no env mod */
+                 20000.0f, 0.00f, 0.0f, 20.0f, 0.00f, 0.0f, 0.50f, 0.0f,
+                 /* AMP ENV: instant A, full sustain, instant R (gate mode drives VCA) */
+                 0.001f, 0.10f, 1.00f, 0.001f,
+                 /* ENV2: unused (no filter mod) */
+                 0.005f, 0.200f, 0.000f, 0.200f,
+                 /* LFO1: 6 Hz SINE, delayed 0.25 s for classic NES pitch vibrato */
+                 6.0f, 0.50f, 0.0f, 0.25f,
+                 /* LFO2: idle */
+                 0.5f, 0.5f, 0.0f, 0.0f,
+                 /* CHORUS: off (authentic chip sound — no chorus) */
+                 0.50f, 0.70f, 0.40f, 0.0f,
+                 /* AMP: normal gain, gate mode (instant on/off), full VCA */
+                 0.50f, 1.0f, 1.0f,
+                 /* PLAY: mono+retrigger, no glide */
+                 1.0f, 0.0f, 1.0f, 0.0f,
+                 /* CLOCK + ARP: 120 BPM, arp off */
+                 120.0f, 0.0f, 0.0f, 3.0f, 1.0f, 0.5f, 0.0f, 0.0f},
+                49,
+                k_chip_vibrato_routings,
+                k_chip_vibrato_count,
+            },
+            // 9: Chip Arp — Game Boy arpeggio: pulse 50%, arp on (up, 1/16, 2 oct), 130 BPM.
+            // VCA_GATE_MODE=1 (instant on/off) for tight chip-style gating. Poly so arp can
+            // hold a full chord. No chorus. Uses k_chip_vibrato_routings for subtle LFO vibrato.
+            {
+                "Chip Arp",
+                {ParamId::OSC_LEVEL,     ParamId::SUB_LEVEL,     ParamId::NOISE_LEVEL,     ParamId::OSC_PWM,
+                 ParamId::OSC_WAVEFORM,  ParamId::OSC_RANGE,     ParamId::FILTER_CUTOFF,   ParamId::FILTER_RES,
+                 ParamId::FILTER_MODE,   ParamId::HPF_CUTOFF,    ParamId::VCF_ENV_DEPTH,   ParamId::VCF_ENV_POLARITY,
+                 ParamId::VCF_KEY_TRACK, ParamId::VCF_LFO_DEPTH, ParamId::ENV_ATTACK,      ParamId::ENV_DECAY,
+                 ParamId::ENV_SUSTAIN,   ParamId::ENV_RELEASE,   ParamId::ENV2_ATTACK,     ParamId::ENV2_DECAY,
+                 ParamId::ENV2_SUSTAIN,  ParamId::ENV2_RELEASE,  ParamId::LFO1_RATE,       ParamId::LFO1_DEPTH,
+                 ParamId::LFO1_SHAPE,    ParamId::LFO1_DELAY,    ParamId::LFO2_RATE,       ParamId::LFO2_DEPTH,
+                 ParamId::LFO2_SHAPE,    ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,
+                 ParamId::CHORUS_DELAY,  ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,
+                 ParamId::VCA_LEVEL,     ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,
+                 ParamId::UNISON_DETUNE, ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,
+                 ParamId::ARP_RATE,      ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,
+                 ParamId::ARP_LATCH},
+                /* OSC: hollow square (50% duty), no sub, no noise */
+                {0.90f, 0.00f, 0.00f, 0.50f, 1.0f, 0.0f,
+                 /* FILTER: wide open, no res, no env mod */
+                 20000.0f, 0.00f, 0.0f, 20.0f, 0.00f, 0.0f, 0.50f, 0.0f,
+                 /* AMP ENV: instant A, full sustain, instant R (gate mode) */
+                 0.001f, 0.10f, 1.00f, 0.001f,
+                 /* ENV2: unused */
+                 0.005f, 0.200f, 0.000f, 0.200f,
+                 /* LFO1: 6 Hz SINE, no delay (vibrato always on for arp context) */
+                 6.0f, 0.30f, 0.0f, 0.0f,
+                 /* LFO2: idle */
+                 0.5f, 0.5f, 0.0f, 0.0f,
+                 /* CHORUS: off */
+                 0.50f, 0.70f, 0.40f, 0.0f,
+                 /* AMP: normal gain, gate mode (instant on/off), full VCA */
+                 0.50f, 1.0f, 1.0f,
+                 /* PLAY: poly (arp holds chord across all voices), no glide */
+                 0.0f, 0.0f, 1.0f, 0.0f,
+                 /* CLOCK + ARP: 130 BPM, arp ON, up, 1/16, 2 oct, gate 0.5 */
+                 130.0f, 1.0f, 0.0f, 3.0f, 2.0f, 0.5f, 0.0f, 0.0f},
+                49,
+                k_chip_vibrato_routings,
+                k_chip_vibrato_count,
+            },
+            // 10: 8-Bit Bass — NES triangle bass channel: TRI waveform, 1 oct down, mild LP filter,
+            // punchy envelope, mono. No chorus, no LFO. Sub at 0.3 adds low-end weight.
+            {
+                "8-Bit Bass",
+                {ParamId::OSC_LEVEL,     ParamId::SUB_LEVEL,     ParamId::NOISE_LEVEL,     ParamId::OSC_PWM,
+                 ParamId::OSC_WAVEFORM,  ParamId::OSC_RANGE,     ParamId::FILTER_CUTOFF,   ParamId::FILTER_RES,
+                 ParamId::FILTER_MODE,   ParamId::HPF_CUTOFF,    ParamId::VCF_ENV_DEPTH,   ParamId::VCF_ENV_POLARITY,
+                 ParamId::VCF_KEY_TRACK, ParamId::VCF_LFO_DEPTH, ParamId::ENV_ATTACK,      ParamId::ENV_DECAY,
+                 ParamId::ENV_SUSTAIN,   ParamId::ENV_RELEASE,   ParamId::ENV2_ATTACK,     ParamId::ENV2_DECAY,
+                 ParamId::ENV2_SUSTAIN,  ParamId::ENV2_RELEASE,  ParamId::LFO1_RATE,       ParamId::LFO1_DEPTH,
+                 ParamId::LFO1_SHAPE,    ParamId::LFO1_DELAY,    ParamId::LFO2_RATE,       ParamId::LFO2_DEPTH,
+                 ParamId::LFO2_SHAPE,    ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,
+                 ParamId::CHORUS_DELAY,  ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,
+                 ParamId::VCA_LEVEL,     ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,
+                 ParamId::UNISON_DETUNE, ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,
+                 ParamId::ARP_RATE,      ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,
+                 ParamId::ARP_LATCH},
+                /* OSC: triangle wave (-12 semitones for bass register), sub for depth, no noise */
+                /* PWM is irrelevant for TRI waveform but kept at 0.5 (table default) */
+                {0.90f, 0.30f, 0.00f, 0.50f, 2.0f, -12.0f,
+                 /* FILTER: mild LP rounding (800 Hz), low res; gentle filter env punch */
+                 800.0f, 0.10f, 0.0f, 20.0f, 0.00f, 0.0f, 0.30f, 0.0f,
+                 /* AMP ENV: punchy — instant attack, short decay, medium sustain, quick release */
+                 0.001f, 0.15f, 0.50f, 0.05f,
+                 /* ENV2: unused (no filter mod for authentic NES triangle) */
+                 0.005f, 0.200f, 0.000f, 0.200f,
+                 /* LFO1/LFO2: idle */
+                 1.0f, 0.50f, 0.0f, 0.0f, 0.5f, 0.5f, 0.0f, 0.0f,
+                 /* CHORUS: off (chip bass is dry) */
+                 0.50f, 0.70f, 0.40f, 0.0f,
+                 /* AMP: normal gain, envelope mode (for punch), full VCA */
+                 0.50f, 0.0f, 1.0f,
+                 /* PLAY: mono+retrigger, no glide */
+                 1.0f, 0.0f, 1.0f, 0.0f,
+                 /* CLOCK + ARP: 120 BPM, arp off */
+                 120.0f, 0.0f, 0.0f, 3.0f, 1.0f, 0.5f, 0.0f, 0.0f},
+                49,
+                k_clean_106_routings, /* ENV2→cutoff + LFO1→PWM benign with TRI+no-filter-mod */
+                k_clean_106_count,
+            },
+            // 11: Chip Noise — NES/GB noise channel: hats / snare / zap depending on note + velocity.
+            // BP filter (2000 Hz) + VCF_ENV_DEPTH sweep for "pew" / zap transient.
+            // Comment: long note = crash/hat; short = snare; high velocity + short = zap.
+            {
+                "Chip Noise",
+                {ParamId::OSC_LEVEL,     ParamId::SUB_LEVEL,     ParamId::NOISE_LEVEL,     ParamId::OSC_PWM,
+                 ParamId::OSC_WAVEFORM,  ParamId::OSC_RANGE,     ParamId::FILTER_CUTOFF,   ParamId::FILTER_RES,
+                 ParamId::FILTER_MODE,   ParamId::HPF_CUTOFF,    ParamId::VCF_ENV_DEPTH,   ParamId::VCF_ENV_POLARITY,
+                 ParamId::VCF_KEY_TRACK, ParamId::VCF_LFO_DEPTH, ParamId::ENV_ATTACK,      ParamId::ENV_DECAY,
+                 ParamId::ENV_SUSTAIN,   ParamId::ENV_RELEASE,   ParamId::ENV2_ATTACK,     ParamId::ENV2_DECAY,
+                 ParamId::ENV2_SUSTAIN,  ParamId::ENV2_RELEASE,  ParamId::LFO1_RATE,       ParamId::LFO1_DEPTH,
+                 ParamId::LFO1_SHAPE,    ParamId::LFO1_DELAY,    ParamId::LFO2_RATE,       ParamId::LFO2_DEPTH,
+                 ParamId::LFO2_SHAPE,    ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,
+                 ParamId::CHORUS_DELAY,  ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,
+                 ParamId::VCA_LEVEL,     ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,
+                 ParamId::UNISON_DETUNE, ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,
+                 ParamId::ARP_RATE,      ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,
+                 ParamId::ARP_LATCH},
+                /* OSC: pure noise, osc and sub off */
+                {0.00f, 0.00f, 1.00f, 0.50f, 0.0f, 0.0f,
+                 /* FILTER: BP at 2000 Hz, moderate res; VCF_ENV_DEPTH=0.8 for "pew" sweep */
+                 2000.0f, 0.50f, 1.0f, 20.0f, 0.80f, 0.0f, 0.00f, 0.0f,
+                 /* AMP ENV: percussive — instant attack, short decay, no sustain, quick release */
+                 0.001f, 0.08f, 0.00f, 0.05f,
+                 /* ENV2: fast sweep envelope — instant A, medium D, no S */
+                 0.001f, 0.15f, 0.00f, 0.05f,
+                 /* LFO1/LFO2: idle */
+                 1.0f, 0.50f, 0.0f, 0.0f, 0.5f, 0.5f, 0.0f, 0.0f,
+                 /* CHORUS: off */
+                 0.50f, 0.70f, 0.40f, 0.0f,
+                 /* AMP: normal gain, envelope mode (for percussive shape), full VCA */
+                 0.50f, 0.0f, 1.0f,
+                 /* PLAY: mono+retrigger, no glide */
+                 1.0f, 0.0f, 1.0f, 0.0f,
+                 /* CLOCK + ARP: 120 BPM, arp off */
+                 120.0f, 0.0f, 0.0f, 3.0f, 1.0f, 0.5f, 0.0f, 0.0f},
+                49,
+                k_clean_106_routings, /* ENV2→cutoff drives the filter sweep (pew/zap) */
+                k_clean_106_count,
             },
 };
 
