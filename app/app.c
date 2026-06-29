@@ -109,6 +109,9 @@ void app_run(void) {
         ui_state.active_voices = engine_active_voices();
         ui_state.octave        = keyboard_octave();
 
+        // Drive hold-to-repeat for F1/F2 shape buttons (WO-5).
+        ui_tick(&ui_state, platform_millis());
+
         if (fb) {
             ui_draw(fb, platform_millis(), &ui_state);
             platform_present();

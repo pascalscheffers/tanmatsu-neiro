@@ -2,7 +2,7 @@
 //
 // Pages are defined by the static PAGE_TABLE (explicit order, multi-group pages
 // supported). No model-specific knowledge here (ADR 0008). Arrows navigate
-// pages/rows; comma/dot nudge the selected parameter; Shift = coarse step.
+// pages/rows; F1/F2 nudge the selected parameter; F3 back; F6 save.
 #include "ui.h"
 #include <math.h>
 #include <stdio.h>
@@ -323,8 +323,82 @@ extern "C" void ui_state_init(UIState* s) {
     ui_presets_snapshot(s);
 }
 
+// ---------------------------------------------------------------------------
+// Nudge / save helpers (WO-5)
+// ---------------------------------------------------------------------------
+
+// Apply one fine nudge step (dir = -1 or +1) to the currently selected param.
+// For stepped params: one integer step in norm space.
+// For continuous params: fine step = 0.01 norm.
+static void nudge_selected(UIState* s, int dir, bool coarse) {
+    const ParamDesc* rows[24];
+    int              n = page_rows(s->page, rows, 24);
+    if (n <= 0 || s->row < 0 || s->row >= n) return;
+    const ParamDesc* d = rows[s->row];
+    float            step;
+    if (d->curve == CURVE_STEPPED) {
+        step = 1.0f / (d->max - d->min);  // one integer step in norm space
+    } else {
+        step = coarse ? 0.10f : 0.01f;
+    }
+    float norm      = clamp01(s->norms[d->id] + (float)dir * step);
+    s->norms[d->id] = norm;
+    engine_set_param_norm(d->id, norm);
+}
+
+// Apply a raw norm delta to the selected param and clamp.
+// Used by ui_tick() to drive continuous repeat without re-deriving step size.
+static void nudge_selected_norm(UIState* s, float delta) {
+    const ParamDesc* rows[24];
+    int              n = page_rows(s->page, rows, 24);
+    if (n <= 0 || s->row < 0 || s->row >= n) return;
+    const ParamDesc* d    = rows[s->row];
+    float            norm = clamp01(s->norms[d->id] + delta);
+    s->norms[d->id]       = norm;
+    engine_set_param_norm(d->id, norm);
+}
+
+// Save the current UI state as the user preset ("=" shortcut + F6 shape button).
+static void save_user_preset(UIState* s) {
+    static uint8_t blob[PRESET_BLOB_MAX];
+    Routing        routings[PRESET_MAX_ROUTINGS];
+    int r_count = preset_factory_routings(s->preset_idx >= 0 ? s->preset_idx : 0, routings, PRESET_MAX_ROUTINGS);
+    int len     = preset_serialize(blob, sizeof(blob), s->preset_name, s->norms, UI_NORM_TABLE_SIZE, routings, r_count);
+    if (len > 0) {
+        platform_storage_save("user", blob, (size_t)len);
+    }
+}
+
+// Begin a hold-repeat sequence in direction dir (-1 or +1).
+static void hold_begin(UIState* s, int dir, uint64_t now_ms) {
+    s->held_dir      = dir;
+    s->held_row      = s->row;
+    s->held_since_ms = now_ms;
+    s->last_step_ms  = now_ms;
+    s->repeat_accum  = 0.0f;
+}
+
+static void hold_stop(UIState* s) {
+    s->held_dir = 0;
+}
+
 extern "C" bool ui_handle_event(UIState* s, const platform_event_t* ev) {
-    if (ev->type != PLATFORM_EV_KEY || !ev->pressed) return false;
+    if (ev->type != PLATFORM_EV_KEY) return false;
+
+    // Handle F1/F2 release to stop hold-repeat (must happen before press-only guard).
+    if (!ev->pressed) {
+        if (ev->key == PLATFORM_KEY_F1 && s->held_dir == -1) {
+            hold_stop(s);
+            return true;
+        }
+        if (ev->key == PLATFORM_KEY_F2 && s->held_dir == +1) {
+            hold_stop(s);
+            return true;
+        }
+        return false;
+    }
+
+    // From here: pressed events only.
 
     // Delegate all events on the preset page to ui_presets_handle_event().
     // Left/Right are special: the preset handler reverts then returns false so
@@ -339,18 +413,62 @@ extern "C" bool ui_handle_event(UIState* s, const platform_event_t* ev) {
     const ParamDesc* rows[24];
     int              n = page_rows(s->page, rows, 24);
 
+    // F-button shape actions on parameter pages only.
+    if (PAGE_TABLE[s->page].kind == PAGE_PARAMS) {
+        switch (ev->key) {
+            case PLATFORM_KEY_F1:
+                // X button: nudge down, begin hold-repeat.
+                nudge_selected(s, -1, false);
+                hold_begin(s, -1, platform_millis());
+                return true;
+            case PLATFORM_KEY_F2:
+                // Triangle button: nudge up, begin hold-repeat.
+                nudge_selected(s, +1, false);
+                hold_begin(s, +1, platform_millis());
+                return true;
+            case PLATFORM_KEY_F3:
+                // Square button: back to PRESET page (index 0).
+                hold_stop(s);
+                // Revert audition if we somehow arrive here (shouldn't happen on
+                // PAGE_PARAMS, but guard anyway).
+                s->page = 0;
+                s->row  = 0;
+                ui_presets_snapshot(s);
+                return true;
+            case PLATFORM_KEY_F4:
+                // Circle button: no-op on parameter pages (confirm is preset-page only).
+                return true;
+            case PLATFORM_KEY_F5:
+                // Three-lobe button: reserved for key-guide overlay (later WO).
+                return false;
+            case PLATFORM_KEY_F6:
+                // Diamond button: save user preset.
+                save_user_preset(s);
+                return true;
+            default:
+                break;
+        }
+    }
+
     switch (ev->key) {
         case PLATFORM_KEY_UP:
-            if (n > 0) s->row = (s->row - 1 + n) % n;
+            if (n > 0) {
+                hold_stop(s);
+                s->row = (s->row - 1 + n) % n;
+            }
             return true;
         case PLATFORM_KEY_DOWN:
-            if (n > 0) s->row = (s->row + 1) % n;
+            if (n > 0) {
+                hold_stop(s);
+                s->row = (s->row + 1) % n;
+            }
             return true;
         case PLATFORM_KEY_LEFT: {
             // Revert audition if leaving the preset page.
             if (PAGE_TABLE[s->page].kind == PAGE_PRESETS && s->auditioning) {
                 // Already reverted by ui_presets_handle_event above; just switch page.
             }
+            hold_stop(s);
             s->page = (s->page - 1 + kNumPages) % kNumPages;
             s->row  = 0;
             return true;
@@ -359,23 +477,9 @@ extern "C" bool ui_handle_event(UIState* s, const platform_event_t* ev) {
             if (PAGE_TABLE[s->page].kind == PAGE_PRESETS && s->auditioning) {
                 // Already reverted by ui_presets_handle_event above; just switch page.
             }
+            hold_stop(s);
             s->page = (s->page + 1) % kNumPages;
             s->row  = 0;
-            return true;
-        }
-        case ',':
-        case '.': {
-            if (n <= 0 || s->row >= n) return true;
-            const ParamDesc* d = rows[s->row];
-            float            step;
-            if (d->curve == CURVE_STEPPED) {
-                step = 1.0f / (d->max - d->min);  // one integer step in norm space
-            } else {
-                step = (ev->mods & PLATFORM_MOD_SHIFT) ? 0.10f : 0.01f;
-            }
-            float norm      = clamp01(s->norms[d->id] + ((ev->key == '.') ? step : -step));
-            s->norms[d->id] = norm;
-            engine_set_param_norm(d->id, norm);
             return true;
         }
         case '[':
@@ -399,23 +503,77 @@ extern "C" bool ui_handle_event(UIState* s, const platform_event_t* ev) {
             return true;
         }
         case '=': {
-            // Save the current UI state (params + active routings) as the user preset.
-            // Routings come from the INIT factory bank (index 0 = "Clean 106").
-            // Full per-patch routing edit is a later stage; for now we persist whatever
-            // the factory loaded so round-trips stay consistent.
-            static uint8_t blob[PRESET_BLOB_MAX];
-            Routing        routings[PRESET_MAX_ROUTINGS];
-            int            r_count =
-                preset_factory_routings(s->preset_idx >= 0 ? s->preset_idx : 0, routings, PRESET_MAX_ROUTINGS);
-            int len =
-                preset_serialize(blob, sizeof(blob), s->preset_name, s->norms, UI_NORM_TABLE_SIZE, routings, r_count);
-            if (len > 0) {
-                platform_storage_save("user", blob, (size_t)len);
-            }
+            save_user_preset(s);
             return true;
         }
         default:
             return false;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Hold-to-repeat tick (WO-5)
+// ---------------------------------------------------------------------------
+// Constants for the repeat model:
+//   - 250 ms initial delay before repeating starts
+//   - Continuous: ramp rate 0.15 norm/s → 0.50 norm/s over 500 ms easing window
+//     (full 0→1 sweep at max rate ≈ 2 s)
+//   - Stepped: one step every 150 ms, no acceleration
+#define HOLD_DELAY_MS    250u
+#define HOLD_STEP_PERIOD 150u    // stepped param repeat interval (ms)
+#define HOLD_RATE_MIN    0.15f   // continuous: initial repeat rate (norm/s)
+#define HOLD_RATE_MAX    0.50f   // continuous: full-speed rate (norm/s)
+#define HOLD_EASE_MS     500.0f  // duration of rate ramp (ms)
+
+extern "C" void ui_tick(UIState* s, uint64_t now_ms) {
+    if (s->held_dir == 0) return;
+    if (PAGE_TABLE[s->page].kind != PAGE_PARAMS) {
+        hold_stop(s);
+        return;
+    }
+
+    // Stop if row changed since hold began.
+    if (s->row != s->held_row) {
+        hold_stop(s);
+        return;
+    }
+
+    // Check initial delay.
+    if (now_ms < s->held_since_ms + HOLD_DELAY_MS) return;
+
+    // Determine param kind for the selected row.
+    const ParamDesc* rows[24];
+    int              n = page_rows(s->page, rows, 24);
+    if (n <= 0 || s->row >= n) {
+        hold_stop(s);
+        return;
+    }
+    const ParamDesc* d = rows[s->row];
+
+    uint64_t dt_ms = now_ms - s->last_step_ms;
+
+    if (d->curve == CURVE_STEPPED) {
+        // Stepped: emit one step every HOLD_STEP_PERIOD ms.
+        if (dt_ms >= HOLD_STEP_PERIOD) {
+            nudge_selected(s, s->held_dir, false);
+            s->last_step_ms = now_ms;
+        }
+    } else {
+        // Continuous: ramp from HOLD_RATE_MIN to HOLD_RATE_MAX over HOLD_EASE_MS,
+        // measured from when repeating started (held_since_ms + HOLD_DELAY_MS).
+        uint64_t repeat_age_ms = now_ms - (s->held_since_ms + HOLD_DELAY_MS);
+        float    t             = (float)repeat_age_ms / HOLD_EASE_MS;
+        if (t > 1.0f) t = 1.0f;
+        float rate      = HOLD_RATE_MIN + t * (HOLD_RATE_MAX - HOLD_RATE_MIN);
+        float delta     = (float)s->held_dir * rate * (float)dt_ms / 1000.0f;
+        s->last_step_ms = now_ms;
+
+        // Accumulate and apply when we've built up enough.
+        s->repeat_accum += delta;
+        if (s->repeat_accum > 0.001f || s->repeat_accum < -0.001f) {
+            nudge_selected_norm(s, s->repeat_accum);
+            s->repeat_accum = 0.0f;
+        }
     }
 }
 
@@ -622,7 +780,7 @@ static void draw_status(pax_buf_t* fb, const UIState* s) {
 
     // Key hints.
     pax_draw_text(fb, COL_DIM, pax_font_sky_mono, FONT_SM - 2.0f, 430.0f, text_y,
-                  "<>pg  ^v row  ,/.nudge  [/]preset  =save  ESC");
+                  "<>pg  ^v row  F1/F2 nudge  F3 back  F6 save  ESC");
 }
 
 extern "C" void ui_draw(pax_buf_t* fb, uint64_t millis, const UIState* s) {

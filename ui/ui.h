@@ -37,6 +37,13 @@ typedef struct {
     float audition_snapshot[UI_NORM_TABLE_SIZE];  // pre-audition norms copy
     char  audition_preset_name[33];               // pre-audition preset_name copy
     int   audition_preset_idx;                    // pre-audition preset_idx copy
+
+    // Hold-to-repeat state (WO-5, F1/F2 shape buttons).
+    int      held_dir;       // 0=none, -1=F1 (down), +1=F2 (up)
+    int      held_row;       // row index when hold started (detect row change)
+    uint64_t held_since_ms;  // timestamp when hold began
+    uint64_t last_step_ms;   // timestamp of most recent repeat step
+    float    repeat_accum;   // fractional norm accumulator for continuous params
 } UIState;
 
 // Initialise UIState: compute normalised defaults from the param table,
@@ -45,9 +52,14 @@ typedef struct {
 void ui_state_init(UIState* s);
 
 // Feed a platform event into the UI. Consumes: arrow keys (row/page navigate),
-// comma/dot (fine nudge), Shift+comma/dot (coarse nudge). Returns true if the
-// event was consumed and should not be forwarded to other handlers.
+// F1/F2 (nudge down/up), F3 (back to preset page), F6 (save user preset),
+// Shift+comma/dot (coarse nudge). Returns true if the event was consumed and
+// should not be forwarded to other handlers.
 bool ui_handle_event(UIState* s, const platform_event_t* ev);
+
+// Per-frame tick: drives hold-to-repeat for F1/F2 on parameter pages.
+// Call once per frame BEFORE ui_draw(), passing the current millisecond count.
+void ui_tick(UIState* s, uint64_t now_ms);
 
 // Render one frame of the Stage 2c parameter-page UI into fb.
 void ui_draw(pax_buf_t* fb, uint64_t millis, const UIState* s);
