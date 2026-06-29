@@ -216,6 +216,36 @@ Image: 1,121,312 B (−272 B vs. WO-8; 47% partition free). DIRAM 156,742 B unch
 (enable with `-DSYNTH_PROFILE`) shows the full-frame blit still costly during voice-
 meter animation, Stage 2B partial-rect blitting is the natural follow-on.
 
+## 2026-06-29 — Render task: UI drawing moved off the control loop (COMPLETE)
+
+**Root cause:** `bsp_display_blit` (~1.15 MB) blocked the input-poll task, so the
+second note after idle waited a full render cycle (~16 ms) before being processed.
+
+**Fix (commit 9eccdd1):**
+- `platform/platform.h`: new `platform_render_task_start(cb, ctx, ms)` / `_stop()` seam.
+- `platform/device/platform_device.c`: dedicated core-0 render task at RENDER_PRIO 2;
+  calling (control) task raised to CONTROL_PRIO 5 so input polling wins over USB-host
+  tasks (CLASS_PRIO 3 / DAEMON_PRIO 2) and the render task (same priority 2).
+  Priority ordering: control 5 > usbh_midi 3 > usbh_daemon 2 = render 2; audio
+  (core 1, configMAX-2) untouched.
+- `platform/host/platform_host.c`: stubs return false; host renders inline (SDL
+  requires main thread).
+- `ui/ui.h` / `ui/ui.cpp`: `dirty` bool replaced with `volatile uint32_t change_seq`
+  (single-writer control, single-reader render; atomic on RV32 per alignment).
+  Initialized to 1 so first frame draws. `last_drawn_voices/octave` → `last_voices/last_octave`.
+- `app/app.c`: render_cb (file-scope, owns framebuffer + present) only repaints when
+  `change_seq` advanced. Control loop bumps `change_seq` after every visible state write.
+  `has_render_task=false` path renders inline for host.
+- Accepted one-frame UIState visual tear (fixed-size arrays, no freed pointers — benign).
+
+`make test` ✅  `make host` ✅  `make build` ✅  `make format` ✅
+Image: 1,121,828 B (+244 B; 46% free). DIRAM: 156,770 B (+26 B). Task stack: 8 KB heap.
+
+**What's next:** Hardware latency verification (Pascal: play rapidly, confirm second note
+is no longer gated by the blit). If display smoothness suffers under heavy MIDI load,
+or to cut core-0 overhead further, Stage 2B partial-rect blitting is the next lever.
+Stage 4d FX (tempo-synced delay + DaisySP ReverbSc) is the main open campaign.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
