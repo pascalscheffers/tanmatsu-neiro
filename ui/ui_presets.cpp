@@ -67,6 +67,10 @@ extern "C" void ui_presets_draw(pax_buf_t* fb, const UIState* s) {
         start_y = ideal;
     }
 
+    // Clip to the content area so a partially-scrolled row can't bleed over the
+    // tab strip above or the status bar below.
+    pax_clip(fb, 0, (int)CONTENT_Y, (int)SCREEN_W, (int)CONTENT_H);
+
     float y = start_y;
     for (int i = 0; i < n; i++) {
         float row_top = y;
@@ -130,6 +134,8 @@ extern "C" void ui_presets_draw(pax_buf_t* fb, const UIState* s) {
 
         y += ROW_H;
     }
+
+    pax_noclip(fb);
 
     // Hint strip near bottom of content (above status bar).
     float hint_y = CONTENT_Y + CONTENT_H - FONT_SM - 6.0f;
