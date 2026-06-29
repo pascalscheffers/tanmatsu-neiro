@@ -38,11 +38,21 @@ FM**, all in software, out through the stereo I2S DAC. (See `specs/02` and the o
 question about whether external analog/CV via expansion is in scope.)
 
 ## USB (two ports, opposite roles — important for MIDI)
-- **USB-C: device mode.** We can enumerate as a **USB-MIDI device** to a computer/DAW
-  (and as USB-serial/JTAG for flashing). TinyUSB via `esp_tinyusb`.
-- **USB-A: host mode**, 480 Mbit/s, 1 A out. We can be a **USB-MIDI host** for a plugged-in
-  hardware MIDI keyboard/controller. Needs a USB-host MIDI class driver (verify what the
-  BSP/IDF provides; may need a small driver).
+- **USB-C: device mode.** We can enumerate as a **USB-MIDI device** to a computer/DAW.
+  TinyUSB via `esp_tinyusb`. **Topology (confirmed from `tanmatsu-hardware` + launcher
+  source, 2026-06-29):** USB-C → a **CH334R full-speed hub** → the P4's *single* full-speed
+  USB PHY ("PHY 1"). That one PHY defaults to USB-Serial/JTAG (console/flash) and is
+  **software-remapped to the USB-OTG device role** to present any USB device — they are
+  **mutually exclusive** on USB-C (only one FS pad pair is wired out). The swap is the IDF
+  low-level call `usb_serial_jtag_ll_phy_select(1)` (1 = OTG/device, 0 = Serial/JTAG), wrapped
+  in a DP/DM pull-override "drop off the bus" dance with ~500 ms settle — exactly what
+  `tanmatsu-launcher/main/usb_device.c::usb_mode_set()` does. Consequence: while in MIDI-device
+  mode the **USB-C serial console is detached** (AppFS-launched apps already inherit OTG, so
+  this is the normal state, not a regression). Implemented in Stage 5d.
+- **USB-A: host mode**, 480 Mbit/s, 1 A out — a **separate** controller (P4 **OTG High-Speed**),
+  independent of the USB-C FS PHY above. We can be a **USB-MIDI host** for a plugged-in hardware
+  MIDI keyboard/controller. Needs a USB-host MIDI class driver (verify what the BSP/IDF provides;
+  may need a small driver). This is Stage 5b (the real risk; ADR 0018 sequences it after 5d).
 - `CONFIG_USB_HOST_HUBS_SUPPORTED=y` is already set in the Tanmatsu sdkconfig.
 
 ## Input & Display (the live-tweak UI surface)
