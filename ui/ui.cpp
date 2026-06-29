@@ -170,7 +170,7 @@ extern "C" void ui_state_init(UIState* s) {
     // the synth comes up playing it. Overridden below if a stored user preset
     // is found.
     {
-        int      def   = preset_factory_default();
+        int      def = preset_factory_default();
         uint16_t ids[32];
         float    vals[32];
         int      count = preset_factory_params(def, ids, vals, 32);
