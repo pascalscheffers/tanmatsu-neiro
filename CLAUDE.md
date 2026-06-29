@@ -193,6 +193,10 @@ it and you get clicks. These rules are not negotiable in the audio path:
 - **Error handling:** check `esp_err_t`; fail loud at init, fail safe in the audio path.
 - **No magic numbers in DSP** — name them (sample rate, block size, table size) so the
   relationships are visible.
+- **`README.md` is user-facing — keep it true.** When you change keybindings, the
+  musical-typing layout, page/parameter navigation, or add/remove a user-visible feature,
+  check whether the README's *Playing it* key table and *What it can do* list need updating
+  in the same commit.
 
 ---
 
@@ -209,8 +213,7 @@ it and you get clicks. These rules are not negotiable in the audio path:
 
 ## Git
 
-Local-only for now (prototyping). The template's origin is kept as `upstream-template`
-for reference; **there is no push remote** — don't add one without asking.
+`origin` is Pascal's GitHub fork **[`pascalscheffers/tanmatsu-neiro`](https://github.com/pascalscheffers/tanmatsu-neiro)** (public, forked from `tanmatsu-template` so the lineage shows). The template's origin is kept as `upstream-template` for pulling future template updates (`git fetch upstream-template`). Push to `origin` is fine; **don't push to or modify `upstream-template`.**
 
 **Auto-commit in logical chunks.** Don't wait to be asked. As soon as a coherent unit of
 work is complete and verifies (a sub-stage, a self-contained doc/spec change, a vendored
