@@ -945,6 +945,30 @@ latch + all modes confirmed. **Pascal's call: pause Stage 4, pivot to MIDI I/O.*
 - `make host` ✅ `make build` ✅ `make format` ✅ membrane clean.
 - **Next:** WO-5 — wire shape button actions in the UI (F1–F6 → page-jump / preset-select / etc.).
 
+## 2026-06-29 — WO-2: tighten layout, section sub-headers, synthwave restyle (COMPLETE)
+
+- **`ROW_H` 56 → 43** (9 rows fit in the 402px content area; no scroll needed for any current page).
+  `FONT_MD` 18→16, `FONT_SM` 14→12, `BAR_H` 14→10.
+- **`HEADER_H = 18`** section sub-headers on multi-group pages: PERFORM (CLOCK + ARP) and
+  FILTER (VCF + HPF) each draw a dim-bg strip + magenta left accent bar before each group's rows.
+  Single-group pages (OSC, LFO, AMP ENV, etc.) unchanged. Selection semantics untouched —
+  headers are purely draw-time; `page_rows()` / row-index math is unmodified.
+- **`DrawItem` list** (new struct, `ITEM_HEADER` / `ITEM_ROW`): `build_items()` assembles the
+  interleaved header+row sequence from `PAGE_TABLE` each frame. `items_height()` computes the
+  true pixel height (headers + rows) for centering/scroll math. Scroll fallback still works for
+  hypothetical future overflow: centres the selected row in the content area, clamps to edges.
+- **Synthwave restyle** (stacked rects only — no per-pixel loops):
+  - `COL_ACCENT2 = #FF2D9Du` (neon magenta) added.
+  - `lerp_col()` inline helper and `draw_gradient_bar()` (3-segment cyan→mid→magenta).
+  - Value bars: full accent brightness when selected, dimmed when not.
+  - Active tab: cyan fill + 3px magenta underline.
+  - Tab strip + status bar: 3-segment cyan→magenta 1px gradient rule.
+  - `group_name()` labels updated: GROUP_FILTER→"VCF", GROUP_GLOBAL→"CLOCK", GROUP_ARP→"ARP".
+- `make host` ✅ `make build` ✅ `make test` ✅ (169/169) `make format` ✅.
+  Flash delta: **+1,388 bytes** (total 1,110,452 bytes, 47% partition free). `ui/ui.cpp` is 609 lines
+  (acceptable per WO-2 scope note; split deferred to later WOs).
+- **Next:** WO-3 (preset list page render) or WO-5 (shape button actions), per Opus.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
