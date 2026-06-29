@@ -156,6 +156,7 @@ waveform animation — over raw count: **ADR 0015**.
 | MI eurorack (plaits/stmlib) | (pin on vendor, Stage 7) | MIT | hybrid macro-osc: wavetable/FM modes (later) |
 | miniaudio | 0.11.22 | MIT-0 / public-domain | **host-only** audio sink; vendored `platform/host/miniaudio.h` |
 | SDL2 | system (brew `sdl2`) | Zlib | **host-only** window/present/input; never shipped to device |
+| RtMidi | system (brew `rtmidi`) | MIT-style (permissive) | **host-only** MIDI input via CoreMIDI/ALSA; never shipped to device (gate G6, Stage 5a) |
 
 ---
 

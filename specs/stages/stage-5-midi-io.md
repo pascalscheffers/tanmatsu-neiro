@@ -91,6 +91,25 @@ host-first. Then the USB-A spike (G1) decides whether 5b or 5d (USB-C device) co
 - **G6 — Host MIDI dependency (licensing/dep).** Confirm **RtMidi** for `platform/host/` (spec 02
   names it) + `esp_tinyusb` for device — both permissive; record versions in spec 02's dep table.
 
+## ✅ Kickoff gate resolutions (2026-06-29, with Pascal)
+- **First push:** 5a only (foundation) — host-testable, zero device-USB risk.
+- **G1 + ordering → [ADR 0018](../decisions/0018-usb-c-device-midi-first.md):** research showed
+  USB-C device (5d) has a first-party TinyUSB example (we already vendor TinyUSB) while USB-A host
+  (5b) has no mainline ESP-IDF driver. **Device order flips to USB-C device first, USB-A host
+  later** (amends ADR 0005). G1's host-driver spike still owned by this stage, just sequenced after
+  5d. New sub-stage order: 5a → 5c → 5d → 5b → 5e.
+- **G2 — seam shape:** mirror `platform_poll_event` — **poll-based, raw MIDI bytes** (parse in
+  `control/midi_in`), **in-only** for now (out path added with 5d). Seam:
+  `size_t platform_midi_read(uint8_t* buf, size_t max_len)`.
+- **G3 — note-event model:** parser emits channel-voice messages; `control/midi_in` normalizes all
+  sources to `engine_note_on/off`. **Omni** channel handling in v1 (accept all channels). Note-On
+  vel 0 → Note-Off. Expression fields (bend/CC/aftertouch) framed but acted on in 5c.
+- **G4 — MPE:** **deferred.** Channel-wide expression only in v1; per-note routing to the mod matrix
+  is later. `NoteExpression` stays ready.
+- **G5 — CC/MIDI-learn:** **fixed CC→param via `ParamDesc.midi_cc` in 5c; MIDI-learn deferred.**
+- **G6 — host dep:** **RtMidi as a system dependency via pkg-config** (`brew install rtmidi`),
+  mirroring SDL2 — NOT vendored. Recorded in spec 02's dep table. `esp_tinyusb` pinned at 5d.
+
 ## Continuous (every sub-stage)
 Track `make size`; keep host + device green; **profile before optimizing**; membrane stays clean
 (MIDI/USB symbols live ONLY in `platform/`; `control/` sees the parsed stream, never `esp_`/USB
