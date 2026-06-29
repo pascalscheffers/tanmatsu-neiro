@@ -3,6 +3,11 @@
 // One implementation, two targets. Brings up the platform, configures the
 // engine, starts the audio sink, then loops: drain input, redraw the UI,
 // present, pace. Audio runs independently on the HAL's audio thread.
+//
+// Rendering runs on a separate lower-priority task (device) or inline on the
+// main thread (host, where SDL requires main-thread rendering). The control
+// loop is never blocked by the ~1.15 MB display blit, so the next note-on
+// arrives within ~1 ms rather than waiting behind a full frame.
 #include "app.h"
 #include "control/keyboard.h"
 #include "control/midi_router.h"
@@ -25,9 +30,8 @@
 #define SAMPLE_RATE 48000u
 #define BLOCK_SIZE  64u
 
-// Input poll interval: ~1 ms so key presses aren't gated behind the full blit.
-// Render interval: ~16 ms (~60 Hz), but only when the UI is dirty.
-// To enable per-frame draw/present profiling: cmake -DSYNTH_PROFILE=ON
+// Control-loop poll interval (~1 ms) and render interval (~16 ms / ~60 Hz).
+// To enable per-render draw/present profiling: cmake -DSYNTH_PROFILE=ON
 // (or, for the host build: cmake -B build-host -DSYNTH_PROFILE=ON)
 // For the device build pass EXTRA_CFLAGS=-DSYNTH_PROFILE via idf.py or set it
 // in your local CMakeLists component override:  make build EXTRA=-DSYNTH_PROFILE
@@ -64,6 +68,59 @@ static void bench_wait_for_key(void) {
 }
 #endif
 
+// ---------------------------------------------------------------------------
+// Render callback — called by the platform render task (device) or inline
+// from the control loop (host). Reads UIState written by the control loop and
+// repaints only when change_seq has advanced. Owns the framebuffer + present
+// exclusively — the control loop must never call ui_draw or platform_present.
+// ---------------------------------------------------------------------------
+static uint32_t s_last_drawn_seq = 0;
+
+static void render_cb(void* arg) {
+    UIState*   s  = (UIState*)arg;
+    pax_buf_t* fb = platform_framebuffer();
+    if (!fb) return;
+    uint32_t seq = s->change_seq;         // volatile read
+    if (seq == s_last_drawn_seq) return;  // nothing changed — skip draw + blit
+#ifdef SYNTH_PROFILE
+    static uint64_t prof_draw_sum = 0, prof_draw_min = UINT64_MAX, prof_draw_max = 0;
+    static uint64_t prof_pres_sum = 0, prof_pres_min = UINT64_MAX, prof_pres_max = 0;
+    static int      prof_frames = 0;
+    uint64_t        t0          = platform_cycles_now();
+#endif
+    ui_draw(fb, platform_millis(), s);
+#ifdef SYNTH_PROFILE
+    uint64_t t1 = platform_cycles_now();
+#endif
+    platform_present();
+#ifdef SYNTH_PROFILE
+    uint64_t t2       = platform_cycles_now();
+    uint64_t cyc_draw = t1 - t0;
+    uint64_t cyc_pres = t2 - t1;
+    prof_draw_sum    += cyc_draw;
+    prof_pres_sum    += cyc_pres;
+    if (cyc_draw < prof_draw_min) prof_draw_min = cyc_draw;
+    if (cyc_draw > prof_draw_max) prof_draw_max = cyc_draw;
+    if (cyc_pres < prof_pres_min) prof_pres_min = cyc_pres;
+    if (cyc_pres > prof_pres_max) prof_pres_max = cyc_pres;
+    prof_frames++;
+    if (prof_frames >= 120) {
+        uint32_t hz  = platform_cycles_per_sec();
+        uint32_t div = hz / 1000000u;
+        if (div == 0) div = 1;
+        printf("[PROFILE] draw  avg=%u min=%u max=%u us\n", (unsigned)(prof_draw_sum / (uint64_t)prof_frames / div),
+               (unsigned)(prof_draw_min / div), (unsigned)(prof_draw_max / div));
+        printf("[PROFILE] pres  avg=%u min=%u max=%u us\n", (unsigned)(prof_pres_sum / (uint64_t)prof_frames / div),
+               (unsigned)(prof_pres_min / div), (unsigned)(prof_pres_max / div));
+        prof_draw_sum = prof_pres_sum = 0;
+        prof_draw_min = prof_pres_min = UINT64_MAX;
+        prof_draw_max = prof_pres_max = 0;
+        prof_frames                   = 0;
+    }
+#endif
+    s_last_drawn_seq = seq;
+}
+
 void app_run(void) {
     if (!platform_init()) {
         return;
@@ -91,8 +148,8 @@ void app_run(void) {
     midi_router_init();
     synth_init(SAMPLE_RATE, BLOCK_SIZE);
 
-    // Initialise UI state: builds page list and default norm values from the
-    // param table, sets preset_name to "INIT".
+    // Initialise UI state: computes normalised defaults from the param table,
+    // loads the boot preset, sets preset_name to "INIT".
     UIState ui_state;
     ui_state_init(&ui_state);
 
@@ -102,93 +159,65 @@ void app_run(void) {
     };
     platform_audio_start(&audio_cfg, synth_render, NULL);
 
-    pax_buf_t* fb      = platform_framebuffer();
-    bool       running = true;
+    // Start a dedicated render task on device (core 0, RENDER_PRIO 2); on host
+    // SDL requires main-thread rendering so this returns false and we render
+    // inline in the control loop below.
+    bool     has_render_task = platform_render_task_start(render_cb, &ui_state, RENDER_MS);
+    bool     running         = true;
+    uint64_t next_ctrl       = 0;
 
     // SINGLE-PRODUCER INVARIANT: all engine_note_on/off calls happen on this one
     // task (via keyboard_handle_event and midi_router_poll). The s_cmds SPSC ring
     // in engine/command_queue.h is single-producer by design — never move keyboard
     // or MIDI dispatch to a second task without redesigning that ring.
-    uint64_t next_render = 0;
-
-#ifdef SYNTH_PROFILE
-    // Per-render profiling accumulators (draw + present, in cycles).
-    uint64_t prof_draw_sum = 0, prof_draw_min = UINT64_MAX, prof_draw_max = 0;
-    uint64_t prof_pres_sum = 0, prof_pres_min = UINT64_MAX, prof_pres_max = 0;
-    int      prof_frames = 0;
-#endif
-
     while (running) {
         // --- Input phase (~1 ms cadence) ---
+        // Drain the full event queue before sleeping so no event waits an extra
+        // POLL_MS tick.  All state writes happen here; change_seq is bumped
+        // AFTER the state is committed so the render task sees a consistent snapshot.
         platform_event_t ev;
         while (platform_poll_event(&ev)) {
             if (ev.type == PLATFORM_EV_QUIT) running = false;
             keyboard_handle_event(&ev);
-            if (ui_handle_event(&ui_state, &ev)) ui_state.dirty = true;
+            if (ui_handle_event(&ui_state, &ev)) ui_state.change_seq++;
         }
         midi_router_poll();
 
-        // --- Render phase (~16 ms cadence, dirty-gated) ---
+        // --- Control tick + inline render (when no render task) ---
         uint64_t now = platform_millis();
-        if (now >= next_render) {
-            ui_state.active_voices = engine_active_voices();
-            ui_state.octave        = keyboard_octave();
+        if (now >= next_ctrl) {
+            int v = engine_active_voices();
+            int o = keyboard_octave();
+            if (v != ui_state.last_voices) {
+                ui_state.active_voices = v;
+                ui_state.last_voices   = v;
+                ui_state.change_seq++;
+            } else {
+                ui_state.active_voices = v;
+            }
+            if (o != ui_state.last_octave) {
+                ui_state.octave      = o;
+                ui_state.last_octave = o;
+                ui_state.change_seq++;
+            } else {
+                ui_state.octave = o;
+            }
 
-            // Drive hold-to-repeat for F1/F2 shape buttons (WO-5).
+            // Drive hold-to-repeat for F1/F2 shape buttons (WO-5). State writes
+            // happen inside ui_tick; bump change_seq afterwards if a repeat fired.
             ui_tick(&ui_state, now);
-            if (ui_state.held_dir != 0) ui_state.dirty = true;
+            if (ui_state.held_dir != 0) ui_state.change_seq++;
 
-            // Mark dirty if a displayed per-frame value changed since last paint.
-            if (ui_state.active_voices != ui_state.last_drawn_voices || ui_state.octave != ui_state.last_drawn_octave) {
-                ui_state.dirty = true;
-            }
+            // On host there is no render task; draw inline on the main thread.
+            if (!has_render_task) render_cb(&ui_state);
 
-            if (fb && ui_state.dirty) {
-#ifdef SYNTH_PROFILE
-                uint64_t t0 = platform_cycles_now();
-#endif
-                ui_draw(fb, now, &ui_state);
-#ifdef SYNTH_PROFILE
-                uint64_t t1 = platform_cycles_now();
-#endif
-                platform_present();
-#ifdef SYNTH_PROFILE
-                uint64_t t2       = platform_cycles_now();
-                uint64_t cyc_draw = t1 - t0;
-                uint64_t cyc_pres = t2 - t1;
-                prof_draw_sum    += cyc_draw;
-                prof_pres_sum    += cyc_pres;
-                if (cyc_draw < prof_draw_min) prof_draw_min = cyc_draw;
-                if (cyc_draw > prof_draw_max) prof_draw_max = cyc_draw;
-                if (cyc_pres < prof_pres_min) prof_pres_min = cyc_pres;
-                if (cyc_pres > prof_pres_max) prof_pres_max = cyc_pres;
-                prof_frames++;
-                if (prof_frames >= 120) {
-                    uint32_t hz  = platform_cycles_per_sec();
-                    uint32_t div = hz / 1000000u;
-                    if (div == 0) div = 1;
-                    printf("[PROFILE] draw  avg=%u min=%u max=%u us\n",
-                           (unsigned)(prof_draw_sum / (uint64_t)prof_frames / div), (unsigned)(prof_draw_min / div),
-                           (unsigned)(prof_draw_max / div));
-                    printf("[PROFILE] pres  avg=%u min=%u max=%u us\n",
-                           (unsigned)(prof_pres_sum / (uint64_t)prof_frames / div), (unsigned)(prof_pres_min / div),
-                           (unsigned)(prof_pres_max / div));
-                    prof_draw_sum = prof_pres_sum = 0;
-                    prof_draw_min = prof_pres_min = UINT64_MAX;
-                    prof_draw_max = prof_pres_max = 0;
-                    prof_frames                   = 0;
-                }
-#endif
-                ui_state.dirty             = false;
-                ui_state.last_drawn_voices = ui_state.active_voices;
-                ui_state.last_drawn_octave = ui_state.octave;
-            }
-            next_render = now + RENDER_MS;
+            next_ctrl = now + RENDER_MS;
         }
 
         platform_sleep_ms(POLL_MS);
     }
 
+    platform_render_task_stop();
     platform_audio_stop();
     // ESC / window-close ends the loop; hand control back to the launcher (on
     // host this just exits the process). Without this the device app would sit

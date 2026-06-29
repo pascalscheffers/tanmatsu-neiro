@@ -313,6 +313,22 @@ int platform_storage_load(const char* key, void* buf, size_t max_len) {
 }
 
 // ---------------------------------------------------------------------------
+// Render task (input-latency fix) — host stubs
+// ---------------------------------------------------------------------------
+// SDL must render on the main thread; returning false lets app.c call
+// render_cb inline from the control loop instead of spawning a task.
+bool platform_render_task_start(void (*render_cb)(void* ctx), void* ctx, uint32_t render_ms) {
+    (void)render_cb;
+    (void)ctx;
+    (void)render_ms;
+    return false;
+}
+
+void platform_render_task_stop(void) {
+    // no-op on host
+}
+
+// ---------------------------------------------------------------------------
 // Host entry point
 // ---------------------------------------------------------------------------
 extern void app_run(void);

@@ -325,10 +325,11 @@ extern "C" void ui_state_init(UIState* s) {
     s->row = (s->preset_idx >= 0) ? s->preset_idx : preset_factory_count();
     ui_presets_snapshot(s);
 
-    // Force first paint; sentinel values ensure any real data differs.
-    s->dirty             = true;
-    s->last_drawn_voices = -1;
-    s->last_drawn_octave = INT_MIN;
+    // Force first paint: start change_seq at 1 so the render task (which starts
+    // from last-seen 0) immediately paints the first frame.
+    s->change_seq  = 1;
+    s->last_voices = -1;
+    s->last_octave = INT_MIN;
 }
 
 // ---------------------------------------------------------------------------

@@ -456,3 +456,63 @@ uint32_t platform_cycles_per_sec(void) {
     // private clock headers and is correct for our fixed-frequency use case.
     return (uint32_t)(CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ * 1000000UL);
 }
+
+// ---------------------------------------------------------------------------
+// Render task (input-latency fix)
+// ---------------------------------------------------------------------------
+// Priority ordering on core 0:
+//   control (app_run task) : CONTROL_PRIO 5  — serviced promptly, above USB
+//   usbh_midi (class driver): CLASS_PRIO   3  (midi_usb_host.c)
+//   usbh_daemon             : DAEMON_PRIO  2  (midi_usb_host.c)
+//   render                  : RENDER_PRIO  2  — same as daemon; display blit
+//                                               never delays note input
+// Audio task runs on core 1 at configMAX_PRIORITIES-2; this is untouched.
+#define RENDER_PRIO  2u
+#define CONTROL_PRIO 5u
+
+static TaskHandle_t  s_render_task    = NULL;
+static volatile bool s_render_run     = false;
+static volatile bool s_render_done    = true;
+static void (*s_render_cb)(void* ctx) = NULL;
+static void*    s_render_ctx          = NULL;
+static uint32_t s_render_ms           = 16u;
+
+static void render_task(void* arg) {
+    (void)arg;
+    while (s_render_run) {
+        s_render_cb(s_render_ctx);
+        vTaskDelay(pdMS_TO_TICKS(s_render_ms));
+    }
+    s_render_done = true;
+    vTaskDelete(NULL);
+}
+
+bool platform_render_task_start(void (*render_cb)(void* ctx), void* ctx, uint32_t render_ms) {
+    s_render_cb   = render_cb;
+    s_render_ctx  = ctx;
+    s_render_ms   = render_ms;
+    s_render_run  = true;
+    s_render_done = false;
+
+    BaseType_t ok = xTaskCreatePinnedToCore(render_task, "render", 8192, NULL, RENDER_PRIO, &s_render_task, 0);
+    if (ok != pdPASS) {
+        ESP_LOGE(TAG, "render task create failed");
+        s_render_run  = false;
+        s_render_done = true;
+        return false;
+    }
+    // Raise the calling (control) task so input polling always wins over USB-host
+    // tasks (DAEMON_PRIO 2, CLASS_PRIO 3) and the render task (RENDER_PRIO 2).
+    vTaskPrioritySet(NULL, CONTROL_PRIO);
+    return true;
+}
+
+void platform_render_task_stop(void) {
+    if (s_render_task == NULL) return;
+    s_render_run = false;
+    // Wait up to ~100 ms for the task to finish its current callback + sleep.
+    for (int i = 0; i < 50 && !s_render_done; i++) {
+        vTaskDelay(pdMS_TO_TICKS(2));
+    }
+    s_render_task = NULL;
+}

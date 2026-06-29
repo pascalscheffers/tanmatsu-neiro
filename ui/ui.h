@@ -48,12 +48,14 @@ typedef struct {
     uint64_t last_step_ms;   // timestamp of most recent repeat step
     float    repeat_accum;   // fractional norm accumulator for continuous params
 
-    // Dirty-gate render fields (input-latency fix, app.c loop).
-    // dirty = true forces a redraw on the next render slot.
-    // last_drawn_* track what was on screen so any change re-sets dirty.
-    bool dirty;              // true = redraw needed at next render slot
-    int  last_drawn_voices;  // active_voices value from the most recent paint
-    int  last_drawn_octave;  // octave value from the most recent paint
+    // Render-task coordination (input-latency fix, app.c loop).
+    // change_seq is bumped by the control loop on every visible change; the
+    // render task (or inline render on host) redraws when it differs from the
+    // last value it drew.  Single-writer (control), single-reader (render) —
+    // a volatile aligned 32-bit word is atomic on RV32.
+    volatile uint32_t change_seq;   // monotonic counter; init to 1 so first frame draws
+    int               last_voices;  // active_voices at the most recent change_seq bump
+    int               last_octave;  // octave at the most recent change_seq bump
 } UIState;
 
 // Initialise UIState: compute normalised defaults from the param table,

@@ -146,6 +146,20 @@ int platform_storage_load(const char* key, void* buf, size_t max_len);
 // arrives with USB-C device mode (Stage 5d). Call from the control/UI thread.
 size_t platform_midi_read(uint8_t* buf, size_t max_len);
 
+// ---------------------------------------------------------------------------
+// Render task (input-latency fix) — off-thread drawing
+// ---------------------------------------------------------------------------
+// Start a background task that calls render_cb(ctx) at ~render_ms intervals so
+// the caller's control loop is never blocked by drawing/presenting. On DEVICE
+// this is a dedicated lower-priority core-0 task, and the CALLER's task is
+// raised above the USB-host tasks so input is serviced promptly. Returns true
+// if the task was started. On HOST (SDL must render on the main thread) it does
+// nothing and returns false — the caller must then render inline.
+bool platform_render_task_start(void (*render_cb)(void* ctx), void* ctx, uint32_t render_ms);
+
+// Stop the render task started above (blocks until it has exited). No-op if none.
+void platform_render_task_stop(void);
+
 #ifdef __cplusplus
 }
 #endif
