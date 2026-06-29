@@ -355,6 +355,26 @@ in changed-param loop, inject before voice render loop), `tests/host/test_mod_so
 - **Next:** re-plan Stages 4–7 (non-blocking debt still open: inert HPF row, `kPresetDestPwm`
   sentinel).
 
+## 2026-06-29 — investigation: residual per-note variation is free-running osc, NOT a bug
+
+After the LFO fix, Pascal still heard each note sound slightly different (esp. UNISON=8 attack
+"phasing"). Suspected another un-reset "decay counter". Built a host **bisection harness**
+(measurement spike, since reverted — not committed) that diffed the same note rendered with
+different prior voice histories, neutralising one state source at a time:
+
+- **Oscillator phase is ~100% of it.** Resetting osc phase alone cut history-dependent divergence
+  40× (RMS 0.542 → 0.013). **ENV2 hard-retrigger, filter SVF reset, and zeroing the cached
+  `env2_value_` each changed divergence by ~0%** — the "decay counter" hypothesis is disproven.
+  (INIT ENV2 has sustain 0 / short times, so it reaches idle before a voice frees.)
+- **Decision (Pascal):** keep oscillators **free-running** (authentic DCO drift; `note_on` does
+  NOT reset osc phase). The residual note-to-note variation is *intended character, not a bug* —
+  **do not re-investigate.** If tighter unison is ever wanted, the only effective lever is
+  resetting osc phase on note_on (all-zero, or a per-unison `i/U` spread).
+- Side findings (left as-is, both negligible): `JunoVoice::reset()` (steal path) does **not**
+  clear the filter SVF state (~4e-4 RMS residual); `daisysp::WhiteNoise` PRNG has no reset
+  (noise is noise). `daisysp::Adsr::Retrigger(true)` *does* preserve ADSR times (verified) — keep
+  in mind if a deterministic env restart is ever needed.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
