@@ -270,6 +270,29 @@ Root-caused by Opus (bench showed ~131k cyc/blk/voice vs 2.6k for the Stage 0.5 
   App size **unchanged**: 1,000,970 bytes (~977 KiB, 52% free) — bench_blocks.cpp excluded by BENCH guard.
 - 🛑 3d-ii gate stays open — device numbers required: `make bench-device` + `make sniff`.
 
+## 2026-06-29 — perf: LFO block-rate advance (one sinf/block) (COMPLETE)
+
+- **Root cause (Opus-profiled on device, -O2):** `dsp::Lfo` SINE mode cost 11,552 cyc/blk
+  (180 cyc/smp — one `sinf` per sample). Two SINE LFOs per Juno voice → ~23k cyc/blk/voice,
+  ~42% of per-voice cost. But all 63/64 intermediate `sinf` results were discarded; only the
+  final per-block value (`lfo1_value_`/`lfo2_value_`) was ever used by the mod-matrix eval.
+- **Fix:** `dsp::Lfo::process_block(uint32_t n)` added (advances phase by `n * phase_inc_`,
+  wraps with S&H re-latch on cycle boundaries, evaluates waveform once). `juno_voice.cpp`
+  `render()`: removed per-sample `lfo1_.process()`/`lfo2_.process()` calls from the inner loop;
+  replaced with `lfo1_.process_block(n)` / `lfo2_.process_block(n)` called once after the loop.
+  LFO delay-position counters advanced by `n` (block-granular, inaudible). `env2_.process(gate_)`
+  remains per-sample (cheap linear state machine, exact transitions required). No audio change.
+- **Expected drop:** ~23k → ~2k cyc/blk per LFO pair/voice; voice budget expected to drop
+  from ~55k → ~32k cyc/blk. Requires Pascal's `make bench-device` re-run to confirm (Round B
+  of the 🛑 3d-ii gate).
+- **1 new host test** (102 total): `process_block(64)` matches 64-step per-sample reference
+  (same phase position, value within 1e-5 for SINE). All 102 pass.
+- `make test` ✅ (102/102) `make host` ✅ `make build` ✅ membrane clean (touched only
+  `dsp/lfo.h`, `engine/juno_voice.cpp`, `tests/host/test_mod_sources.cpp`).
+- `make size`: Flash 893 KB / DIRAM 145 KB (25.3%, 430 KB free) — **unchanged** (no new data).
+- 🛑 3d-ii gate stays open pending Pascal's re-bench. Round B (change-gated param push,
+  `engine/synth.cpp`) is the queued follow-up after the gate clears.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
