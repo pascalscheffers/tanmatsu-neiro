@@ -18,8 +18,8 @@
 
 #include "bench.h"
 #include "platform.h"
-#include "synth.h"       // synth_init, synth_render, engine_note_on, engine_set_param,
-                         // engine_set_routings, engine_active_voices
+#include "synth.h"  // synth_init, synth_render, engine_note_on, engine_set_param,
+                    // engine_set_routings, engine_active_voices
 
 #include <inttypes.h>
 #include <math.h>
@@ -49,7 +49,7 @@
 // Warmup blocks before timing: enough to push envelopes through attack+decay
 // into sustain (at default INIT ADSR, attack ≈ 10 ms → ~7 blocks at 64/48k).
 // 200 blocks ≈ 267 ms — generous buffer for any default attack/decay.
-#define REAL_WARMUP  200
+#define REAL_WARMUP 200
 
 // C-visible Routing struct layout — must exactly match engine/mod_matrix.h's
 // C++ Routing struct. Fields: source(u8) + 1-byte align pad + dest_param_id(u16)
@@ -68,23 +68,22 @@ typedef struct {
 // We pass this array to engine_set_routings as 'const struct Routing*'; the
 // BenchRouting and Routing structs are layout-compatible by the assert above.
 // Verify size matches the C++ struct (12 bytes on both RV32 and x86-64).
-_Static_assert(sizeof(BenchRouting) == 12,
-               "BenchRouting size mismatch — update padding to match mod_matrix.h Routing");
+_Static_assert(sizeof(BenchRouting) == 12, "BenchRouting size mismatch — update padding to match mod_matrix.h Routing");
 
 // "Clean 106" factory routings (same as the INIT preset in preset.cpp):
 //   slot 0: ENV2 → FILTER_CUTOFF, depth +0.35, LIN
 //   slot 1: LFO1 → OSC_PWM (sentinel 0xFFFD), depth +0.20, LIN
 // ModSource: NONE=0, LFO1=1, ENV2=4; dest: FILTER_CUTOFF=0x20, PWM=0xFFFD.
 static const BenchRouting s_clean106_routings[2] = {
-    { .source = 4, ._pad1 = 0, .dest_param_id = 0x20, .depth = 0.35f, .curve = 0, ._pad2 = {0,0,0} },
-    { .source = 1, ._pad1 = 0, .dest_param_id = 0xFFFD, .depth = 0.20f, .curve = 0, ._pad2 = {0,0,0} },
+    {.source = 4, ._pad1 = 0, .dest_param_id = 0x20, .depth = 0.35f, .curve = 0, ._pad2 = {0, 0, 0}},
+    {.source = 1, ._pad1 = 0, .dest_param_id = 0xFFFD, .depth = 0.20f, .curve = 0, ._pad2 = {0, 0, 0}},
 };
 
 // ParamId values needed in bench (keep in sync with param_id.h — these are
 // stable IDs, never renumbered, so literals here are safe).
-#define BENCH_PARAM_CHORUS_MODE   0x53u   // 0=off, 1=chorus I, 2=chorus II
-#define BENCH_PARAM_UNISON_COUNT  0x65u   // stepped 1..8
-#define BENCH_PARAM_UNISON_DETUNE 0x66u   // cents 0..50
+#define BENCH_PARAM_CHORUS_MODE   0x53u  // 0=off, 1=chorus I, 2=chorus II
+#define BENCH_PARAM_UNISON_COUNT  0x65u  // stepped 1..8
+#define BENCH_PARAM_UNISON_DETUNE 0x66u  // cents 0..50
 
 // -------------------------------------------------------------------------
 // Kernel state (kept in module statics to survive across blocks and prevent
@@ -132,17 +131,18 @@ static void kernel_expf(float* buf, size_t n) {
 // 2-pole state-variable filter (SVF) — lowpass output
 static void kernel_svf(float* buf, size_t n) {
     // normalized cutoff ≈ Fc/Fs = 0.15; Q = 0.7
-    static const float F = 0.15f;
-    static const float Q = 0.70f;
-    float low = s_svf_low, band = s_svf_band;
+    static const float F   = 0.15f;
+    static const float Q   = 0.70f;
+    float              low = s_svf_low, band = s_svf_band;
     for (size_t i = 0; i < n; i++) {
         float high = buf[i] - low - Q * band;
-        band += F * high;
-        low  += F * band;
-        buf[i] = low;
+        band      += F * high;
+        low       += F * band;
+        buf[i]     = low;
     }
-    s_svf_low = low; s_svf_band = band;
-    s_sink = low;
+    s_svf_low  = low;
+    s_svf_band = band;
+    s_sink     = low;
 }
 
 // 4-pole Moog ladder (linearised — no tanhf so ladder cost is isolated)
@@ -150,12 +150,12 @@ static void kernel_ladder(float* buf, size_t n) {
     static const float F = 0.30f;
     static const float K = 3.5f;  // resonance (below self-oscillation)
     for (size_t i = 0; i < n; i++) {
-        float in   = buf[i] - K * s_ldr[3];
-        s_ldr[0]  += F * (in       - s_ldr[0]);
-        s_ldr[1]  += F * (s_ldr[0] - s_ldr[1]);
-        s_ldr[2]  += F * (s_ldr[1] - s_ldr[2]);
-        s_ldr[3]  += F * (s_ldr[2] - s_ldr[3]);
-        buf[i]     = s_ldr[3];
+        float in  = buf[i] - K * s_ldr[3];
+        s_ldr[0] += F * (in - s_ldr[0]);
+        s_ldr[1] += F * (s_ldr[0] - s_ldr[1]);
+        s_ldr[2] += F * (s_ldr[1] - s_ldr[2]);
+        s_ldr[3] += F * (s_ldr[2] - s_ldr[3]);
+        buf[i]    = s_ldr[3];
     }
     s_sink = s_ldr[3];
 }
@@ -163,42 +163,43 @@ static void kernel_ladder(float* buf, size_t n) {
 // PolyBLEP band-limited saw (simplified single-sample blep at the wrap point)
 static void kernel_polyblep_saw(float* buf, size_t n) {
     static const float INC = 440.0f / 48000.0f;  // A4 at 48 kHz
-    float ph = s_saw_phase;
+    float              ph  = s_saw_phase;
     for (size_t i = 0; i < n; i++) {
         float saw = 2.0f * ph - 1.0f;
         // PolyBLEP correction near the discontinuity
         if (ph < INC) {
             float t = ph / INC;
-            saw += (t + t - t * t - 1.0f);
+            saw    += (t + t - t * t - 1.0f);
         } else if (ph > 1.0f - INC) {
             float t = (ph - 1.0f) / INC;
-            saw += (t * t + t + t + 1.0f);
+            saw    += (t * t + t + t + 1.0f);
         }
         ph += INC;
         if (ph >= 1.0f) ph -= 1.0f;
         buf[i] = saw;
     }
     s_saw_phase = ph;
-    s_sink = ph;
+    s_sink      = ph;
 }
 
 // Direct-form II transposed biquad
 static void kernel_biquad(float* buf, size_t n) {
     // Butterworth LP ~1 kHz / 48 kHz (approximate coefficients)
-    static const float B0 =  0.00391f;
-    static const float B1 =  0.00782f;
-    static const float B2 =  0.00391f;
+    static const float B0 = 0.00391f;
+    static const float B1 = 0.00782f;
+    static const float B2 = 0.00391f;
     static const float A1 = -1.81530f;
-    static const float A2 =  0.82694f;
-    float z1 = s_bq_z1, z2 = s_bq_z2;
+    static const float A2 = 0.82694f;
+    float              z1 = s_bq_z1, z2 = s_bq_z2;
     for (size_t i = 0; i < n; i++) {
         float out = B0 * buf[i] + z1;
-        z1 = B1 * buf[i] - A1 * out + z2;
-        z2 = B2 * buf[i] - A2 * out;
-        buf[i] = out;
+        z1        = B1 * buf[i] - A1 * out + z2;
+        z2        = B2 * buf[i] - A2 * out;
+        buf[i]    = out;
     }
-    s_bq_z1 = z1; s_bq_z2 = z2;
-    s_sink = z1;
+    s_bq_z1 = z1;
+    s_bq_z2 = z2;
+    s_sink  = z1;
 }
 
 // Block memcpy — buffer-shuffling overhead floor
@@ -212,17 +213,16 @@ static void kernel_memcpy(float* buf, size_t n) {
 // -------------------------------------------------------------------------
 typedef void (*kernel_fn)(float*, size_t);
 
-static void measure(const char* name, kernel_fn fn, float* buf, size_t n,
-                    uint32_t block_period, uint32_t cps) {
+static void measure(const char* name, kernel_fn fn, float* buf, size_t n, uint32_t block_period, uint32_t cps) {
     fn(buf, n);  // warmup (fills pipeline, evicts cold caches)
     uint64_t t0 = platform_cycles_now();
     for (int r = 0; r < BENCH_REPEATS; r++) fn(buf, n);
-    uint64_t t1 = platform_cycles_now();
+    uint64_t t1      = platform_cycles_now();
     uint32_t cyc_blk = (uint32_t)((t1 - t0) / BENCH_REPEATS);
     float    us_blk  = cyc_blk * 1e6f / (float)cps;
     float    pct     = 100.0f * cyc_blk / (float)block_period;
-    printf("  %-22s  %7" PRIu32 " cyc/blk  %5" PRIu32 " cyc/smp  %6.2f us  %5.1f%%\n",
-           name, cyc_blk, (uint32_t)(cyc_blk / n), us_blk, pct);
+    printf("  %-22s  %7" PRIu32 " cyc/blk  %5" PRIu32 " cyc/smp  %6.2f us  %5.1f%%\n", name, cyc_blk,
+           (uint32_t)(cyc_blk / n), us_blk, pct);
 }
 
 // -------------------------------------------------------------------------
@@ -235,9 +235,9 @@ typedef struct {
     float env;
 } fake_voice_t;
 
-static fake_voice_t      s_voices[MAX_BENCH_VOICES];
-static _Atomic uint32_t  s_n_voices      = 1;
-static _Atomic uint32_t  s_render_cycles = 0;
+static fake_voice_t     s_voices[MAX_BENCH_VOICES];
+static _Atomic uint32_t s_n_voices      = 1;
+static _Atomic uint32_t s_render_cycles = 0;
 
 // Called by the platform audio backend on its thread. Measures its own cost
 // and stores it atomically for the ramp loop to read from the main thread.
@@ -255,24 +255,24 @@ static void bench_render_fn(float* left, float* right, size_t n, void* user) {
         float         band = vp->svf_band;
         float         env  = vp->env;
         // Spread pitches slightly so voices don't fold identically
-        float inc = (220.0f * (1.0f + 0.02f * (float)v)) / 48000.0f;
+        float         inc  = (220.0f * (1.0f + 0.02f * (float)v)) / 48000.0f;
 
         for (size_t i = 0; i < n; i++) {
             // PolyBLEP saw
             float saw = 2.0f * ph - 1.0f;
-            ph += inc;
+            ph       += inc;
             if (ph >= 1.0f) ph -= 1.0f;
 
             // SVF lowpass
             float high = saw - low - 0.7f * band;
-            band += 0.15f * high;
-            low  += 0.15f * band;
+            band      += 0.15f * high;
+            low       += 0.15f * band;
 
             // Envelope multiply + stereo accumulate (BENCH_OUTPUT_GAIN keeps
             // the monitored level comfortable; does not change the work done).
-            float s    = low * env * BENCH_OUTPUT_GAIN;
-            left[i]   += s;
-            right[i]  += s;
+            float s   = low * env * BENCH_OUTPUT_GAIN;
+            left[i]  += s;
+            right[i] += s;
         }
         // Slow decay so the voice stays alive through the ramp
         env *= 0.99999f;
@@ -285,8 +285,7 @@ static void bench_render_fn(float* left, float* right, size_t n, void* user) {
     }
 
     uint64_t t1 = platform_cycles_now();
-    atomic_store_explicit(&s_render_cycles, (uint32_t)(t1 - t0),
-                          memory_order_relaxed);
+    atomic_store_explicit(&s_render_cycles, (uint32_t)(t1 - t0), memory_order_relaxed);
 }
 
 // -------------------------------------------------------------------------
@@ -295,8 +294,8 @@ static void bench_render_fn(float* left, float* right, size_t n, void* user) {
 // Reuses the same t0/t1 cycle-counter and table-format logic as the proxy
 // ramp.  Called from bench_run for each ramp step and the worst-case line.
 // -------------------------------------------------------------------------
-static void real_voice_row(uint32_t nv_label, uint32_t block_period, uint32_t cps,
-                           uint32_t block_size, float* left, float* right) {
+static void real_voice_row(uint32_t nv_label, uint32_t block_period, uint32_t cps, uint32_t block_size, float* left,
+                           float* right) {
     // Warmup: drain note events into the engine + let envelopes settle.
     for (int w = 0; w < REAL_WARMUP; w++) {
         synth_render(left, right, block_size, NULL);
@@ -311,13 +310,13 @@ static void real_voice_row(uint32_t nv_label, uint32_t block_period, uint32_t cp
     }
     uint64_t t1 = platform_cycles_now();
 
-    uint32_t cyc_blk = (uint32_t)((t1 - t0) / REAL_REPEATS);
-    float    pct     = 100.0f * (float)cyc_blk / (float)block_period;
-    int32_t  mrg     = (int32_t)block_period - (int32_t)cyc_blk;
+    uint32_t    cyc_blk = (uint32_t)((t1 - t0) / REAL_REPEATS);
+    float       pct     = 100.0f * (float)cyc_blk / (float)block_period;
+    int32_t     mrg     = (int32_t)block_period - (int32_t)cyc_blk;
     const char* verdict = (pct <= 70.0f) ? "OK" : (pct <= 85.0f) ? "WARN" : "OVER";
 
-    printf("  %6" PRIu32 "  %3d active  %8" PRIu32 "  %7.1f%%  %10" PRId32 "  %s\n",
-           nv_label, active, cyc_blk, pct, mrg, verdict);
+    printf("  %6" PRIu32 "  %3d active  %8" PRIu32 "  %7.1f%%  %10" PRId32 "  %s\n", nv_label, active, cyc_blk, pct,
+           mrg, verdict);
 }
 
 // -------------------------------------------------------------------------
@@ -338,10 +337,8 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
     printf("============================================================\n");
     printf("  Tanmatsu Synth — CPU Benchmark (Stage 0.5 + Stage 3d-ii)\n");
     printf("============================================================\n");
-    printf("  Block : %" PRIu32 " samples @ %" PRIu32 " Hz (%.2f us/block)\n",
-           block_size, sample_rate, block_us);
-    printf("  CPU   : ~%" PRIu32 " MHz   block_period = %" PRIu32 " cycles\n",
-           cps / 1000000u, block_period);
+    printf("  Block : %" PRIu32 " samples @ %" PRIu32 " Hz (%.2f us/block)\n", block_size, sample_rate, block_us);
+    printf("  CPU   : ~%" PRIu32 " MHz   block_period = %" PRIu32 " cycles\n", cps / 1000000u, block_period);
     printf("  Note  : host numbers are pseudo-1GHz ns reference;\n");
     printf("          device UART numbers are the actual budget.\n");
     printf("------------------------------------------------------------\n");
@@ -352,14 +349,14 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
     static float buf[BENCH_BLOCK];
     for (size_t i = 0; i < BENCH_BLOCK; i++) buf[i] = 0.01f * ((float)i - 32.0f);
 
-    measure("baseline (empty loop)",  kernel_baseline,     buf, block_size, block_period, cps);
-    measure("sinf (per sample)",       kernel_sinf,         buf, block_size, block_period, cps);
-    measure("expf (per sample)",       kernel_expf,         buf, block_size, block_period, cps);
-    measure("SVF 2-pole",              kernel_svf,          buf, block_size, block_period, cps);
-    measure("biquad TDF-II",           kernel_biquad,       buf, block_size, block_period, cps);
-    measure("Moog ladder 4-pole",      kernel_ladder,       buf, block_size, block_period, cps);
-    measure("PolyBLEP saw",            kernel_polyblep_saw, buf, block_size, block_period, cps);
-    measure("memcpy 64*4B",            kernel_memcpy,       buf, block_size, block_period, cps);
+    measure("baseline (empty loop)", kernel_baseline, buf, block_size, block_period, cps);
+    measure("sinf (per sample)", kernel_sinf, buf, block_size, block_period, cps);
+    measure("expf (per sample)", kernel_expf, buf, block_size, block_period, cps);
+    measure("SVF 2-pole", kernel_svf, buf, block_size, block_period, cps);
+    measure("biquad TDF-II", kernel_biquad, buf, block_size, block_period, cps);
+    measure("Moog ladder 4-pole", kernel_ladder, buf, block_size, block_period, cps);
+    measure("PolyBLEP saw", kernel_polyblep_saw, buf, block_size, block_period, cps);
+    measure("memcpy 64*4B", kernel_memcpy, buf, block_size, block_period, cps);
 
     printf("============================================================\n");
     printf("\n");
@@ -383,8 +380,7 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
     printf("  voices   cyc/blk   %%period  margin_cyc  verdict\n");
     printf("------------------------------------------------------------\n");
 
-    platform_audio_config_t cfg = {.sample_rate = sample_rate,
-                                   .block_size   = block_size};
+    platform_audio_config_t cfg = {.sample_rate = sample_rate, .block_size = block_size};
     if (!platform_audio_start(&cfg, bench_render_fn, NULL)) {
         printf("  ERROR: platform_audio_start failed — ramp aborted.\n");
         return;
@@ -393,21 +389,20 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
     // The proxy ramp is linear and far under budget (32 voices ≈ 17%), so a few
     // coarse sample points convey its shape without the full 1→32 sweep (which
     // cost ~64 s at 2 s/step). Endpoints + quartiles: 5 steps ≈ 10 s.
-    static const uint32_t kProxySteps[] = {1, 8, 16, 24, 32};
-    uint32_t ceiling_voices = 0;
+    static const uint32_t kProxySteps[]  = {1, 8, 16, 24, 32};
+    uint32_t              ceiling_voices = 0;
     for (size_t si = 0; si < sizeof(kProxySteps) / sizeof(kProxySteps[0]); si++) {
         uint32_t nv = kProxySteps[si];
         atomic_store_explicit(&s_n_voices, nv, memory_order_relaxed);
         // Wait 2 s for the audio thread to produce representative numbers.
         platform_sleep_ms(2000);
 
-        uint32_t rc  = atomic_load_explicit(&s_render_cycles, memory_order_relaxed);
-        float    pct = 100.0f * (float)rc / (float)block_period;
-        int32_t  mrg = (int32_t)block_period - (int32_t)rc;
+        uint32_t    rc      = atomic_load_explicit(&s_render_cycles, memory_order_relaxed);
+        float       pct     = 100.0f * (float)rc / (float)block_period;
+        int32_t     mrg     = (int32_t)block_period - (int32_t)rc;
         const char* verdict = (pct <= 70.0f) ? "OK" : (pct <= 85.0f) ? "WARN" : "OVER";
 
-        printf("  %6" PRIu32 "  %8" PRIu32 "  %7.1f%%  %10" PRId32 "  %s\n", nv, rc, pct,
-               mrg, verdict);
+        printf("  %6" PRIu32 "  %8" PRIu32 "  %7.1f%%  %10" PRId32 "  %s\n", nv, rc, pct, mrg, verdict);
 
         if (pct > 95.0f) {
             ceiling_voices = nv;
@@ -420,8 +415,7 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
 
     printf("============================================================\n");
     if (ceiling_voices) {
-        printf("  Safe proxy ceiling (<=70%%): ~%" PRIu32 " voices\n",
-               (ceiling_voices > 1) ? ceiling_voices - 1 : 1);
+        printf("  Safe proxy ceiling (<=70%%): ~%" PRIu32 " voices\n", (ceiling_voices > 1) ? ceiling_voices - 1 : 1);
     }
     printf("  (Proxy numbers for context — see Section 3 for real-voice cost.)\n");
     printf("============================================================\n");
@@ -465,10 +459,8 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
     printf("  → 2×ADSR + 2×LFO + mod matrix (Clean 106 routings active).\n");
     printf("  Timing: synth_render() direct call (REAL_REPEATS=%d blocks).\n", REAL_REPEATS);
     printf("  Target ceiling: 70%% period (headroom for FX + UI jitter)\n");
-    printf("  Budget: block_period=%" PRIu32 " cyc  70%%=%" PRIu32 "  95%%=%" PRIu32 "\n",
-           block_period,
-           (uint32_t)(0.70f * (float)block_period),
-           (uint32_t)(0.95f * (float)block_period));
+    printf("  Budget: block_period=%" PRIu32 " cyc  70%%=%" PRIu32 "  95%%=%" PRIu32 "\n", block_period,
+           (uint32_t)(0.70f * (float)block_period), (uint32_t)(0.95f * (float)block_period));
     printf("  voices  active    cyc/blk   %%period  margin_cyc  verdict\n");
     printf("------------------------------------------------------------\n");
 
@@ -502,7 +494,7 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
         engine_set_routings((const struct Routing*)s_clean106_routings,
                             (int)(sizeof(s_clean106_routings) / sizeof(s_clean106_routings[0])));
         // Set unison stack to all 8 voices with 7-cent default detune.
-        engine_set_param(BENCH_PARAM_UNISON_COUNT,  8.0f);
+        engine_set_param(BENCH_PARAM_UNISON_COUNT, 8.0f);
         engine_set_param(BENCH_PARAM_UNISON_DETUNE, 7.0f);
         // Enable Chorus I.
         engine_set_param(BENCH_PARAM_CHORUS_MODE, 1.0f);
@@ -512,10 +504,9 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
         // inside synth_render, so we must flush params first).
         synth_render(s_left, s_right, block_size, NULL);
         // Single note now triggers U=8 voices (allocator already sees count=8).
-        engine_note_on(60, 100);   // middle C
+        engine_note_on(60, 100);  // middle C
 
-        real_voice_row(8u /*nv_label=8 voices in the pool*/, block_period, cps,
-                       block_size, s_left, s_right);
+        real_voice_row(8u /*nv_label=8 voices in the pool*/, block_period, cps, block_size, s_left, s_right);
     }
 
     printf("============================================================\n");
@@ -549,8 +540,7 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
     printf("  [Section 4] Fixed-overhead decomposition (idle render)\n");
     printf("  Measures: param drain + allocator loop + master bus;\n");
     printf("  chorus variants isolate BBD chorus cost.\n");
-    printf("  Timing: synth_render() direct call (REAL_REPEATS=%d blocks).\n",
-           REAL_REPEATS);
+    printf("  Timing: synth_render() direct call (REAL_REPEATS=%d blocks).\n", REAL_REPEATS);
     printf("  %-28s  %8s  %7s\n", "label", "cyc/blk", "%period");
     printf("------------------------------------------------------------\n");
 
@@ -562,19 +552,16 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
     {
         synth_init(sample_rate, block_size);
         engine_set_routings((const struct Routing*)s_clean106_routings,
-                            (int)(sizeof(s_clean106_routings) /
-                                  sizeof(s_clean106_routings[0])));
+                            (int)(sizeof(s_clean106_routings) / sizeof(s_clean106_routings[0])));
         // Warmup: drain any param events and let the engine settle.
         for (int w = 0; w < 10; w++) synth_render(s_left, s_right, block_size, NULL);
 
         uint64_t t0 = platform_cycles_now();
-        for (int r = 0; r < REAL_REPEATS; r++)
-            synth_render(s_left, s_right, block_size, NULL);
-        uint64_t t1 = platform_cycles_now();
+        for (int r = 0; r < REAL_REPEATS; r++) synth_render(s_left, s_right, block_size, NULL);
+        uint64_t t1     = platform_cycles_now();
         idle_chorus_off = (uint32_t)((t1 - t0) / REAL_REPEATS);
-        float pct = 100.0f * (float)idle_chorus_off / (float)block_period;
-        printf("  %-28s  %8" PRIu32 "  %7.2f%%\n",
-               "idle render (chorus off)", idle_chorus_off, pct);
+        float pct       = 100.0f * (float)idle_chorus_off / (float)block_period;
+        printf("  %-28s  %8" PRIu32 "  %7.2f%%\n", "idle render (chorus off)", idle_chorus_off, pct);
     }
 
     // 4b: same engine, enable Chorus I, flush with one render, then measure.
@@ -582,8 +569,7 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
         // Re-init to guarantee a clean state (chorus off at init).
         synth_init(sample_rate, block_size);
         engine_set_routings((const struct Routing*)s_clean106_routings,
-                            (int)(sizeof(s_clean106_routings) /
-                                  sizeof(s_clean106_routings[0])));
+                            (int)(sizeof(s_clean106_routings) / sizeof(s_clean106_routings[0])));
         engine_set_param(BENCH_PARAM_CHORUS_MODE, 1.0f);
         // Flush: one render drains the param event so chorus is active.
         synth_render(s_left, s_right, block_size, NULL);
@@ -591,46 +577,37 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
         for (int w = 0; w < 9; w++) synth_render(s_left, s_right, block_size, NULL);
 
         uint64_t t0 = platform_cycles_now();
-        for (int r = 0; r < REAL_REPEATS; r++)
-            synth_render(s_left, s_right, block_size, NULL);
-        uint64_t t1 = platform_cycles_now();
+        for (int r = 0; r < REAL_REPEATS; r++) synth_render(s_left, s_right, block_size, NULL);
+        uint64_t t1   = platform_cycles_now();
         idle_chorus_I = (uint32_t)((t1 - t0) / REAL_REPEATS);
-        float pct = 100.0f * (float)idle_chorus_I / (float)block_period;
-        printf("  %-28s  %8" PRIu32 "  %7.2f%%\n",
-               "idle render (Chorus I)", idle_chorus_I, pct);
+        float pct     = 100.0f * (float)idle_chorus_I / (float)block_period;
+        printf("  %-28s  %8" PRIu32 "  %7.2f%%\n", "idle render (Chorus I)", idle_chorus_I, pct);
 
         // Derived: chorus I cost = 4b − 4a.
-        uint32_t chorus_cost = (idle_chorus_I > idle_chorus_off)
-            ? (idle_chorus_I - idle_chorus_off) : 0u;
-        float chorus_pct = 100.0f * (float)chorus_cost / (float)block_period;
-        printf("  %-28s  %8" PRIu32 "  %7.2f%%\n",
-               "--> chorus I cost", chorus_cost, chorus_pct);
+        uint32_t chorus_cost = (idle_chorus_I > idle_chorus_off) ? (idle_chorus_I - idle_chorus_off) : 0u;
+        float    chorus_pct  = 100.0f * (float)chorus_cost / (float)block_period;
+        printf("  %-28s  %8" PRIu32 "  %7.2f%%\n", "--> chorus I cost", chorus_cost, chorus_pct);
     }
 
     // 4c: Chorus II.
     {
         synth_init(sample_rate, block_size);
         engine_set_routings((const struct Routing*)s_clean106_routings,
-                            (int)(sizeof(s_clean106_routings) /
-                                  sizeof(s_clean106_routings[0])));
+                            (int)(sizeof(s_clean106_routings) / sizeof(s_clean106_routings[0])));
         engine_set_param(BENCH_PARAM_CHORUS_MODE, 2.0f);
         synth_render(s_left, s_right, block_size, NULL);
         for (int w = 0; w < 9; w++) synth_render(s_left, s_right, block_size, NULL);
 
         uint64_t t0 = platform_cycles_now();
-        for (int r = 0; r < REAL_REPEATS; r++)
-            synth_render(s_left, s_right, block_size, NULL);
-        uint64_t t1 = platform_cycles_now();
+        for (int r = 0; r < REAL_REPEATS; r++) synth_render(s_left, s_right, block_size, NULL);
+        uint64_t t1    = platform_cycles_now();
         idle_chorus_II = (uint32_t)((t1 - t0) / REAL_REPEATS);
-        float pct = 100.0f * (float)idle_chorus_II / (float)block_period;
-        printf("  %-28s  %8" PRIu32 "  %7.2f%%\n",
-               "idle render (Chorus II)", idle_chorus_II, pct);
+        float pct      = 100.0f * (float)idle_chorus_II / (float)block_period;
+        printf("  %-28s  %8" PRIu32 "  %7.2f%%\n", "idle render (Chorus II)", idle_chorus_II, pct);
 
-        uint32_t chorus_cost = (idle_chorus_II > idle_chorus_off)
-            ? (idle_chorus_II - idle_chorus_off) : 0u;
-        float chorus_pct = 100.0f * (float)chorus_cost / (float)block_period;
-        printf("  %-28s  %8" PRIu32 "  %7.2f%%\n",
-               "--> chorus II cost", chorus_cost, chorus_pct);
+        uint32_t chorus_cost = (idle_chorus_II > idle_chorus_off) ? (idle_chorus_II - idle_chorus_off) : 0u;
+        float    chorus_pct  = 100.0f * (float)chorus_cost / (float)block_period;
+        printf("  %-28s  %8" PRIu32 "  %7.2f%%\n", "--> chorus II cost", chorus_cost, chorus_pct);
     }
 
     printf("============================================================\n");
@@ -646,10 +623,8 @@ void bench_run(uint32_t sample_rate, uint32_t block_size) {
     // bench_blocks_run() times each real building block in isolation.
     // ----------------------------------------------------------------
     printf("  [Section 5] Per-block DSP micro-bench (real wrappers, -O2)\n");
-    printf("  Measures each DSP building block at block size = %" PRIu32 " samples.\n",
-           block_size);
-    printf("  %-32s  %7s  %7s  %6s  %7s\n",
-           "label", "cyc/blk", "cyc/smp", "us/blk", "%period");
+    printf("  Measures each DSP building block at block size = %" PRIu32 " samples.\n", block_size);
+    printf("  %-32s  %7s  %7s  %6s  %7s\n", "label", "cyc/blk", "cyc/smp", "us/blk", "%period");
     printf("------------------------------------------------------------\n");
     bench_blocks_run(block_period, cps, block_size);
     printf("============================================================\n");

@@ -4,7 +4,9 @@
 #include "engine/command_queue.h"
 #include "runner.h"
 
-static NoteCmd on(uint8_t pitch) { return NoteCmd{NoteCmd::kNoteOn, pitch, 100}; }
+static NoteCmd on(uint8_t pitch) {
+    return NoteCmd{NoteCmd::kNoteOn, pitch, 100};
+}
 
 void test_command_queue_suite() {
     printf("--- CommandQueue (lock-free SPSC) ---\n");
@@ -12,7 +14,7 @@ void test_command_queue_suite() {
     {
         test_begin("empty: pop returns false");
         CommandQueue<4> q;
-        NoteCmd out;
+        NoteCmd         out;
         TEST_ASSERT(!q.pop(out), "pop on empty queue must fail");
         test_pass();
     }

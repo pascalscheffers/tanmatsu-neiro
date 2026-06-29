@@ -4,8 +4,8 @@
 // Stage 3d-i: added mono / legato / portamento behaviour. Poly path unchanged.
 // Stage 3d-ii: added unison voice stacking + symmetric detune.
 #include "voice_alloc.h"
-#include <stdint.h>
 #include <math.h>  // fabsf
+#include <stdint.h>
 
 void VoiceAlloc::init(SynthModel* model) {
     for (int i = 0; i < kNumVoices; i++) {
@@ -23,12 +23,12 @@ void VoiceAlloc::init(SynthModel* model) {
 
 void VoiceAlloc::set_play_mode(PlayMode mode) {
     if (play_mode_ == mode) return;
-    play_mode_ = mode;
+    play_mode_      = mode;
     // Reset mono state when switching modes.
-    mono_slot_       = -1;
-    mono_stack_top_  = 0;
-    glide_offset_    = 0.0f;
-    glide_rate_      = 0.0f;
+    mono_slot_      = -1;
+    mono_stack_top_ = 0;
+    glide_offset_   = 0.0f;
+    glide_rate_     = 0.0f;
     // Clear unison tags — the new mode starts fresh.
     for (int i = 0; i < kNumVoices; i++) {
         unison_tag_[i] = kNoGroup;
@@ -40,7 +40,7 @@ void VoiceAlloc::set_portamento_time(float seconds) {
 }
 
 void VoiceAlloc::set_unison_count(int count) {
-    if (count < 1)          count = 1;
+    if (count < 1) count = 1;
     if (count > kMaxUnison) count = kMaxUnison;
     unison_count_ = count;
 }
@@ -77,8 +77,8 @@ void VoiceAlloc::advance_glide(float block_time_secs) {
     // all tagged with the same pitch). Each voice's detune offset is additive with glide.
     uint8_t tag = slots_[mono_slot_].pitch;
     // Collect group slots and count them (need count for detune re-apply).
-    int  group_slots[kNumVoices];
-    int  group_count = 0;
+    int     group_slots[kNumVoices];
+    int     group_count = 0;
     for (int i = 0; i < kNumVoices; i++) {
         if (unison_tag_[i] == tag && slots_[i].gate) {
             group_slots[group_count++] = i;
@@ -99,7 +99,7 @@ void VoiceAlloc::advance_glide(float block_time_secs) {
         if (group_count > 1 && spread_semi > 0.0f) {
             // Uniform spacing: voice gi at position gi/(group_count-1) in [0,1],
             // mapped to [-spread/2, +spread/2].
-            float norm = (float)gi / (float)(group_count - 1);  // 0..1
+            float norm    = (float)gi / (float)(group_count - 1);  // 0..1
             detune_offset = (norm - 0.5f) * spread_semi;
         }
         slots_[group_slots[gi]].voice->set_pitch_offset(glide_offset_ + detune_offset);
@@ -137,14 +137,14 @@ void VoiceAlloc::note_on(uint8_t pitch, uint8_t velocity, NoteExpression expr) {
     }
     idx = find_free_slot();
     if (idx < 0) {
-        idx = find_steal_slot();
+        idx              = find_steal_slot();
         unison_tag_[idx] = kNoGroup;
         slots_[idx].voice->reset();
     }
-    VoiceSlot& s = slots_[idx];
-    s.pitch       = pitch;
-    s.gate        = true;
-    s.timestamp   = ++tick_;
+    VoiceSlot& s     = slots_[idx];
+    s.pitch          = pitch;
+    s.gate           = true;
+    s.timestamp      = ++tick_;
     unison_tag_[idx] = pitch;  // tag = pitch (trivial group of 1)
     s.voice->note_on(pitch, velocity, expr);
     s.voice->set_pitch_offset(0.0f);
@@ -162,8 +162,8 @@ void VoiceAlloc::note_off(uint8_t pitch) {
 
 void VoiceAlloc::reset_all() {
     for (int i = 0; i < kNumVoices; i++) {
-        slots_[i].gate   = false;
-        unison_tag_[i]   = kNoGroup;
+        slots_[i].gate = false;
+        unison_tag_[i] = kNoGroup;
         slots_[i].voice->reset();
     }
     mono_slot_      = -1;
@@ -227,8 +227,8 @@ void VoiceAlloc::note_on_mono(uint8_t pitch, uint8_t velocity, NoteExpression ex
             uint8_t old_tag = slots_[mono_slot_].pitch;
             for (int i = 0; i < kNumVoices; i++) {
                 if (unison_tag_[i] == old_tag) {
-                    slots_[i].gate   = false;
-                    unison_tag_[i]   = kNoGroup;
+                    slots_[i].gate = false;
+                    unison_tag_[i] = kNoGroup;
                     slots_[i].voice->note_off();
                 }
             }
@@ -245,18 +245,18 @@ void VoiceAlloc::note_on_mono(uint8_t pitch, uint8_t velocity, NoteExpression ex
 
         // Allocate U voices for the new pitch.
         bool retrigger = (play_mode_ == PlayMode::kMono) || !any_held;
-        mono_slot_ = -1;
+        mono_slot_     = -1;
         for (int u = 0; u < unison_count_; u++) {
             int idx = find_free_slot();
             if (idx < 0) {
-                idx = find_steal_slot();
+                idx              = find_steal_slot();
                 unison_tag_[idx] = kNoGroup;
                 slots_[idx].voice->reset();
             }
-            VoiceSlot& s = slots_[idx];
-            s.pitch        = pitch;
-            s.gate         = true;
-            s.timestamp    = ++tick_;
+            VoiceSlot& s     = slots_[idx];
+            s.pitch          = pitch;
+            s.gate           = true;
+            s.timestamp      = ++tick_;
             unison_tag_[idx] = pitch;
             if (retrigger) {
                 s.voice->note_on(pitch, velocity, expr);
@@ -283,7 +283,7 @@ void VoiceAlloc::note_on_mono(uint8_t pitch, uint8_t velocity, NoteExpression ex
                 float detune = 0.0f;
                 if (gc > 1 && spread_semi > 0.0f) {
                     float norm = (float)gi / (float)(gc - 1);
-                    detune = (norm - 0.5f) * spread_semi;
+                    detune     = (norm - 0.5f) * spread_semi;
                 }
                 slots_[group_slots[gi]].voice->set_pitch_offset(glide_offset_ + detune);
             }
@@ -302,8 +302,8 @@ void VoiceAlloc::note_on_mono(uint8_t pitch, uint8_t velocity, NoteExpression ex
         // Silence any voices left over from a poly→mono transition.
         for (int i = 0; i < kNumVoices; i++) {
             if (i != mono_slot_) {
-                slots_[i].gate   = false;
-                unison_tag_[i]   = kNoGroup;
+                slots_[i].gate = false;
+                unison_tag_[i] = kNoGroup;
                 slots_[i].voice->reset();
             }
         }
@@ -319,11 +319,9 @@ void VoiceAlloc::note_on_mono(uint8_t pitch, uint8_t velocity, NoteExpression ex
         // old_pitch is what was sounding (s.pitch + previous glide_offset_).
         // new offset = old_effective_pitch - new_pitch.
         float old_effective = (float)s.pitch + glide_offset_;
-        glide_offset_ = old_effective - (float)pitch;
+        glide_offset_       = old_effective - (float)pitch;
         // Rate: travel glide_offset_ semitones in portamento_time_ seconds.
-        glide_rate_ = (portamento_time_ > 0.001f)
-            ? (fabsf(glide_offset_) / portamento_time_)
-            : 0.0f;
+        glide_rate_         = (portamento_time_ > 0.001f) ? (fabsf(glide_offset_) / portamento_time_) : 0.0f;
     } else {
         // Snap (no glide, or first note).
         glide_offset_ = 0.0f;
@@ -335,9 +333,9 @@ void VoiceAlloc::note_on_mono(uint8_t pitch, uint8_t velocity, NoteExpression ex
     // kLegato: retrigger only when no notes were held before (clean attack).
     bool retrigger = (play_mode_ == PlayMode::kMono) || !any_held;
 
-    s.pitch          = pitch;
-    s.gate           = true;
-    s.timestamp      = ++tick_;
+    s.pitch                 = pitch;
+    s.gate                  = true;
+    s.timestamp             = ++tick_;
     unison_tag_[mono_slot_] = pitch;
 
     if (retrigger) {
@@ -396,8 +394,8 @@ void VoiceAlloc::note_off_mono(uint8_t pitch) {
             uint8_t old_tag = s.pitch;
             for (int i = 0; i < kNumVoices; i++) {
                 if (unison_tag_[i] == old_tag) {
-                    slots_[i].gate   = false;
-                    unison_tag_[i]   = kNoGroup;
+                    slots_[i].gate = false;
+                    unison_tag_[i] = kNoGroup;
                     slots_[i].voice->note_off();
                 }
             }
@@ -408,14 +406,14 @@ void VoiceAlloc::note_off_mono(uint8_t pitch) {
             for (int u = 0; u < unison_count_; u++) {
                 int idx = find_free_slot();
                 if (idx < 0) {
-                    idx = find_steal_slot();
+                    idx              = find_steal_slot();
                     unison_tag_[idx] = kNoGroup;
                     slots_[idx].voice->reset();
                 }
-                VoiceSlot& sv = slots_[idx];
-                sv.pitch       = prev_pitch;
-                sv.gate        = true;
-                sv.timestamp   = ++tick_;
+                VoiceSlot& sv    = slots_[idx];
+                sv.pitch         = prev_pitch;
+                sv.gate          = true;
+                sv.timestamp     = ++tick_;
                 unison_tag_[idx] = prev_pitch;
                 sv.voice->note_on(prev_pitch, 127, expr);
                 if (mono_slot_ < 0) mono_slot_ = idx;
@@ -434,7 +432,7 @@ void VoiceAlloc::note_off_mono(uint8_t pitch) {
                 float detune = 0.0f;
                 if (gc > 1 && spread_semi > 0.0f) {
                     float norm = (float)gi / (float)(gc - 1);
-                    detune = (norm - 0.5f) * spread_semi;
+                    detune     = (norm - 0.5f) * spread_semi;
                 }
                 slots_[group_slots[gi]].voice->set_pitch_offset(glide_offset_ + detune);
             }
@@ -447,15 +445,13 @@ void VoiceAlloc::note_off_mono(uint8_t pitch) {
         if (portamento_time_ >= 0.001f) {
             float old_effective = (float)s.pitch + glide_offset_;
             glide_offset_       = old_effective - (float)prev_pitch;
-            glide_rate_ = (portamento_time_ > 0.001f)
-                ? (fabsf(glide_offset_) / portamento_time_)
-                : 0.0f;
+            glide_rate_         = (portamento_time_ > 0.001f) ? (fabsf(glide_offset_) / portamento_time_) : 0.0f;
         }
 
         // Change pitch. In legato mode, envelopes should continue (no retrigger).
         // In kMono mode, retrigger (key was physically re-pressed conceptually).
-        s.pitch          = prev_pitch;
-        s.timestamp      = ++tick_;
+        s.pitch                 = prev_pitch;
+        s.timestamp             = ++tick_;
         unison_tag_[mono_slot_] = prev_pitch;
         NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
         if (play_mode_ == PlayMode::kMono) {
@@ -474,8 +470,8 @@ void VoiceAlloc::note_off_mono(uint8_t pitch) {
             uint8_t tag = s.pitch;
             for (int i = 0; i < kNumVoices; i++) {
                 if (unison_tag_[i] == tag && slots_[i].gate) {
-                    slots_[i].gate   = false;
-                    unison_tag_[i]   = kNoGroup;
+                    slots_[i].gate = false;
+                    unison_tag_[i] = kNoGroup;
                     slots_[i].voice->note_off();
                 }
             }
@@ -483,7 +479,7 @@ void VoiceAlloc::note_off_mono(uint8_t pitch) {
         } else {
             // U=1 path.
             if (s.gate && s.pitch == pitch) {
-                s.gate           = false;
+                s.gate                  = false;
                 unison_tag_[mono_slot_] = kNoGroup;
                 s.voice->note_off();
             }
@@ -514,7 +510,7 @@ void VoiceAlloc::apply_detune(uint8_t tag, int slot_count, int /*first_slot_idx*
         float offset = 0.0f;
         if (gc > 1 && spread_semi > 0.0f) {
             float norm = (float)gi / (float)(gc - 1);  // 0..1
-            offset = (norm - 0.5f) * spread_semi;
+            offset     = (norm - 0.5f) * spread_semi;
         }
         slots_[group_slots[gi]].voice->set_pitch_offset(offset);
     }
@@ -533,15 +529,15 @@ void VoiceAlloc::note_on_unison(uint8_t pitch, uint8_t velocity, NoteExpression 
     for (int u = 0; u < unison_count_; u++) {
         int idx = find_free_slot();
         if (idx < 0) {
-            idx = find_steal_slot();
+            idx              = find_steal_slot();
             // Un-tag the stolen slot (its old group loses a member).
             unison_tag_[idx] = kNoGroup;
             slots_[idx].voice->reset();
         }
-        VoiceSlot& s = slots_[idx];
-        s.pitch        = pitch;
-        s.gate         = true;
-        s.timestamp    = ++tick_;
+        VoiceSlot& s     = slots_[idx];
+        s.pitch          = pitch;
+        s.gate           = true;
+        s.timestamp      = ++tick_;
         unison_tag_[idx] = pitch;
         s.voice->note_on(pitch, velocity, expr);
         allocated++;

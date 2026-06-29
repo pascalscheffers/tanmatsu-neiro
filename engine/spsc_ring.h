@@ -18,8 +18,7 @@
 
 template <typename T, size_t Cap>
 class SpscRing {
-    static_assert(Cap >= 2 && (Cap & (Cap - 1)) == 0,
-                  "Cap must be a power of two >= 2");
+    static_assert(Cap >= 2 && (Cap & (Cap - 1)) == 0, "Cap must be a power of two >= 2");
 
 public:
     // Producer (control thread). Returns false if full — command dropped.

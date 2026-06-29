@@ -6,48 +6,60 @@
 // initialized with a +1e-20f DC offset (ADR 0012 — P4 RV32F has no HW FTZ).
 
 #include "mod_matrix.h"
+#include <cmath>    // fabsf
+#include <cstring>  // memset
 #include "param_id.h"
-#include <cstring>   // memset
-#include <cmath>     // fabsf
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
 float ModMatrix::apply_curve(float x, uint8_t curve_id) {
     switch (static_cast<ModCurve>(curve_id)) {
-        case ModCurve::LIN:  return x;
-        case ModCurve::SQR:  return x * fabsf(x);          // signed square
-        case ModCurve::CUBE: return x * x * x;              // signed cube
-        default:             return x;                       // unknown → LIN
+        case ModCurve::LIN:
+            return x;
+        case ModCurve::SQR:
+            return x * fabsf(x);  // signed square
+        case ModCurve::CUBE:
+            return x * x * x;  // signed cube
+        default:
+            return x;  // unknown → LIN
     }
 }
 
 float ModMatrix::source_value(ModSource src_id, const ModSources& s) {
     switch (src_id) {
-        case ModSource::LFO1:       return s.lfo1;
-        case ModSource::LFO2:       return s.lfo2;
-        case ModSource::ENV1:       return s.env1;
-        case ModSource::ENV2:       return s.env2;
-        case ModSource::VELOCITY:   return s.velocity;
-        case ModSource::KEY_TRACK:  return s.key_track;
-        case ModSource::MOD_WHEEL:  return s.mod_wheel;
-        case ModSource::PITCH_BEND: return s.pitch_bend;
-        case ModSource::AFTERTOUCH: return s.aftertouch;
+        case ModSource::LFO1:
+            return s.lfo1;
+        case ModSource::LFO2:
+            return s.lfo2;
+        case ModSource::ENV1:
+            return s.env1;
+        case ModSource::ENV2:
+            return s.env2;
+        case ModSource::VELOCITY:
+            return s.velocity;
+        case ModSource::KEY_TRACK:
+            return s.key_track;
+        case ModSource::MOD_WHEEL:
+            return s.mod_wheel;
+        case ModSource::PITCH_BEND:
+            return s.pitch_bend;
+        case ModSource::AFTERTOUCH:
+            return s.aftertouch;
         case ModSource::NONE:
-        default:                    return 0.0f;
+        default:
+            return 0.0f;
     }
 }
 
 bool ModMatrix::is_audio_rate_dest(uint16_t dest_id) {
-    return dest_id == kModDestPitch
-        || dest_id == ParamId::FILTER_CUTOFF
-        || dest_id == ParamId::OSC_LEVEL;
+    return dest_id == kModDestPitch || dest_id == ParamId::FILTER_CUTOFF || dest_id == ParamId::OSC_LEVEL;
 }
 
 // ── ModMatrix public API ───────────────────────────────────────────────────
 
 void ModMatrix::clear() {
     for (int i = 0; i < kMaxRoutes; i++) {
-        routes_[i] = Routing{};   // zero-init: source=0 (NONE), depth=0
+        routes_[i] = Routing{};  // zero-init: source=0 (NONE), depth=0
     }
 }
 
@@ -80,7 +92,7 @@ ModOutputs ModMatrix::eval(const ModSources& src) const {
         const ModSource src_id = static_cast<ModSource>(r.source);
         if (src_id == ModSource::NONE || r.depth == 0.0f) continue;
 
-        float raw   = source_value(src_id, src);
+        float raw    = source_value(src_id, src);
         float shaped = apply_curve(raw * r.depth, r.curve);
 
         // Sum into the appropriate accumulator.

@@ -20,7 +20,7 @@ struct NoteExpression {
 };
 
 class IVoice {
-   public:
+public:
     virtual ~IVoice() = default;
 
     // Trigger a note. Must be allocation-free.

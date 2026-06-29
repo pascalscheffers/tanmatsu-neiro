@@ -20,15 +20,15 @@
 // Forward-compat: unknown param IDs and unknown source/curve ids are silently skipped.
 #pragma once
 
-#include "mod_matrix.h"
 #include <cstddef>
 #include <cstdint>
+#include "mod_matrix.h"
 
-static constexpr int     PRESET_NAME_LEN        = 32;
+static constexpr int     PRESET_NAME_LEN       = 32;
 // v2 max: 42 (header) + 24*6 (params) + 2 (routing count) + 16*8 (16 routing slots) = 316
-static constexpr size_t  PRESET_BLOB_MAX        = 384;
-static constexpr uint8_t PRESET_FORMAT_VERSION  = 2;
-static constexpr uint8_t PRESET_MODEL_JUNO      = 1;
+static constexpr size_t  PRESET_BLOB_MAX       = 384;
+static constexpr uint8_t PRESET_FORMAT_VERSION = 2;
+static constexpr uint8_t PRESET_MODEL_JUNO     = 1;
 
 // Maximum number of routing slots returned by preset_parse_routings().
 static constexpr int PRESET_MAX_ROUTINGS = kMaxRoutes;
@@ -43,8 +43,7 @@ const char* preset_factory_name(int idx);
 // Fill `ids_out`/`vals_out` with physical param values for factory preset `idx`.
 // Both arrays must hold at least `max_count` entries.
 // Returns the number of entries written, or -1 if idx is out of range.
-int preset_factory_params(int idx,
-                          uint16_t* ids_out, float* vals_out, int max_count);
+int preset_factory_params(int idx, uint16_t* ids_out, float* vals_out, int max_count);
 
 // Fill `routings_out` with the modulation routings for factory preset `idx`.
 // `routings_out` must hold at least `max_count` entries (PRESET_MAX_ROUTINGS is safe).
@@ -60,9 +59,7 @@ int preset_factory_routings(int idx, Routing* routings_out, int max_count);
 // `routings`: array of routing slots to embed; `routings_len` entries serialized.
 //   Pass NULL/0 to omit the routings block (writes count=0; still v2 format).
 // Returns byte count written, or -1 if buf_max is too small.
-int preset_serialize(void* buf, size_t buf_max,
-                     const char* name,
-                     const float* norms, int norms_len,
+int preset_serialize(void* buf, size_t buf_max, const char* name, const float* norms, int norms_len,
                      const Routing* routings, int routings_len);
 
 // Parse a preset blob into physical param values and modulation routings.
@@ -73,7 +70,5 @@ int preset_serialize(void* buf, size_t buf_max,
 // Unknown param IDs and unknown source/curve ids are silently skipped.
 // v1 blobs (no routings block): succeeds, *routings_count_out = 0.
 // Returns param count parsed (≥ 0), or -1 on bad/unsupported format.
-int preset_parse(const void* buf, size_t len,
-                 char* name_out, int name_max,
-                 uint16_t* ids_out, float* vals_out, int max_count,
-                 Routing* routings_out, int max_routings, int* routings_count_out);
+int preset_parse(const void* buf, size_t len, char* name_out, int name_max, uint16_t* ids_out, float* vals_out,
+                 int max_count, Routing* routings_out, int max_routings, int* routings_count_out);

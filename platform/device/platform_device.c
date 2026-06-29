@@ -233,31 +233,56 @@ void platform_audio_stop(void) {
 // comma and dot return their ASCII values for UI nudge; anything else returns 0.
 static int scancode_to_key(bsp_input_scancode_t sc) {
     switch (sc) {
-        case BSP_INPUT_SCANCODE_A:         return 'a';
-        case BSP_INPUT_SCANCODE_W:         return 'w';
-        case BSP_INPUT_SCANCODE_S:         return 's';
-        case BSP_INPUT_SCANCODE_E:         return 'e';
-        case BSP_INPUT_SCANCODE_D:         return 'd';
-        case BSP_INPUT_SCANCODE_F:         return 'f';
-        case BSP_INPUT_SCANCODE_T:         return 't';
-        case BSP_INPUT_SCANCODE_G:         return 'g';
-        case BSP_INPUT_SCANCODE_Y:         return 'y';
-        case BSP_INPUT_SCANCODE_H:         return 'h';
-        case BSP_INPUT_SCANCODE_U:         return 'u';
-        case BSP_INPUT_SCANCODE_J:         return 'j';
-        case BSP_INPUT_SCANCODE_K:         return 'k';
-        case BSP_INPUT_SCANCODE_O:         return 'o';
-        case BSP_INPUT_SCANCODE_L:         return 'l';
-        case BSP_INPUT_SCANCODE_P:         return 'p';
-        case BSP_INPUT_SCANCODE_SEMICOLON: return ';';
-        case BSP_INPUT_SCANCODE_Z:         return 'z';
-        case BSP_INPUT_SCANCODE_X:         return 'x';
-        case BSP_INPUT_SCANCODE_COMMA:      return ',';
-        case BSP_INPUT_SCANCODE_DOT:        return '.';
-        case BSP_INPUT_SCANCODE_LEFTBRACE:  return '[';
-        case BSP_INPUT_SCANCODE_RIGHTBRACE: return ']';
-        case BSP_INPUT_SCANCODE_EQUAL:      return '=';
-        default:                            return 0;
+        case BSP_INPUT_SCANCODE_A:
+            return 'a';
+        case BSP_INPUT_SCANCODE_W:
+            return 'w';
+        case BSP_INPUT_SCANCODE_S:
+            return 's';
+        case BSP_INPUT_SCANCODE_E:
+            return 'e';
+        case BSP_INPUT_SCANCODE_D:
+            return 'd';
+        case BSP_INPUT_SCANCODE_F:
+            return 'f';
+        case BSP_INPUT_SCANCODE_T:
+            return 't';
+        case BSP_INPUT_SCANCODE_G:
+            return 'g';
+        case BSP_INPUT_SCANCODE_Y:
+            return 'y';
+        case BSP_INPUT_SCANCODE_H:
+            return 'h';
+        case BSP_INPUT_SCANCODE_U:
+            return 'u';
+        case BSP_INPUT_SCANCODE_J:
+            return 'j';
+        case BSP_INPUT_SCANCODE_K:
+            return 'k';
+        case BSP_INPUT_SCANCODE_O:
+            return 'o';
+        case BSP_INPUT_SCANCODE_L:
+            return 'l';
+        case BSP_INPUT_SCANCODE_P:
+            return 'p';
+        case BSP_INPUT_SCANCODE_SEMICOLON:
+            return ';';
+        case BSP_INPUT_SCANCODE_Z:
+            return 'z';
+        case BSP_INPUT_SCANCODE_X:
+            return 'x';
+        case BSP_INPUT_SCANCODE_COMMA:
+            return ',';
+        case BSP_INPUT_SCANCODE_DOT:
+            return '.';
+        case BSP_INPUT_SCANCODE_LEFTBRACE:
+            return '[';
+        case BSP_INPUT_SCANCODE_RIGHTBRACE:
+            return ']';
+        case BSP_INPUT_SCANCODE_EQUAL:
+            return '=';
+        default:
+            return 0;
     }
 }
 
@@ -278,12 +303,13 @@ bool platform_poll_event(platform_event_t* out) {
         // 0x80 bit = release). The BSP also emits a press-only ASCII KEYBOARD
         // event per key — we ignore it here so a press isn't counted twice.
         bool                 released = (ev.args_scancode.scancode & BSP_INPUT_SCANCODE_RELEASE_MODIFIER) != 0;
-        bsp_input_scancode_t base = (bsp_input_scancode_t)(ev.args_scancode.scancode & ~BSP_INPUT_SCANCODE_RELEASE_MODIFIER);
+        bsp_input_scancode_t base =
+            (bsp_input_scancode_t)(ev.args_scancode.scancode & ~BSP_INPUT_SCANCODE_RELEASE_MODIFIER);
 
         // Track shift key state for modifying comma/dot nudge.
         if (base == BSP_INPUT_SCANCODE_LEFTSHIFT || base == BSP_INPUT_SCANCODE_RIGHTSHIFT) {
             s_shift_held = !released;
-            out->type = PLATFORM_EV_NONE;
+            out->type    = PLATFORM_EV_NONE;
             return true;
         }
 
@@ -302,20 +328,29 @@ bool platform_poll_event(platform_event_t* out) {
         }
     } else if (ev.type == INPUT_EVENT_TYPE_NAVIGATION) {
         // Navigation events carry arrow keys, modifiers, and press/release state.
-        const bsp_input_event_args_navigation_t* nav = &ev.args_navigation;
-        int mapped_key = 0;
+        const bsp_input_event_args_navigation_t* nav        = &ev.args_navigation;
+        int                                      mapped_key = 0;
         switch (nav->key) {
-            case BSP_INPUT_NAVIGATION_KEY_UP:    mapped_key = PLATFORM_KEY_UP;    break;
-            case BSP_INPUT_NAVIGATION_KEY_DOWN:  mapped_key = PLATFORM_KEY_DOWN;  break;
-            case BSP_INPUT_NAVIGATION_KEY_LEFT:  mapped_key = PLATFORM_KEY_LEFT;  break;
-            case BSP_INPUT_NAVIGATION_KEY_RIGHT: mapped_key = PLATFORM_KEY_RIGHT; break;
-            default: out->type = PLATFORM_EV_NONE; return true;
+            case BSP_INPUT_NAVIGATION_KEY_UP:
+                mapped_key = PLATFORM_KEY_UP;
+                break;
+            case BSP_INPUT_NAVIGATION_KEY_DOWN:
+                mapped_key = PLATFORM_KEY_DOWN;
+                break;
+            case BSP_INPUT_NAVIGATION_KEY_LEFT:
+                mapped_key = PLATFORM_KEY_LEFT;
+                break;
+            case BSP_INPUT_NAVIGATION_KEY_RIGHT:
+                mapped_key = PLATFORM_KEY_RIGHT;
+                break;
+            default:
+                out->type = PLATFORM_EV_NONE;
+                return true;
         }
         out->type    = PLATFORM_EV_KEY;
         out->key     = mapped_key;
         out->pressed = nav->state;
-        out->mods    = ((nav->modifiers & BSP_INPUT_MODIFIER_SHIFT) != 0)
-                       ? PLATFORM_MOD_SHIFT : 0;
+        out->mods    = ((nav->modifiers & BSP_INPUT_MODIFIER_SHIFT) != 0) ? PLATFORM_MOD_SHIFT : 0;
     } else {
         out->type = PLATFORM_EV_NONE;
     }
@@ -362,7 +397,7 @@ int platform_storage_load(const char* key, void* buf, size_t max_len) {
     nvs_truncate_key(key, safe, sizeof(safe));
     nvs_handle_t h;
     if (nvs_open(STORAGE_NVS_NS, NVS_READONLY, &h) != ESP_OK) return -1;
-    size_t len = max_len;
+    size_t    len = max_len;
     esp_err_t err = nvs_get_blob(h, safe, buf, &len);
     nvs_close(h);
     return (err == ESP_OK) ? (int)len : -1;

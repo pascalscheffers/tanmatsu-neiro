@@ -18,7 +18,10 @@
 // One control event destined for the voice allocator. Kept tiny + trivially
 // copyable so push/pop are plain word stores.
 struct NoteCmd {
-    enum Type : uint8_t { kNoteOn = 0, kNoteOff = 1 };
+    enum Type : uint8_t {
+        kNoteOn  = 0,
+        kNoteOff = 1
+    };
     uint8_t type;
     uint8_t pitch;
     uint8_t velocity;  // unused for note_off

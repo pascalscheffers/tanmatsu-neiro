@@ -11,14 +11,14 @@
  * 17. unison_gain helper — equal-power 1/√U compensation properties.
  */
 
-#include "runner.h"
-#include "engine/voice_alloc.h"
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
 #include "engine/juno_model.h"
 #include "engine/param_id.h"
 #include "engine/synth_config.h"
-#include <stdio.h>
-#include <string.h>
-#include <math.h>
+#include "engine/voice_alloc.h"
+#include "runner.h"
 
 static const float kSr = 48000.0f;
 
@@ -49,7 +49,7 @@ void test_alloc_init() {
     const VoiceSlot* slots = alloc.slots();
     for (int i = 0; i < kNumVoices; i++) {
         TEST_ASSERT(slots[i].voice != nullptr, "slot voice pointer must be non-null");
-        TEST_ASSERT(!slots[i].gate,            "slot gate must be false at init");
+        TEST_ASSERT(!slots[i].gate, "slot gate must be false at init");
     }
     TEST_ASSERT(count_active_slots(slots) == 0, "no voice should be active at init");
     test_pass();
@@ -68,7 +68,7 @@ void test_alloc_note_on() {
     alloc.note_on(69, 100, expr);  // A4
 
     const VoiceSlot* slots = alloc.slots();
-    TEST_ASSERT(count_gated_slots(slots) == 1,  "exactly one slot must be gated");
+    TEST_ASSERT(count_gated_slots(slots) == 1, "exactly one slot must be gated");
     TEST_ASSERT(count_active_slots(slots) >= 1, "at least one slot must be active");
 
     // Render one block to let the voice start producing output.
@@ -96,10 +96,13 @@ void test_alloc_note_off() {
     alloc.note_on(69, 100, expr);
 
     // Set a short release via set_param so the tail drains fast.
-    const VoiceSlot* slots = alloc.slots();
-    int gated_idx = -1;
+    const VoiceSlot* slots     = alloc.slots();
+    int              gated_idx = -1;
     for (int i = 0; i < kNumVoices; i++)
-        if (slots[i].gate) { gated_idx = i; break; }
+        if (slots[i].gate) {
+            gated_idx = i;
+            break;
+        }
     TEST_ASSERT(gated_idx >= 0, "must have found the gated slot");
 
     slots[gated_idx].voice->set_param((int)ParamId::ENV_RELEASE, 0.05f);
@@ -113,7 +116,7 @@ void test_alloc_note_off() {
 
     alloc.note_off(69);
 
-    TEST_ASSERT(!slots[gated_idx].gate,          "gate must clear after note_off");
+    TEST_ASSERT(!slots[gated_idx].gate, "gate must clear after note_off");
     TEST_ASSERT(slots[gated_idx].voice->is_active(), "voice still active (release tail)");
 
     // Drain the release tail (220 blocks × 64 / 48000 ≈ 0.29 s >> 0.05 s).
@@ -122,8 +125,7 @@ void test_alloc_note_off() {
         slots[gated_idx].voice->render(buf, 64);
     }
 
-    TEST_ASSERT(!slots[gated_idx].voice->is_active(),
-                "voice must be idle after release tail drains");
+    TEST_ASSERT(!slots[gated_idx].voice->is_active(), "voice must be idle after release tail drains");
     test_pass();
 }
 
@@ -139,10 +141,13 @@ void test_alloc_retrigger() {
     NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
     alloc.note_on(60, 100, expr);  // C4
 
-    const VoiceSlot* slots = alloc.slots();
-    int first_idx = -1;
+    const VoiceSlot* slots     = alloc.slots();
+    int              first_idx = -1;
     for (int i = 0; i < kNumVoices; i++)
-        if (slots[i].gate && slots[i].pitch == 60) { first_idx = i; break; }
+        if (slots[i].gate && slots[i].pitch == 60) {
+            first_idx = i;
+            break;
+        }
     TEST_ASSERT(first_idx >= 0, "must find the slot for pitch 60");
 
     alloc.note_on(60, 100, expr);  // retrigger same pitch
@@ -152,8 +157,8 @@ void test_alloc_retrigger() {
     for (int i = 0; i < kNumVoices; i++)
         if (slots[i].gate && slots[i].pitch == 60) found++;
 
-    TEST_ASSERT(found == 1,              "retrigger must not allocate a second slot");
-    TEST_ASSERT(slots[first_idx].gate,   "the original slot must still be gated");
+    TEST_ASSERT(found == 1, "retrigger must not allocate a second slot");
+    TEST_ASSERT(slots[first_idx].gate, "the original slot must still be gated");
     test_pass();
 }
 
@@ -179,19 +184,19 @@ void test_alloc_steal() {
     // Find which slot has pitch 60 (the oldest — timestamp 1).
     int oldest_idx = -1;
     for (int i = 0; i < kNumVoices; i++)
-        if (slots[i].pitch == 60) { oldest_idx = i; break; }
+        if (slots[i].pitch == 60) {
+            oldest_idx = i;
+            break;
+        }
     TEST_ASSERT(oldest_idx >= 0, "must find the oldest slot (pitch 60)");
 
     // 9th note_on must steal — pool is full, no idle or released slots.
     alloc.note_on(80, 100, expr);
 
     // Slot at oldest_idx should now hold the new pitch 80.
-    TEST_ASSERT(slots[oldest_idx].pitch == 80,
-                "oldest slot must be stolen for the 9th note");
-    TEST_ASSERT(slots[oldest_idx].gate,
-                "stolen slot must be gated with the new note");
-    TEST_ASSERT(count_gated_slots(slots) == kNumVoices,
-                "total gated count must still be kNumVoices after steal");
+    TEST_ASSERT(slots[oldest_idx].pitch == 80, "oldest slot must be stolen for the 9th note");
+    TEST_ASSERT(slots[oldest_idx].gate, "stolen slot must be gated with the new note");
+    TEST_ASSERT(count_gated_slots(slots) == kNumVoices, "total gated count must still be kNumVoices after steal");
     test_pass();
 }
 
@@ -213,13 +218,15 @@ void test_alloc_mono_single_voice() {
 
     // Second note while first is held — only one voice should be gated.
     alloc.note_on(64, 100, expr);
-    TEST_ASSERT(count_gated_slots(alloc.slots()) == 1,
-                "mono: still exactly one gated with two held notes");
+    TEST_ASSERT(count_gated_slots(alloc.slots()) == 1, "mono: still exactly one gated with two held notes");
 
     // The sounding pitch should be the last-pressed note.
     int gated_idx = -1;
     for (int i = 0; i < kNumVoices; i++)
-        if (alloc.slots()[i].gate) { gated_idx = i; break; }
+        if (alloc.slots()[i].gate) {
+            gated_idx = i;
+            break;
+        }
     TEST_ASSERT(gated_idx >= 0, "mono: must find the gated slot");
     TEST_ASSERT(alloc.slots()[gated_idx].pitch == 64, "mono: last note is pitch 64");
 
@@ -246,11 +253,13 @@ void test_alloc_mono_steal_back() {
 
     int gated_idx = -1;
     for (int i = 0; i < kNumVoices; i++)
-        if (alloc.slots()[i].gate) { gated_idx = i; break; }
+        if (alloc.slots()[i].gate) {
+            gated_idx = i;
+            break;
+        }
 
     TEST_ASSERT(gated_idx >= 0, "mono steal-back: voice must still be gated after release");
-    TEST_ASSERT(alloc.slots()[gated_idx].pitch == 60,
-                "mono steal-back: sounding pitch reverts to C4");
+    TEST_ASSERT(alloc.slots()[gated_idx].pitch == 60, "mono steal-back: sounding pitch reverts to C4");
 
     test_pass();
 }
@@ -269,8 +278,7 @@ void test_alloc_mono_all_off() {
     alloc.note_on(60, 100, expr);
     alloc.note_off(60);
 
-    TEST_ASSERT(count_gated_slots(alloc.slots()) == 0,
-                "mono: no gated voices after sole note released");
+    TEST_ASSERT(count_gated_slots(alloc.slots()) == 0, "mono: no gated voices after sole note released");
     test_pass();
 }
 
@@ -292,14 +300,12 @@ void test_alloc_portamento() {
 
     // First note (no previous → no glide).
     alloc.note_on(60, 100, expr);
-    TEST_ASSERT(alloc.glide_offset() == 0.0f,
-                "portamento: first note has zero glide offset");
+    TEST_ASSERT(alloc.glide_offset() == 0.0f, "portamento: first note has zero glide offset");
 
     // Second note (E4 = semitone +4 from C4) while C4 is held.
     alloc.note_on(64, 100, expr);
     // Initial offset must be -4 semitones (E4 sounds like C4 initially).
-    TEST_ASSERT(alloc.glide_offset() < -0.5f,
-                "portamento: initial offset is negative (old pitch below new)");
+    TEST_ASSERT(alloc.glide_offset() < -0.5f, "portamento: initial offset is negative (old pitch below new)");
 
     // Advance glide halfway through portamento time.
     const float kBlockTime = 0.001f;  // 1 ms blocks
@@ -308,15 +314,13 @@ void test_alloc_portamento() {
         alloc.advance_glide(kBlockTime);
     }
     float mid_offset = alloc.glide_offset();
-    TEST_ASSERT(mid_offset < 0.0f && mid_offset > -4.0f,
-                "portamento: mid-glide offset is between 0 and initial");
+    TEST_ASSERT(mid_offset < 0.0f && mid_offset > -4.0f, "portamento: mid-glide offset is between 0 and initial");
 
     // Advance through the full portamento time.
     for (int b = 0; b < kHalfSteps + 10; b++) {
         alloc.advance_glide(kBlockTime);
     }
-    TEST_ASSERT(alloc.glide_offset() == 0.0f,
-                "portamento: offset reaches zero after portamento time");
+    TEST_ASSERT(alloc.glide_offset() == 0.0f, "portamento: offset reaches zero after portamento time");
 
     test_pass();
 }
@@ -339,8 +343,7 @@ void test_alloc_poly_unchanged() {
         alloc.note_on((uint8_t)(60 + i), 100, expr);
     }
 
-    TEST_ASSERT(count_gated_slots(alloc.slots()) == kNumVoices,
-                "poly: all kNumVoices gated after poly mode restored");
+    TEST_ASSERT(count_gated_slots(alloc.slots()) == kNumVoices, "poly: all kNumVoices gated after poly mode restored");
     test_pass();
 }
 
@@ -361,9 +364,12 @@ void test_alloc_legato_no_retrigger() {
 
     // Render enough to leave attack phase.
     float buf[64];
-    int gated_idx = -1;
+    int   gated_idx = -1;
     for (int i = 0; i < kNumVoices; i++)
-        if (alloc.slots()[i].gate) { gated_idx = i; break; }
+        if (alloc.slots()[i].gate) {
+            gated_idx = i;
+            break;
+        }
     TEST_ASSERT(gated_idx >= 0, "legato: must have a gated slot");
 
     for (int b = 0; b < 200; b++) {
@@ -374,22 +380,17 @@ void test_alloc_legato_no_retrigger() {
     // While first note is still held, press a second note (legato transition).
     // The slot pitch should change (legato detection worked).
     alloc.note_on(64, 100, expr);
-    TEST_ASSERT(alloc.slots()[gated_idx].pitch == 64,
-                "legato: slot pitch changes to new note on legato transition");
-    TEST_ASSERT(alloc.slots()[gated_idx].gate,
-                "legato: gate stays true during legato transition");
+    TEST_ASSERT(alloc.slots()[gated_idx].pitch == 64, "legato: slot pitch changes to new note on legato transition");
+    TEST_ASSERT(alloc.slots()[gated_idx].gate, "legato: gate stays true during legato transition");
 
     // Release the new note — should steal back to 60.
     alloc.note_off(64);
-    TEST_ASSERT(alloc.slots()[gated_idx].pitch == 60,
-                "legato: steal-back to first note when second released");
-    TEST_ASSERT(alloc.slots()[gated_idx].gate,
-                "legato: gate stays true after steal-back (first key still held)");
+    TEST_ASSERT(alloc.slots()[gated_idx].pitch == 60, "legato: steal-back to first note when second released");
+    TEST_ASSERT(alloc.slots()[gated_idx].gate, "legato: gate stays true after steal-back (first key still held)");
 
     // Release the first note — now gate should drop.
     alloc.note_off(60);
-    TEST_ASSERT(!alloc.slots()[gated_idx].gate,
-                "legato: gate drops after all notes released");
+    TEST_ASSERT(!alloc.slots()[gated_idx].gate, "legato: gate drops after all notes released");
 
     test_pass();
 }
@@ -409,7 +410,7 @@ void test_alloc_unison_stack() {
     alloc.note_on(60, 100, expr);  // C4, should allocate 4 voices
 
     const VoiceSlot* slots = alloc.slots();
-    int gated = count_gated_slots(slots);
+    int              gated = count_gated_slots(slots);
     TEST_ASSERT(gated == 4, "unison U=4: exactly 4 voices must be gated");
 
     // All gated slots must be on pitch 60.
@@ -476,8 +477,7 @@ void test_alloc_unison_note_off() {
 
     alloc.note_off(64);
 
-    TEST_ASSERT(count_gated_slots(slots) == 0,
-                "unison U=3: 0 gated after note_off releases all group voices");
+    TEST_ASSERT(count_gated_slots(slots) == 0, "unison U=3: 0 gated after note_off releases all group voices");
     test_pass();
 }
 
@@ -500,13 +500,11 @@ void test_alloc_unison_reduces_polyphony() {
 
     const VoiceSlot* slots = alloc.slots();
     // All 8 slots should be gated (2 notes × 4 voices each).
-    TEST_ASSERT(count_gated_slots(slots) == kNumVoices,
-                "unison U=4 × 2 notes fills the pool (8 gated)");
+    TEST_ASSERT(count_gated_slots(slots) == kNumVoices, "unison U=4 × 2 notes fills the pool (8 gated)");
 
     // A 3rd note forces steal; total gated remains kNumVoices.
     alloc.note_on(67, 100, expr);
-    TEST_ASSERT(count_gated_slots(slots) == kNumVoices,
-                "unison U=4: 3rd note steals but total stays at kNumVoices");
+    TEST_ASSERT(count_gated_slots(slots) == kNumVoices, "unison U=4: 3rd note steals but total stays at kNumVoices");
 
     test_pass();
 }
@@ -533,8 +531,7 @@ void test_alloc_unison_u1_unchanged() {
 
     alloc.note_off(60);
     int gated_after = count_gated_slots(alloc.slots());
-    TEST_ASSERT(gated_after == kNumVoices - 1,
-                "unison U=1: note_off releases exactly 1 voice");
+    TEST_ASSERT(gated_after == kNumVoices - 1, "unison U=1: note_off releases exactly 1 voice");
 
     test_pass();
 }

@@ -25,7 +25,7 @@
 #include "voice.h"
 
 class JunoVoice final : public IVoice {
-   public:
+public:
     // Call before the first note; allocation allowed here.
     void init(float sample_rate);
 
@@ -39,34 +39,20 @@ class JunoVoice final : public IVoice {
     // --- Stage 3a: mod-source accessors (for the mod matrix in Stage 3b-i) ---
     // Returns the last rendered per-sample output of each mod source.
     // Only meaningful after at least one call to render().
-    float env2_value() const {
-        return env2_value_;
-    }
-    float lfo1_value() const {
-        return lfo1_value_;
-    }
-    float lfo2_value() const {
-        return lfo2_value_;
-    }
+    float env2_value() const { return env2_value_; }
+    float lfo1_value() const { return lfo1_value_; }
+    float lfo2_value() const { return lfo2_value_; }
 
     // --- Stage 3b-i: modulation matrix wiring ---
     // Replace the entire 16-slot routing table for this voice.
-    void set_mod_matrix(const ModMatrix& m) override {
-        mod_matrix_ = m;
-    }
+    void set_mod_matrix(const ModMatrix& m) override { mod_matrix_ = m; }
 
     // Direct access to edit individual slots in place (avoids a full copy).
-    ModMatrix& mod_matrix() {
-        return mod_matrix_;
-    }
-    const ModMatrix& mod_matrix() const {
-        return mod_matrix_;
-    }
+    ModMatrix&       mod_matrix() { return mod_matrix_; }
+    const ModMatrix& mod_matrix() const { return mod_matrix_; }
 
     // IVoice: per-block pitch offset for portamento glide (semitones).
-    void set_pitch_offset(float semitones) override {
-        p_pitch_offset_ = semitones;
-    }
+    void set_pitch_offset(float semitones) override { p_pitch_offset_ = semitones; }
 
     // IVoice: inject shared engine LFO raw outputs for this block (ADR 0018).
     // The voice applies per-note delay scale and depth; lfo*_raw_ are in [-1,+1].
@@ -75,7 +61,7 @@ class JunoVoice final : public IVoice {
         lfo2_raw_ = lfo2_raw;
     }
 
-   private:
+private:
     float   sample_rate_    = 48000.0f;
     bool    gate_           = false;
     float   vel_scale_      = 1.0f;

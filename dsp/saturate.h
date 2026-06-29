@@ -7,7 +7,7 @@
 #pragma once
 
 static inline float soft_clip(float x) {
-    if (x >=  1.5f) return  1.0f;
+    if (x >= 1.5f) return 1.0f;
     if (x <= -1.5f) return -1.0f;
     return x - x * x * x * (1.0f / 6.75f);
 }

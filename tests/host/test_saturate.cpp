@@ -1,7 +1,7 @@
 // test_saturate.cpp — host tests for dsp/saturate.h (ADR 0016).
-#include "runner.h"
-#include "dsp/saturate.h"
 #include <math.h>
+#include "dsp/saturate.h"
+#include "runner.h"
 
 static void test_saturate_transparent(void) {
     test_begin("soft_clip: transparent near zero");
@@ -27,9 +27,9 @@ static void test_saturate_monotone(void) {
 
 static void test_saturate_bounded(void) {
     test_begin("soft_clip: output bounded to [-1, 1] for |x| >= 1.5");
-    TEST_ASSERT(soft_clip( 1.5f) ==  1.0f, "soft_clip(1.5) must be 1.0");
+    TEST_ASSERT(soft_clip(1.5f) == 1.0f, "soft_clip(1.5) must be 1.0");
     TEST_ASSERT(soft_clip(-1.5f) == -1.0f, "soft_clip(-1.5) must be -1.0");
-    TEST_ASSERT(soft_clip( 10.0f) ==  1.0f, "soft_clip(10) must be 1.0");
+    TEST_ASSERT(soft_clip(10.0f) == 1.0f, "soft_clip(10) must be 1.0");
     TEST_ASSERT(soft_clip(-10.0f) == -1.0f, "soft_clip(-10) must be -1.0");
     test_pass();
 }
@@ -39,7 +39,7 @@ static void test_saturate_odd_symmetry(void) {
     float vals[] = {0.0f, 0.1f, 0.5f, 0.9f, 1.2f, 1.5f, 2.0f};
     for (int i = 0; i < 7; i++) {
         float x  = vals[i];
-        float yp = soft_clip( x);
+        float yp = soft_clip(x);
         float yn = soft_clip(-x);
         TEST_ASSERT(fabsf(yn + yp) < 1e-6f, "odd symmetry violated");
     }

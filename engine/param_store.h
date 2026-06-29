@@ -32,8 +32,7 @@ public:
     // Initialise from the param table and audio parameters. Precomputes
     // block-rate smoothing coefficients from (sample_rate, block_size).
     // block_size must match the audio render block size.
-    void init(const ParamDesc* table, int count,
-              float sample_rate, int block_size);
+    void init(const ParamDesc* table, int count, float sample_rate, int block_size);
 
     // ---- Control-thread API ----
 
@@ -69,15 +68,15 @@ private:
         bool  valid;    // true if this slot has a ParamDesc entry
     };
 
-    ParamState             s_[kParamIdMax];
+    ParamState                s_[kParamIdMax];
     SpscRing<ParamUpdate, 64> ring_;
-    const ParamDesc*       table_ = nullptr;
-    int                    count_ = 0;
+    const ParamDesc*          table_ = nullptr;
+    int                       count_ = 0;
 
     // Changed-set: populated fresh by each drain(). Audio-thread only.
-    uint16_t               changed_ids_[kParamIdMax];
-    int                    changed_count_ = 0;
-    bool                   force_all_dirty_ = false;  // set true by init(); consumed on first drain()
+    uint16_t changed_ids_[kParamIdMax];
+    int      changed_count_   = 0;
+    bool     force_all_dirty_ = false;  // set true by init(); consumed on first drain()
 
     const ParamDesc* find_desc(uint16_t id) const;
     static float     apply_curve(const ParamDesc& d, float norm);

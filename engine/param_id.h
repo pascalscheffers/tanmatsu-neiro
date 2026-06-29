@@ -77,4 +77,4 @@ static constexpr uint16_t LFO2_DELAY = 0x7B;  // LFO2 fade-in delay time (second
 // Current highest ID: LFO2_DELAY = 0x7B; keep ceiling at 0x80 (= 128).
 static constexpr uint16_t kMax = 0x80;
 
-} // namespace ParamId
+}  // namespace ParamId

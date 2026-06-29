@@ -34,10 +34,10 @@
 //   all group members share the same base pitch.
 #pragma once
 
-#include "voice.h"
-#include "synth_model.h"
-#include "synth_config.h"
 #include <stdint.h>
+#include "synth_config.h"
+#include "synth_model.h"
+#include "voice.h"
 
 struct VoiceSlot {
     IVoice*  voice;      // owned; created by SynthModel::make_voice()
@@ -102,34 +102,34 @@ private:
     uint32_t  tick_              = 0;
 
     // Play mode state.
-    PlayMode  play_mode_       = PlayMode::kPoly;
-    float     portamento_time_ = 0.0f;  // seconds; < 0.001 treated as zero
+    PlayMode play_mode_       = PlayMode::kPoly;
+    float    portamento_time_ = 0.0f;  // seconds; < 0.001 treated as zero
 
     // Mono voice state.
     // mono_slot_: index of the one active mono voice (-1 = none).
-    int      mono_slot_      = -1;
+    int mono_slot_ = -1;
 
     // Glide state: current pitch offset in semitones (approaching 0 when note is
     // held, or ramping from old→new when a new note is triggered).
-    float    glide_offset_   = 0.0f;  // current offset (semitones) applied to pitch
-    float    glide_rate_     = 0.0f;  // semitones per second (magnitude); direction implicit
+    float glide_offset_ = 0.0f;  // current offset (semitones) applied to pitch
+    float glide_rate_   = 0.0f;  // semitones per second (magnitude); direction implicit
 
     // Mono note stack: tracks held notes in order for "steal-back" on note_off.
     // Uses last-note priority: newest is at the top (index mono_stack_top_-1).
     // Maximum depth = kNumVoices (more held notes than voices is pathological but safe).
-    static constexpr int kMonoStackMax = kNumVoices;
-    uint8_t  mono_stack_[kMonoStackMax] = {};
-    int      mono_stack_top_  = 0;
+    static constexpr int kMonoStackMax              = kNumVoices;
+    uint8_t              mono_stack_[kMonoStackMax] = {};
+    int                  mono_stack_top_            = 0;
 
     // Unison state.
     // Each slot carries a group tag (the pitch of the note it belongs to, or 0xFF =
     // ungrouped). tag 0xFF is safe because MIDI pitch 0xFF is out of range.
-    static constexpr uint8_t kNoGroup = 0xFF;
+    static constexpr uint8_t kNoGroup   = 0xFF;
     static constexpr int     kMaxUnison = kNumVoices;
 
-    int   unison_count_  = 1;     // U voices per note; 1 = off (unchanged behaviour)
-    float unison_detune_ = 0.0f;  // total spread in cents (0 = no detune)
-    uint8_t unison_tag_[kNumVoices] = {};  // group tag per slot (kNoGroup = no group)
+    int     unison_count_           = 1;     // U voices per note; 1 = off (unchanged behaviour)
+    float   unison_detune_          = 0.0f;  // total spread in cents (0 = no detune)
+    uint8_t unison_tag_[kNumVoices] = {};    // group tag per slot (kNoGroup = no group)
 
     // Internal helpers.
     int find_slot_for_pitch(uint8_t pitch) const;

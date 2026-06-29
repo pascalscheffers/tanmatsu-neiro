@@ -12,13 +12,13 @@
  * hardware flush-to-zero so denormal behaviour matches the device.
  */
 
-#include "runner.h"
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+#include "dsp/filter.h"
 #include "juno_voice.h"
 #include "param_id.h"
-#include "dsp/filter.h"
-#include <math.h>
-#include <string.h>
-#include <stdio.h>
+#include "runner.h"
 
 static const float kSampleRate = 48000.0f;
 
@@ -58,8 +58,7 @@ void test_voice_adsr_shape() {
 
     TEST_ASSERT(rms_early > 0.001f, "attack: first block must be non-zero");
     TEST_ASSERT(rms_sustain > 0.01f, "sustain: voice must produce output");
-    TEST_ASSERT(rms_sustain > rms_early * 2.0f,
-                "sustain RMS must exceed early-attack RMS (ramp verified)");
+    TEST_ASSERT(rms_sustain > rms_early * 2.0f, "sustain RMS must exceed early-attack RMS (ramp verified)");
     test_pass();
 }
 
@@ -98,10 +97,8 @@ void test_voice_silent_after_release() {
     v.render(buf, 64);
     float rms_after = rms(buf, 64);
 
-    TEST_ASSERT(rms_after < 0.001f,
-                "voice must be near-silent after full release");
-    TEST_ASSERT(!v.is_active(),
-                "is_active() must return false after release completes");
+    TEST_ASSERT(rms_after < 0.001f, "voice must be near-silent after full release");
+    TEST_ASSERT(!v.is_active(), "is_active() must return false after release completes");
     test_pass();
 }
 
@@ -132,10 +129,8 @@ void test_voice_reset_silences() {
     // render() must leave the buffer untouched (early-exit path).
     memset(buf, 0, sizeof(buf));
     v.render(buf, 64);
-    TEST_ASSERT(rms(buf, 64) < 0.0001f,
-                "output must be zero immediately after reset()");
-    TEST_ASSERT(!v.is_active(),
-                "is_active() must return false after reset()");
+    TEST_ASSERT(rms(buf, 64) < 0.0001f, "output must be zero immediately after reset()");
+    TEST_ASSERT(!v.is_active(), "is_active() must return false after reset()");
     test_pass();
 }
 
@@ -154,8 +149,8 @@ void test_filter_lp_attenuation() {
         f.set_freq(cutoff);
         f.set_res(0.0f);
 
-        float sum = 0.0f;
-        int settle = 2048, measure = 4096;
+        float sum    = 0.0f;
+        int   settle = 2048, measure = 4096;
         for (int i = 0; i < settle; i++) {
             float in = (i & 1) ? 0.5f : -0.5f;
             f.process(in);
@@ -165,7 +160,7 @@ void test_filter_lp_attenuation() {
             float in = (i & 1) ? 0.5f : -0.5f;
             f.process(in);
             float out = f.output();
-            sum += out * out;
+            sum      += out * out;
         }
         return sqrtf(sum / (float)measure);
     };
@@ -174,8 +169,7 @@ void test_filter_lp_attenuation() {
     float rms_high = measure_lp_rms(10000.0f);
 
     // LP at 10 kHz passes much more Nyquist-rate energy than LP at 200 Hz.
-    TEST_ASSERT(rms_high > rms_low * 5.0f,
-                "SVF LP: cutoff=10kHz must pass ≥5× more Nyquist energy than 200Hz");
+    TEST_ASSERT(rms_high > rms_low * 5.0f, "SVF LP: cutoff=10kHz must pass ≥5× more Nyquist energy than 200Hz");
     test_pass();
 }
 
@@ -189,8 +183,8 @@ void test_voice_set_param_zero_levels() {
     // throughout the sustain phase (tests the live set_param path).
     JunoVoice v;
     v.init(kSampleRate);
-    v.set_param((int)ParamId::OSC_LEVEL,   0.0f);
-    v.set_param((int)ParamId::SUB_LEVEL,   0.0f);
+    v.set_param((int)ParamId::OSC_LEVEL, 0.0f);
+    v.set_param((int)ParamId::SUB_LEVEL, 0.0f);
     v.set_param((int)ParamId::NOISE_LEVEL, 0.0f);
 
     NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
@@ -204,8 +198,7 @@ void test_voice_set_param_zero_levels() {
     }
     memset(buf, 0, sizeof(buf));
     v.render(buf, 64);
-    TEST_ASSERT(rms(buf, 64) < 0.0001f,
-                "all mix levels 0 → near-silent output");
+    TEST_ASSERT(rms(buf, 64) < 0.0001f, "all mix levels 0 → near-silent output");
     test_pass();
 }
 
@@ -219,14 +212,14 @@ void test_voice_set_param_cutoff() {
     auto measure_rms = [](float cutoff) -> float {
         JunoVoice v;
         v.init(kSampleRate);
-        v.set_param((int)ParamId::SUB_LEVEL,       0.0f);
-        v.set_param((int)ParamId::NOISE_LEVEL,     0.0f);
-        v.set_param((int)ParamId::FILTER_CUTOFF,   cutoff);
-        v.set_param((int)ParamId::FILTER_RES,      0.0f);
+        v.set_param((int)ParamId::SUB_LEVEL, 0.0f);
+        v.set_param((int)ParamId::NOISE_LEVEL, 0.0f);
+        v.set_param((int)ParamId::FILTER_CUTOFF, cutoff);
+        v.set_param((int)ParamId::FILTER_RES, 0.0f);
         // Disable new panel mods so only the base cutoff is tested.
-        v.set_param((int)ParamId::VCF_ENV_DEPTH,   0.0f);
-        v.set_param((int)ParamId::VCF_KEY_TRACK,   0.0f);
-        v.set_param((int)ParamId::VCF_LFO_DEPTH,   0.0f);
+        v.set_param((int)ParamId::VCF_ENV_DEPTH, 0.0f);
+        v.set_param((int)ParamId::VCF_KEY_TRACK, 0.0f);
+        v.set_param((int)ParamId::VCF_LFO_DEPTH, 0.0f);
         NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
         v.note_on(69, 127, expr);  // A4 = 440 Hz
         float buf[64];
@@ -239,11 +232,10 @@ void test_voice_set_param_cutoff() {
         return rms(buf, 64);
     };
 
-    float rms_low  = measure_rms(80.0f);    // well below 440 Hz — strong LP attenuation
-    float rms_high = measure_rms(10000.0f); // above 440 Hz — fundamental passes cleanly
+    float rms_low  = measure_rms(80.0f);     // well below 440 Hz — strong LP attenuation
+    float rms_high = measure_rms(10000.0f);  // above 440 Hz — fundamental passes cleanly
 
-    TEST_ASSERT(rms_high > rms_low * 3.0f,
-                "high cutoff (10kHz) must pass ≥3× more RMS than low cutoff (80Hz)");
+    TEST_ASSERT(rms_high > rms_low * 3.0f, "high cutoff (10kHz) must pass ≥3× more RMS than low cutoff (80Hz)");
     test_pass();
 }
 

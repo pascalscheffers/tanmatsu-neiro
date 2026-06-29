@@ -7,8 +7,8 @@
 #include "voice.h"
 
 struct SynthModelMeta {
-    const char* id;      // e.g. "juno106"
-    const char* name;    // display name
+    const char* id;    // e.g. "juno106"
+    const char* name;  // display name
     int         version;
 };
 

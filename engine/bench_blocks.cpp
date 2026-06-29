@@ -15,25 +15,24 @@
 #include "bench.h"
 
 // dsp/ wrappers (thin header-only C++ over DaisySP).
-#include "dsp/osc.h"
-#include "dsp/filter.h"
 #include "dsp/env.h"
+#include "dsp/filter.h"
 #include "dsp/lfo.h"
+#include "dsp/osc.h"
 
 // DaisySP headers (direct, for modules not wrapped in dsp/).
 #include "Noise/whitenoise.h"
 
 // ModMatrix (engine, C++).
-#include "mod_matrix.h"
-
 #include <inttypes.h>
 #include <stdio.h>
+#include "mod_matrix.h"
 
 // How many block-iterations per kernel measurement.
 // 5000 × 64 smp / 48 kHz ≈ 6.7 s total — enough to swamp timer overhead.
 // ModMatrix eval is per-block (n=1 semantics), uses a higher count.
-#define BB_REPEATS      5000
-#define BB_MOD_REPEATS  20000
+#define BB_REPEATS     5000
+#define BB_MOD_REPEATS 20000
 
 // Sink: written after every kernel so nothing is dead-stripped.
 static volatile float bb_sink = 0.0f;
@@ -44,16 +43,13 @@ static volatile float bb_sink = 0.0f;
 // -------------------------------------------------------------------------
 
 // Print one row in the Section-5 table.
-static void bb_print_row(const char* label, uint64_t t0, uint64_t t1,
-                          uint32_t reps, uint32_t n,
-                          uint32_t block_period, uint32_t cps)
-{
+static void bb_print_row(const char* label, uint64_t t0, uint64_t t1, uint32_t reps, uint32_t n, uint32_t block_period,
+                         uint32_t cps) {
     uint32_t cyc_blk = (uint32_t)((t1 - t0) / reps);
     uint32_t cyc_smp = (n > 0) ? (uint32_t)(cyc_blk / n) : cyc_blk;
     float    us_blk  = (float)cyc_blk * 1e6f / (float)cps;
     float    pct     = 100.0f * (float)cyc_blk / (float)block_period;
-    printf("  %-32s  %7" PRIu32 "  %7" PRIu32 "  %6.2f  %7.2f%%\n",
-           label, cyc_blk, cyc_smp, us_blk, pct);
+    printf("  %-32s  %7" PRIu32 "  %7" PRIu32 "  %6.2f  %7.2f%%\n", label, cyc_blk, cyc_smp, us_blk, pct);
 }
 
 // Needed for platform_cycles_now().
@@ -62,12 +58,11 @@ static void bb_print_row(const char* label, uint64_t t0, uint64_t t1,
 // -------------------------------------------------------------------------
 // bench_blocks_run — public C-ABI entry (declared in bench.h)
 // -------------------------------------------------------------------------
-extern "C" void bench_blocks_run(uint32_t block_period, uint32_t cps, uint32_t n)
-{
+extern "C" void bench_blocks_run(uint32_t block_period, uint32_t cps, uint32_t n) {
     // Single scratch buffer; reused across kernels so content feeds the next
     // (prevents constant-folding across iterations).
     static float buf[256];
-    if (n > 256) n = 256;   // safety cap (block_size is always 64)
+    if (n > 256) n = 256;  // safety cap (block_size is always 64)
     for (uint32_t i = 0; i < n; i++) buf[i] = 0.01f * ((float)i - 32.0f);
 
     const float sr = 48000.0f;
@@ -89,9 +84,8 @@ extern "C" void bench_blocks_run(uint32_t block_period, uint32_t cps, uint32_t n
             for (uint32_t i = 0; i < n; i++) buf[i] = osc.process();
         }
         uint64_t t1 = platform_cycles_now();
-        bb_sink = buf[n - 1];
-        bb_print_row("dsp::Osc PolyBLEP saw",
-                     t0, t1, BB_REPEATS, n, block_period, cps);
+        bb_sink     = buf[n - 1];
+        bb_print_row("dsp::Osc PolyBLEP saw", t0, t1, BB_REPEATS, n, block_period, cps);
     }
 
     // ------------------------------------------------------------------
@@ -101,7 +95,7 @@ extern "C" void bench_blocks_run(uint32_t block_period, uint32_t cps, uint32_t n
         static dsp::Filter flt;
         flt.init(sr);
         flt.set_res(0.3f);
-        flt.set_freq(2000.0f);   // set once before loop — block-rate design
+        flt.set_freq(2000.0f);  // set once before loop — block-rate design
 
         // Warmup.
         for (uint32_t i = 0; i < n; i++) {
@@ -112,16 +106,15 @@ extern "C" void bench_blocks_run(uint32_t block_period, uint32_t cps, uint32_t n
 
         uint64_t t0 = platform_cycles_now();
         for (int r = 0; r < BB_REPEATS; r++) {
-            flt.set_freq(2000.0f);   // block-rate set_freq (once per block)
+            flt.set_freq(2000.0f);  // block-rate set_freq (once per block)
             for (uint32_t i = 0; i < n; i++) {
                 flt.process(buf[i]);
                 buf[i] = flt.output();
             }
         }
         uint64_t t1 = platform_cycles_now();
-        bb_sink = buf[n - 1];
-        bb_print_row("dsp::Filter SVF (block-rate freq)",
-                     t0, t1, BB_REPEATS, n, block_period, cps);
+        bb_sink     = buf[n - 1];
+        bb_print_row("dsp::Filter SVF (block-rate freq)", t0, t1, BB_REPEATS, n, block_period, cps);
     }
 
     // ------------------------------------------------------------------
@@ -144,9 +137,8 @@ extern "C" void bench_blocks_run(uint32_t block_period, uint32_t cps, uint32_t n
             for (uint32_t i = 0; i < n; i++) buf[i] = env.process(true);
         }
         uint64_t t1 = platform_cycles_now();
-        bb_sink = buf[n - 1];
-        bb_print_row("dsp::Env ADSR",
-                     t0, t1, BB_REPEATS, n, block_period, cps);
+        bb_sink     = buf[n - 1];
+        bb_print_row("dsp::Env ADSR", t0, t1, BB_REPEATS, n, block_period, cps);
     }
 
     // ------------------------------------------------------------------
@@ -167,9 +159,8 @@ extern "C" void bench_blocks_run(uint32_t block_period, uint32_t cps, uint32_t n
             for (uint32_t i = 0; i < n; i++) buf[i] = lfo_sine.process();
         }
         uint64_t t1 = platform_cycles_now();
-        bb_sink = buf[n - 1];
-        bb_print_row("dsp::Lfo SINE (per-sample sinf)",
-                     t0, t1, BB_REPEATS, n, block_period, cps);
+        bb_sink     = buf[n - 1];
+        bb_print_row("dsp::Lfo SINE (per-sample sinf)", t0, t1, BB_REPEATS, n, block_period, cps);
     }
 
     // ------------------------------------------------------------------
@@ -190,9 +181,8 @@ extern "C" void bench_blocks_run(uint32_t block_period, uint32_t cps, uint32_t n
             for (uint32_t i = 0; i < n; i++) buf[i] = lfo_tri.process();
         }
         uint64_t t1 = platform_cycles_now();
-        bb_sink = buf[n - 1];
-        bb_print_row("dsp::Lfo TRI",
-                     t0, t1, BB_REPEATS, n, block_period, cps);
+        bb_sink     = buf[n - 1];
+        bb_print_row("dsp::Lfo TRI", t0, t1, BB_REPEATS, n, block_period, cps);
     }
 
     // ------------------------------------------------------------------
@@ -211,9 +201,8 @@ extern "C" void bench_blocks_run(uint32_t block_period, uint32_t cps, uint32_t n
             for (uint32_t i = 0; i < n; i++) buf[i] = noise.Process();
         }
         uint64_t t1 = platform_cycles_now();
-        bb_sink = buf[n - 1];
-        bb_print_row("WhiteNoise",
-                     t0, t1, BB_REPEATS, n, block_period, cps);
+        bb_sink     = buf[n - 1];
+        bb_print_row("WhiteNoise", t0, t1, BB_REPEATS, n, block_period, cps);
     }
 
     // ------------------------------------------------------------------
@@ -228,17 +217,17 @@ extern "C" void bench_blocks_run(uint32_t block_period, uint32_t cps, uint32_t n
         static ModMatrix mat;
         mat.clear();
         Routing r0;
-        r0.source       = static_cast<uint8_t>(ModSource::ENV2);
-        r0.dest_param_id = 0x20u;   // FILTER_CUTOFF
-        r0.depth        = 0.35f;
-        r0.curve        = static_cast<uint8_t>(ModCurve::LIN);
+        r0.source        = static_cast<uint8_t>(ModSource::ENV2);
+        r0.dest_param_id = 0x20u;  // FILTER_CUTOFF
+        r0.depth         = 0.35f;
+        r0.curve         = static_cast<uint8_t>(ModCurve::LIN);
         mat.set_route(0, r0);
 
         Routing r1;
-        r1.source       = static_cast<uint8_t>(ModSource::LFO1);
+        r1.source        = static_cast<uint8_t>(ModSource::LFO1);
         r1.dest_param_id = 0xFFFDu;  // kPresetDestPwm sentinel
-        r1.depth        = 0.20f;
-        r1.curve        = static_cast<uint8_t>(ModCurve::LIN);
+        r1.depth         = 0.20f;
+        r1.curve         = static_cast<uint8_t>(ModCurve::LIN);
         mat.set_route(1, r1);
 
         ModSources msrc;
@@ -247,17 +236,16 @@ extern "C" void bench_blocks_run(uint32_t block_period, uint32_t cps, uint32_t n
 
         // Warmup.
         volatile ModOutputs out = mat.eval(msrc);
-        bb_sink = out.cutoff_mod;
+        bb_sink                 = out.cutoff_mod;
 
         uint64_t t0 = platform_cycles_now();
         for (int r = 0; r < BB_MOD_REPEATS; r++) {
             ModOutputs o = mat.eval(msrc);
-            bb_sink = o.cutoff_mod;   // prevent dead-strip
+            bb_sink      = o.cutoff_mod;  // prevent dead-strip
         }
         uint64_t t1 = platform_cycles_now();
         // Report as cyc/blk (one eval per block); pass n=1 so cyc/smp = cyc/blk.
-        bb_print_row("ModMatrix eval (per block)",
-                     t0, t1, BB_MOD_REPEATS, 1u, block_period, cps);
+        bb_print_row("ModMatrix eval (per block)", t0, t1, BB_MOD_REPEATS, 1u, block_period, cps);
     }
 }
 

@@ -7,12 +7,11 @@
 #endif
 #endif
 
-#include "param_store.h"
 #include <math.h>
 #include <string.h>
+#include "param_store.h"
 
-void ParamStore::init(const ParamDesc* table, int count,
-                      float sample_rate, int block_size) {
+void ParamStore::init(const ParamDesc* table, int count, float sample_rate, int block_size) {
     table_ = table;
     count_ = count;
     memset(s_, 0, sizeof(s_));
@@ -28,12 +27,12 @@ void ParamStore::init(const ParamDesc* table, int count,
         const ParamDesc& d = table[i];
         if (d.id >= kParamIdMax) continue;
         ParamState& s = s_[d.id];
-        s.valid   = true;
-        s.current = d.def;
-        s.target  = d.def;
+        s.valid       = true;
+        s.current     = d.def;
+        s.target      = d.def;
         if (d.smoothing_ms > 0.0f) {
             const float tau = d.smoothing_ms * 0.001f;
-            s.alpha = 1.0f - expf(-block_dt / tau);
+            s.alpha         = 1.0f - expf(-block_dt / tau);
         } else {
             s.alpha = 1.0f;  // instant: current tracks target exactly
         }
@@ -89,7 +88,7 @@ IRAM_ATTR void ParamStore::drain() {
 
     // 1. Drain the ring: update targets (and snap instants immediately).
     //    Track which ids received a new target this block.
-    bool new_target[kParamIdMax] = {};
+    bool        new_target[kParamIdMax] = {};
     ParamUpdate upd;
     while (ring_.pop(upd)) {
         if (upd.id < kParamIdMax && s_[upd.id].valid) {
@@ -115,12 +114,12 @@ IRAM_ATTR void ParamStore::drain() {
         }
 
         const float before = s.current;
-        s.current += (s.target - s.current) * s.alpha;
+        s.current         += (s.target - s.current) * s.alpha;
         // Anti-denormal: P4 has no hardware FTZ (ADR 0012). Smoothed params
         // can approach zero asymptotically; a tiny DC offset flushes the
         // denormal before it stalls the FPU pipeline.
-        s.current += 1e-18f;
-        s.current -= 1e-18f;
+        s.current         += 1e-18f;
+        s.current         -= 1e-18f;
 
         // Snap to target when settled (avoids asymptotic crawl).
         const float tgt = s.target;
@@ -166,9 +165,9 @@ float ParamStore::apply_curve(const ParamDesc& d, float norm) {
         }
         case CURVE_STEPPED: {
             const int steps = (int)(d.max - d.min);
-            int step  = (int)(norm * (float)(steps + 1));
+            int       step  = (int)(norm * (float)(steps + 1));
             if (step > steps) step = steps;
-            if (step < 0)     step = 0;
+            if (step < 0) step = 0;
             return d.min + (float)step;
         }
     }

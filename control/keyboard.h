@@ -4,8 +4,8 @@
 // Lives in control/ so it never touches the audio path directly.
 #pragma once
 
-#include "platform.h"
 #include <stdbool.h>
+#include "platform.h"
 
 #ifdef __cplusplus
 extern "C" {

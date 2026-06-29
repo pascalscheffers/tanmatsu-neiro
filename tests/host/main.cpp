@@ -1,6 +1,6 @@
 /* tests/host/main.cpp — host DSP test runner entry point */
-#include "runner.h"
 #include <stdio.h>
+#include "runner.h"
 
 /* Declarations — one per test file */
 void test_osc_polyblep_aliasing();
@@ -14,8 +14,7 @@ void test_mod_sources_suite();
 void test_mod_matrix_suite();
 void test_params_suite();
 
-int main(void)
-{
+int main(void) {
     printf("=== tanmatsu host DSP tests ===\n");
     test_osc_polyblep_aliasing();
     test_voice_suite();

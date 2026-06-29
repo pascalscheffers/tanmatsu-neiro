@@ -4,10 +4,10 @@
 // engine, starts the audio sink, then loops: drain input, redraw the UI,
 // present, pace. Audio runs independently on the HAL's audio thread.
 #include "app.h"
+#include "control/keyboard.h"
 #include "platform.h"
 #include "synth.h"
 #include "ui.h"
-#include "control/keyboard.h"
 #ifdef SYNTH_BENCH
 #include "bench.h"
 #endif

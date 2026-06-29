@@ -24,19 +24,19 @@ namespace dsp {
 enum class LfoWave : int {
     SINE   = 0,
     TRI    = 1,
-    SAW    = 2,   // upward ramp 0..+1..-1..0
-    SQUARE = 4,   // +1 for first half, -1 for second half
-    SH     = 5,   // sample-and-hold: new random value each cycle
+    SAW    = 2,  // upward ramp 0..+1..-1..0
+    SQUARE = 4,  // +1 for first half, -1 for second half
+    SH     = 5,  // sample-and-hold: new random value each cycle
 };
 
 class Lfo {
 public:
     void init(float sample_rate) {
-        sr_       = sample_rate;
-        phase_    = 0.0f;
-        phase_inc_= 0.0f;
-        sh_value_ = 0.0f;
-        wave_     = LfoWave::SINE;
+        sr_        = sample_rate;
+        phase_     = 0.0f;
+        phase_inc_ = 0.0f;
+        sh_value_  = 0.0f;
+        wave_      = LfoWave::SINE;
     }
 
     // Set rate in Hz (0 = frozen).
@@ -53,7 +53,7 @@ public:
 
         // Advance phase.
         float prev = phase_;
-        phase_ += phase_inc_;
+        phase_    += phase_inc_;
         if (phase_ >= 1.0f) {
             phase_ -= 1.0f;
             // S&H: latch a new random value at cycle start.
@@ -92,11 +92,11 @@ public:
     }
 
 private:
-    float   sr_       = 48000.0f;
-    float   phase_    = 0.0f;   // normalised [0, 1)
-    float   phase_inc_= 0.0f;   // Hz / sample_rate
-    float   sh_value_ = 0.0f;   // last latched S&H value
-    LfoWave wave_     = LfoWave::SINE;
+    float   sr_        = 48000.0f;
+    float   phase_     = 0.0f;  // normalised [0, 1)
+    float   phase_inc_ = 0.0f;  // Hz / sample_rate
+    float   sh_value_  = 0.0f;  // last latched S&H value
+    LfoWave wave_      = LfoWave::SINE;
 
     float compute(float ph) const {
         // ph ∈ [0, 1); all outputs ∈ [−1, +1].
@@ -105,14 +105,12 @@ private:
         switch (wave_) {
             case LfoWave::SINE: {
                 // sinf is fine at sub-audio rate; not hot enough to matter.
-                float v = sinf(ph * 6.2831853f);   // 2π
+                float v = sinf(ph * 6.2831853f);  // 2π
                 return v + 1e-20f;
             }
             case LfoWave::TRI: {
                 // 0→1: ph∈[0,0.5) → 0→+1; ph∈[0.5,1) → +1→-1
-                float v = (ph < 0.5f)
-                    ? (4.0f * ph - 1.0f)
-                    : (3.0f - 4.0f * ph);
+                float v = (ph < 0.5f) ? (4.0f * ph - 1.0f) : (3.0f - 4.0f * ph);
                 return v + 1e-20f;
             }
             case LfoWave::SAW: {
@@ -132,4 +130,4 @@ private:
     }
 };
 
-} // namespace dsp
+}  // namespace dsp
