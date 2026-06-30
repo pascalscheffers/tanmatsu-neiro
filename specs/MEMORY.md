@@ -331,6 +331,35 @@ the asymmetry is present and correct.
 
 See [ADR 0021](decisions/0021-master-output-staging-and-limiter.md) for full rationale.
 
+## 2026-06-30 — Device crackle diagnostics: audio-block profiler + display freeze (COMPLETE)
+
+Added two build-flag-gated diagnostic modes to isolate the Solo Lead patch crackle
+under heavy key-smashing (suspected RT deadline miss). No shipping behavior change —
+all new runtime code is under `#ifdef`.
+
+**SYNTH_PROFILE** (`make build PROFILE=1` / `cmake -DSYNTH_PROFILE=ON`):
+- `platform/device/platform_device.c`: wraps `s_render()` with `esp_cpu_get_cycle_count()`;
+  accumulates sum/max/over-budget counters (budget 480 000 cyc = 360 MHz × 64 / 48000).
+  Measures render compute only — `i2s_channel_write` DMA-wait is excluded by design.
+- `platform/platform.h`: `platform_audio_profile_read(avg, max, over, count)` declared
+  unconditionally; returns zeros when SYNTH_PROFILE is off (shipping safe).
+- `platform/host/platform_host.c`: stub always returns zeros.
+- `app/app.c`: ~1 s cadence readout in the main `while (running)` loop.
+  Console output: `[PROFILE] audio avg=X max=Y over=Z/N us-budget=1333`
+
+**SYNTH_FREEZE_DISPLAY** (`make build FREEZE_DISPLAY=1` / `-DSYNTH_FREEZE_DISPLAY=ON`):
+- `app/app.c` `render_cb`: first frame paints normally, every subsequent call returns
+  immediately. Removes display-blit (~1.15 MB) / memory-bus pressure from core 0 so
+  PROFILE=1 tests can isolate audio compute from blit contention.
+
+**2×2 test matrix** (smash and hold keys on Solo Lead while watching the console):
+1. `make build PROFILE=1` — baseline: both suspects active (audio compute + display blit).
+2. `make build PROFILE=1 FREEZE_DISPLAY=1` — display frozen: only audio compute.
+   If `over` drops to 0 → blit contention is the culprit. If `over` stays high → compute.
+
+`make host` ✅ `make test` ✅ (all pass) `make build` ✅ `make build PROFILE=1` ✅
+`make build PROFILE=1 FREEZE_DISPLAY=1` ✅ `make format` ✅. Commit: 1f4e39d.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
