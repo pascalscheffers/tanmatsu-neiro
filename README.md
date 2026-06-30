@@ -101,6 +101,20 @@ A few standard General-MIDI CCs are also recognised — handy if your controller
 
 **Parameter pages (pages 2–9):** nine fixed pages in order — PRESET · PERFORM · OSC · FILTER · AMP ENV · MOD ENV · LFO · FX · AMP. Multi-group pages (PERFORM = Clock + Arp; FILTER = VCF + HPF) show a section sub-header before each group. The status strip at the bottom shows active voices, the current octave, and the loaded preset name.
 
+## Known issues
+
+- **Crackle on dense, loud chords.** Smashing roughly four or more notes at once — or fewer notes hit hard — can produce brief crackle. It is **not** distortion or clipping: the signal chain stays clean (the limiter never even engages). It is an audio-block CPU **underrun** — individual blocks momentarily spike to nearly twice their time budget during note-on bursts, and the full-screen redraw competing for the memory bus while the voice meter animates makes it worse. The steady cost of eight voices is well within budget; only the transient spikes drop samples. The next step is to confirm how much of the spike is display contention (dirty-rect redraw, below) versus note-on cost. Soft or sparse playing is clean.
+- **High-pass filter is not wired.** The FILTER page shows an HPF group, but its cutoff does not yet affect the audio path.
+
+## Roadmap
+
+Bigger features that are designed-for but not yet built (see [`specs/06-feature-scope-and-roadmap.md`](specs/06-feature-scope-and-roadmap.md) for the full scope):
+
+- **Effects:** tempo-synced delay and a reverb (DaisySP `ReverbSc`) — the FX page is in place ahead of the DSP.
+- **Step sequencer** and a **Standard MIDI File player** for hands-free playback.
+- **Dirty-rect display blitting** — only repaint the parts of the screen that changed, instead of the whole ~1.15 MB framebuffer. Cuts the memory-bus contention behind the crackle above and frees CPU budget for the effects.
+- **Wire up the HPF**, a tap-tempo button on the UI, and MIDI-learn for per-controller CC mapping.
+
 ## License
 
 Original code is [MIT](https://opensource.org/license/mit). Built on the [`tanmatsu-template`](https://github.com/Nicolai-Electronics/tanmatsu-template) (CC0-1.0) and the [PAX graphics](https://github.com/robotman2412/pax-graphics) library; vendored DSP (DaisySP and others) retains its own permissive licenses — see [`specs/02-synth-architecture.md`](specs/02-synth-architecture.md).
