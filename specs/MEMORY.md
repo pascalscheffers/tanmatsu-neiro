@@ -577,48 +577,43 @@ Image: 0x112540 B (46% partition free, DIRAM delta ~0). Commit: 29d89d1.
 
 **Resolves:** the OPEN crackle voice-leak handoff (2026-06-30 investigation log). Pending Pascal's device verification (play → release all keys → voice meter should return to 0).
 
-## 2026-06-30 — 🔎 POLY-TRANSIENT CRACKLE — DIAGNOSIS & HANDOFF (OPEN, awaiting profile numbers)
+## 2026-06-30 — 🔎 POLY CRACKLE = CPU DEADLINE MISS (not amplitude) — HANDOFF (OPEN)
 
-The mono+unison **voice leak is FIXED** (29d89d1, above). A **separate, still-open crackle
-remains** and it is now well-characterised. Read this to resume.
+The mono+unison **voice leak is FIXED** (29d89d1, above). A **separate poly crackle remains
+OPEN**, and the device profiler has now **falsified the amplitude hypothesis** — it is a **CPU
+deadline miss (audio-block underrun)**, not transient overshoot/clipping.
 
-**Symptom (Pascal, on Juno EP, a poly patch):** smash 2 notes → clean; 3 notes → clean unless
-**hard**; 4 notes → crackle; 8 notes → crackle even at moderate velocity. So it scales with
-**velocity × polyphony**. Distinct from the mono leak (that was a stuck sine; this is attack-
-transient grit/crackle on loud chords).
+**Symptom (Pascal, Juno EP, poly):** crackle scales with velocity × polyphony — 4 notes, or 3
+hard, or 8 moderate.
 
-**Diagnosis (from code + symptom, `engine/synth.cpp` step 6 + `dsp/limiter.h` + `dsp/saturate.h`):**
-transient overshoot into the soft-clip ceiling.
-- Gain pipeline: voice-sum → ×`gain` (`MASTER_GAIN`·`channel_vol`·`unison_gain(U)`) → limiter `gr`
-  → `soft_clip` → out. For **poly, `unison_gain(1)=1.0`** — there is **no polyphony attenuation**;
-  N notes sum linearly.
-- `dsp/limiter.h` has a **1 ms attack** (`a_att_≈0.02/sample`, ~48-sample catch). A hard poly
-  *attack transient* passes through that ~48-sample window **before `gr` clamps**, hits
-  `soft_clip` (cubic, hard-clamp at ±1.5), and anything past the ~0.92 knee distorts / a big
-  transient hard-clips → the crackle. The limiter header literally notes it "leaves headroom for
-  attack-miss transients" and reserves a `// look-ahead` TODO — those attack-miss transients are
-  the bug.
-- **CPU ruled out:** 3–4 hard voices crackle, but 3–4 voices ≈ 30% of the 480k-cyc budget
-  (Stage 3d-ii ratified 8 voices = 50.8%). Amplitude, not deadline miss.
-- The **instant-attack limiter was already tried and reverted** (44a227b) — it flat-topped
-  transients (its own distortion). So the clean fix is **look-ahead**, not faster attack.
+**Profile numbers (device, `PROFILE=1 USBHOST_DEBUG=1`, budget = 1333 µs/block):**
+- `sig` chain is CLEAN at loudest: `mono=3.95 postg=0.84 gr=1.00 out=0.76`. `postg` never crosses
+  the 0.92 knee, `gr` stays **1.00** (limiter never engages), `out` peaks 0.76. **No clip, no
+  limiting** → NOT a headroom problem. **Look-ahead limiter is the WRONG fix — do not build it.**
+- `audio` breaks: idle `avg=80 max=85 over=0`; smashing → `avg=331 max=1774 over=9` …
+  `avg=699 max=2262 over=16` … `avg=690 max=2547 over=21/750`. **max ≈ 1.9× budget, 9–21
+  blocks/sec over.** Those overruns ARE the crackle.
 
-**LEADING FIX (pending confirmation): look-ahead limiter** in `dsp/limiter.h` — delay the signal
-by ~the attack window (≈48–64 samples / ~1 ms) via a small ring buffer so `gr` drops *before* the
-peak arrives. No distortion; small latency. Possibly + a touch more master headroom. (Alt/cheaper
-interim if numbers point that way: lower per-voice/master gain staging so loud poly transients
-stay under the soft-clip knee — but that just reduces amplitude, doesn't truly fix transients.)
+**Decomposition:** baseline full-poly `avg≈690 µs ≈ 52%` matches the ratified 8-voice cost (fine).
+The killer is **per-block spikes to ~2× budget** riding on top, clustered around the MIDI note-on
+bursts in the log AND the voice-meter animating the ~1.15 MB full-screen blit during play.
 
-**AWAITING (Pascal is capturing now):** `make PROFILE=1 USBHOST_DEBUG=1 build install run` + `make
-sniff`, smash 4–8 hard on Juno EP, read:
-- `[PROFILE] sig mono/postg/gr/out` — expect **`postg`≫0.92, `out`≈1.0, `gr`<1 (engaging)** ⇒
-  confirms transient overshoot ⇒ build the look-ahead limiter.
-- `[PROFILE] audio avg/max/over` — expect **`over`=0** (confirms not CPU). If `over`>0, different
-  track (perf / WS3 dirty-rect blit).
+**Two prime spike sources (one measurement away from being settled):**
+1. **Display-blit contention** — core-0 blit (framebuffer in PSRAM) starves core-1 audio's PSRAM
+   wavetable fetches. This is the "real at high poly" contention the earlier handoff flagged.
+   Fix = **WS3 dirty-rect blit (Stage 2B)** — already the planned lever; also frees FX budget.
+2. **Note-on burst / cold-wavetable voice activation** — a chord's worth of note-ons draining in
+   one audio block (alloc scan + `JunoVoice::note_on` + first cold PSRAM wavetable touch per newly
+   active voice). Fix = optimize that path.
+   (`USBHOST_DEBUG` per-event `ESP_LOGI` also adds core-0 load — quiet it for clean measurement.)
 
-When the numbers land: confirm the hypothesis, then implement the look-ahead limiter (small,
-specifiable → closed work-order). Update `test_limiter.cpp` (assert a loud step transient yields
-`out ≤ ~0.95`, i.e. no soft-clip breach) and ADR 0021 §2 (attack/look-ahead change).
+**NEXT MEASUREMENT (requested from Pascal):** `make PROFILE=1 FREEZE_DISPLAY=1 USBHOST_DEBUG=1
+build install run` + `make sniff`, smash 8 hard on Juno EP, read `[PROFILE] audio`:
+- `over` → ~0  ⇒ **display-blit contention** is it ⇒ implement WS3 dirty-rect blit (Stage 2B).
+- `over` stays high ⇒ **note-on/activation compute spike** ⇒ profile & optimize `JunoVoice::note_on`
+  / voice wake path (consider warming wavetable access, cheaper note_on).
+
+Lesson (RT rule 6): amplitude intuition was wrong; the signal probe + cycle profiler settled it.
 
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
