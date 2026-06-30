@@ -36,72 +36,49 @@ static void test_limiter_sustained_over_threshold(void) {
     test_pass();
 }
 
-// Case 3: attack — instant clamp on first over-threshold sample.
-// With instantaneous attack, the very first over-threshold sample must result in a gr
-// that keeps peak*gr at or below threshold (no transient escape into soft_clip's ±1.5 wall).
-// This is the regression test for the crackle bug: under the OLD 1 ms one-pole attack,
-// the first-sample gr was ~1.0 so peak*gr ≈ 2.0, which sailed into soft_clip's hard ±1.5
-// ceiling producing audible crackle on hard playing.
+// Case 3: attack — step from below to above threshold; catch within ~5 ms
 static void test_limiter_attack(void) {
-    test_begin("limiter: attack — first over-thresh sample clamped to threshold immediately");
+    test_begin("limiter: attack — catch within 5 ms; first sample near 1.0");
     dsp::LimiterStereo lim;
     lim.init(kSr);
-    // Warm up below threshold so env_gr starts at 1.0
+    // Warm up below threshold so env_gr is 1.0
     for (int i = 0; i < 2000; i++) {
         lim.process(0.5f);
     }
-    // First over-threshold sample at peak = 2.0: instantaneous attack must clamp now.
-    // gr must bring peak to ≤ thresh immediately (gr ≤ thresh/peak + epsilon).
+    // First over-threshold sample: gr should still be near 1.0 (overshoot is expected)
     float gr_first = lim.process(2.0f);
-    // Instantaneous attack: peak * gr must be at threshold
-    TEST_ASSERT(2.0f * gr_first <= kThresh + 1e-4f,
-                "instant attack: first over-thresh sample not clamped to threshold");
-    // As a consequence, soft_clip output must stay well below 1.0 (not hitting hard wall)
-    float clipped = soft_clip(2.0f * gr_first);
-    TEST_ASSERT(clipped < 0.95f, "instant attack: soft_clip output too high — transient escaped into hard clip");
+    TEST_ASSERT(gr_first > 0.95f, "first over-thresh sample: gr should be near 1.0 (feed-forward)");
+
+    // After ~5 ms (240 samples at 48 kHz), limited signal should be ≤ thresh + margin
+    float     gr             = gr_first;
+    const int kAttackSamples = 240;  // 5 ms @ 48 kHz
+    for (int i = 1; i < kAttackSamples; i++) {
+        gr = lim.process(2.0f);
+    }
+    TEST_ASSERT(2.0f * gr <= kThresh + 0.05f, "attack: not caught within 5 ms (+0.05 margin)");
     test_pass();
 }
 
-// Case 3b: transient overshoot regression — specifically tests that crackle scenario
-// (hard/loud playing with env starting at unity) is fixed.
-static void test_limiter_no_transient_overshoot(void) {
-    test_begin("limiter: no transient overshoot — soft_clip(peak*gr) < 0.95 on first loud frame");
-    dsp::LimiterStereo lim;
-    lim.init(kSr);
-    // Env starts at unity (init state). Feed a loud frame immediately — worst case.
-    float gr      = lim.process(2.0f);
-    float limited = 2.0f * gr;
-    // Must be at or below threshold (instantaneous attack)
-    TEST_ASSERT(limited <= kThresh + 1e-4f,
-                "first-sample overshoot: peak*gr exceeds threshold (crackle bug regression)");
-    // Must NOT be routed into soft_clip's ±1.5 hard-clip zone
-    float clipped = soft_clip(limited);
-    TEST_ASSERT(clipped < 0.95f, "first-sample overshoot: soft_clip output near hard ceiling (crackle zone)");
-    test_pass();
-}
-
-// Case 4: net safety — soft_clip(peak * gr) never exceeds full scale.
-// With instant attack, the first over-threshold sample is clamped immediately, so
-// soft_clip(peak*gr) must be <= 1.0 without needing soft_clip as a safety net.
+// Case 4: net safety — soft_clip(peak * gr) never exceeds full scale
 static void test_limiter_net_safety(void) {
-    test_begin("limiter: soft_clip(peak*gr) <= 1.0 with instant attack on first sample");
+    test_begin("limiter: soft_clip(peak*gr) <= 1.0 even on first-sample overshoot");
     dsp::LimiterStereo lim;
     lim.init(kSr);
     // warm up at unity
     for (int i = 0; i < 2000; i++) {
         lim.process(0.5f);
     }
-    // With instant attack: first sample at peak 2.0 → gr = thresh/2.0 → soft_clip(thresh)
+    // Worst case: first sample at peak 2.0 → gr ≈ 1.0 → soft_clip(2.0)
     float gr      = lim.process(2.0f);
     float clipped = soft_clip(2.0f * gr);
-    TEST_ASSERT(clipped <= 1.0f, "soft_clip(peak*gr) exceeds 1.0 — limiter did not clamp");
+    TEST_ASSERT(clipped <= 1.0f, "soft_clip(peak*gr) exceeds 1.0 on first-sample overshoot");
     test_pass();
 }
 
 // Case 5: release recovery — returns to unity well within 10× release time constant.
 // 120 ms release → τ = 5760 samples. Recovery from env_gr≈0.46 to 0.999 requires
 // ~6.3 τ ≈ 36 k samples. We check against 60 k (generous budget) and also assert
-// that release is much slower than attack (attack is instantaneous = 1 sample;
+// that it takes many more samples than the 1 ms attack (attack catches in ~240 samples,
 // release must take >> 1000 samples — verifying the asymmetry).
 static void test_limiter_release(void) {
     test_begin("limiter: release — recovers to >= 0.999 within 60000 samples");
@@ -123,8 +100,8 @@ static void test_limiter_release(void) {
     }
     TEST_ASSERT(gr >= 0.999f, "limiter did not recover to >= 0.999 within 60000 samples");
 
-    // Attack is instantaneous (1 sample); release must take >> 1000 samples.
-    // This confirms the asymmetry: instant attack, slow 120 ms release — no pumping.
+    // Also verify: attack (case 3 found it within ~240 samples) << release recovery
+    // Attack catches peak 2.0 within 240 samples; release should take much longer
     TEST_ASSERT(recover_samples > 1000, "release recovery suspiciously fast (< 1000 samples)");
     test_pass();
 }
@@ -203,7 +180,6 @@ void test_limiter_suite(void) {
     test_limiter_below_threshold();
     test_limiter_sustained_over_threshold();
     test_limiter_attack();
-    test_limiter_no_transient_overshoot();
     test_limiter_net_safety();
     test_limiter_release();
     test_limiter_threshold_boundary();

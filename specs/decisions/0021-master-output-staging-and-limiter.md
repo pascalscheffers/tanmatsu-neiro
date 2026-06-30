@@ -83,21 +83,19 @@ may be exposed as params later):
 
 | Symbol | Value | Why |
 |---|---|---|
-| `THRESH` | 0.92 | Keeps limited steady-state in soft_clip's near-linear zone (`soft_clip(0.92)≈0.80`); no residual headroom needed because attack is now instantaneous. |
-| attack | **instantaneous** (per-sample peak clamp) | `env_gr` snaps to `target` on the very sample the transient arrives — no one-pole ramp. This is the fix for a confirmed device bug: the original 1 ms one-pole attack let velocity-scaled transients overshoot into soft_clip's hard ±1.5 ceiling, producing audible crackle on hard/loud playing (confirmed on device: clean at `MASTER_GAIN=0.10`, crackle on loud strikes). No look-ahead latency is added; the clamp is sample-synchronous. |
+| `THRESH` | 0.92 | Keeps limited steady-state in soft_clip's near-linear zone (`soft_clip(0.92)≈0.80`); headroom for attack-miss transients before the ±1.5 hard clamp. |
+| attack | 1.0 ms | `a_att = 1 − exp(−1/(0.001·sr)) ≈ 0.0202`. ~48-sample catch; no per-sample gain jumps. |
 | release | 120 ms | `a_rel = 1 − exp(−1/(0.120·sr)) ≈ 0.000174`. **Transparent** character — no pumping on sustained chords, quick loudness recovery. |
 
-`expf` is computed once in `init()` for the release coefficient — **never** in the
-render path. The release one-pole formula matches the project convention (`param_store.cpp`).
-No `logf`/`expf`/`tanhf` per sample; one compare, one multiply/add — IRAM-safe.
-**No look-ahead** in this version — it would add 1–2 ms of instrument latency, and with
-instantaneous attack there is no attack-miss residual that would require it. The module
-leaves room for a look-ahead field later without an API change if sustained-LF distortion
-is ever heard in practice.
+`exp` is computed once in `init()` from the sample rate — **never** in the render path.
+The coefficient formula matches the project's one-pole convention (`param_store.cpp`).
+No `logf`/`expf`/`tanhf` per sample; branch-light. **No look-ahead** in this version —
+it would add 1–2 ms of instrument latency; the 1 ms attack overshoot is exactly what the
+retained soft-clip catches. The module leaves room for a look-ahead field later without
+an API change.
 
-**Layering:** limiter (instantaneous gain reduction on transients, smooth release) →
-`soft_clip` (retained as the final safety net — now rarely engaged) →
-`to_i16` (absolute NaN/±1 backstop, unchanged).
+**Layering:** limiter (smooth gain reduction) → `soft_clip` (retained, catches the brief
+attack-miss residual) → `to_i16` (absolute NaN/±1 backstop, unchanged).
 
 ## Denormals (ADR 0012)
 
