@@ -360,6 +360,39 @@ all new runtime code is under `#ifdef`.
 `make host` ✅ `make test` ✅ (all pass) `make build` ✅ `make build PROFILE=1` ✅
 `make build PROFILE=1 FREEZE_DISPLAY=1` ✅ `make format` ✅. Commit: 1f4e39d.
 
+## 2026-06-30 — Instant-attack limiter: fix transient overshoot crackle (COMPLETE)
+
+**Bug:** Hard/loud playing produced audible crackle; soft playing was clean; `MASTER_GAIN=0.10`
+was clean at any velocity. Root cause: the 1 ms one-pole attack in `dsp/limiter.h` left
+`env_gr ≈ 1.0` for ~48 samples after the first over-threshold transient, so
+`peak × gr ≈ 2.0` sailed into `dsp/saturate.h soft_clip`'s hard ±1.5 ceiling — producing a
+hard clip that scaled with velocity exactly as observed. Device audio profiler showed `over=0`
+deadline misses, confirming purely an amplitude/transient issue.
+
+**Fix (`dsp/limiter.h`):** Replaced the one-pole attack with an instantaneous snap —
+`env_gr = target` immediately when more reduction is needed. Release (120 ms one-pole) is
+unchanged. `a_att_` member and its `expf()` computation in `init()` removed (now unused).
+No change to `engine/synth.cpp` required; the call site is unaffected.
+
+**Tests (`tests/host/test_limiter.cpp`):**
+- Added `test_limiter_attack`: first over-threshold sample is clamped to threshold
+  (`peak × gr ≤ thresh + 1e-4`) and `soft_clip(peak × gr) < 0.95`. **Failed pre-fix, passes post-fix.**
+- Added `test_limiter_no_transient_overshoot`: worst-case (env at unity, loud frame
+  immediately) — same assertions. **Failed pre-fix, passes post-fix.**
+- Adapted existing attack-timing case: now asserts instant 1-sample catch (not "within 5 ms").
+- Adapted net-safety case: comment updated to reflect instant attack.
+- Adapted release case: asymmetry comment updated to "attack = 1 sample, release >> 1000 samples."
+
+**Docs:** ADR 0021 §2 limiter table updated — attack changed from "1.0 ms" to
+"instantaneous (per-sample peak clamp)" with rationale paragraph.
+
+**Results:** `make test` ✅ (all pass, 2 new limiter cases) `make host` ✅ `make build` ✅
+`make format` ✅. Image: 0x112830 B (46% partition free; unchanged — `a_att_` removal
+offset the new code). Commit: 72b0d2f.
+
+**Note:** The device CPU-spike (mono release-tail pile-up causing periodic loudness dips)
+is a **separate open item** still under investigation — unrelated to this crackle fix.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
