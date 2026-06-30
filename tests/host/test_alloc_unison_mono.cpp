@@ -267,6 +267,76 @@ void test_play_mode_change_silences_voices() {
     test_pass();
 }
 
+/* -------------------------------------------------------------------------
+ * G. Buried-note release must not leak voices (the mono+unison stuck-note bug).
+ *
+ * Scenario 1 (the actual leak):
+ *   on 60 → slots {0,1} tagged 60, stack [60]
+ *   on 64 → reuse slots {0,1} as 64, stack [60,64]
+ *   off 60 (buried — was reused) → should only pop stack; sounding group (64) untouched
+ *   off 64 (sounding) → final note off; all voices must be released
+ *
+ * Before the fix, off 60 triggered steal-back (prev_pitch=64, cur_tag=64 — same
+ * group!), gated the 64 group off, retriggered it without restoring bookkeeping,
+ * so off 64 found nothing gated and voices leaked forever.
+ *
+ * Scenario 2 (sanity — release in played order):
+ *   on 60, on 64, off 64 (sounding), off 60 (now sounding) → also 0 gated, 0 active.
+ * ---------------------------------------------------------------------- */
+void test_unison_mono_release_all_no_leak() {
+    test_begin("mono+legato U=2: buried-note release must not leak voices");
+
+    // --- Scenario 1: release buried note first ---
+    {
+        JunoModel  model;
+        VoiceAlloc alloc;
+        model.init(kSr);
+        alloc.init(&model);
+        alloc.set_play_mode(PlayMode::kLegato);
+        alloc.set_unison_count(2);
+
+        NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+
+        alloc.note_on(60, 100, expr);  // stack [60], slots tagged 60
+        alloc.note_on(64, 100, expr);  // stack [60,64], slots reused → tagged 64
+        alloc.note_off(60);            // buried note: only pops stack; voices unchanged
+        alloc.note_off(64);            // last note: all voices must be released
+
+        int gated = count_gated(alloc.slots());
+        TEST_ASSERT(gated == 0, "buried-note scenario1: 0 gated after full release");
+        for (int i = 0; i < kNumVoices; i++) {
+            TEST_ASSERT(!alloc.slots()[i].voice->is_active(),
+                        "buried-note scenario1: every voice inactive after full release");
+        }
+    }
+
+    // --- Scenario 2: release in played order (sanity check) ---
+    {
+        JunoModel  model;
+        VoiceAlloc alloc;
+        model.init(kSr);
+        alloc.init(&model);
+        alloc.set_play_mode(PlayMode::kLegato);
+        alloc.set_unison_count(2);
+
+        NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+
+        alloc.note_on(60, 100, expr);
+        alloc.note_on(64, 100, expr);
+        alloc.note_off(64);  // sounding note off → steal-back to 60
+        alloc.note_off(60);  // now sounding note off → all released
+
+        int gated = count_gated(alloc.slots());
+        TEST_ASSERT(gated == 0, "buried-note scenario2: 0 gated after full release in order");
+        for (int i = 0; i < kNumVoices; i++) {
+            TEST_ASSERT(!alloc.slots()[i].voice->is_active(),
+                        "buried-note scenario2: every voice inactive after full release in order");
+        }
+    }
+
+    test_pass();
+}
+
 void test_alloc_unison_mono_suite() {
     test_unison_mono_rapid_retrigger();
     test_unison_mono_steal_back_cap();
@@ -274,4 +344,5 @@ void test_alloc_unison_mono_suite() {
     test_unison_mono_poly_regression();
     test_unison_mono_count_change();
     test_play_mode_change_silences_voices();
+    test_unison_mono_release_all_no_leak();
 }

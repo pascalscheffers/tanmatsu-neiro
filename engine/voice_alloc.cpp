@@ -408,6 +408,11 @@ void VoiceAlloc::note_off_mono(uint8_t pitch) {
     if (mono_slot_ < 0) return;
     VoiceSlot& s = slots_[mono_slot_];
 
+    // Last-note priority: only the currently-sounding note changes the voices.
+    // Releasing a held-but-buried note (whose slots were reused by a later note)
+    // just updates the stack above — the sounding group stays intact.
+    if (s.pitch != pitch) return;
+
     if (mono_stack_top_ > 0) {
         // Other notes still held — steal back to the most recent (top of stack).
         uint8_t prev_pitch = mono_stack_[mono_stack_top_ - 1];
@@ -454,11 +459,16 @@ void VoiceAlloc::note_off_mono(uint8_t pitch) {
                     }
                 }
                 // The prev_pitch group slots are already tagged correctly; just retrigger.
+                // Restore per-slot bookkeeping defensively in case a prior reuse left them
+                // with stale pitch/gate/unison_tag (latent-regression guard).
                 mono_slot_ = prev_group_slots[0];
                 for (int gi = 0; gi < prev_group_count; gi++) {
-                    int        idx = prev_group_slots[gi];
-                    VoiceSlot& sv  = slots_[idx];
-                    sv.timestamp   = ++tick_;
+                    int        idx   = prev_group_slots[gi];
+                    VoiceSlot& sv    = slots_[idx];
+                    sv.pitch         = prev_pitch;
+                    sv.gate          = true;
+                    unison_tag_[idx] = prev_pitch;
+                    sv.timestamp     = ++tick_;
                     sv.voice->note_on(prev_pitch, 127, expr);
                 }
             } else {
