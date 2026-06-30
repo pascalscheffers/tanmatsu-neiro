@@ -499,6 +499,65 @@ params drain — correct ordering guaranteed.
 
 `make test` ✅ `make host` ✅ `make build` ✅ `make format` ✅. Commit: 30fa253.
 
+## 2026-06-30 — 🔎 CRACKLE INVESTIGATION — STATE & HANDOFF (OPEN)
+
+Long crackle hunt. Big bugs fixed; a **residual remains** and the right move is a fresh-context
+session. Read this before resuming.
+
+**Current symptom (still open):** on device, an **intermittent "sticky" ~600 Hz sine** + **slight
+crackle**, on **ALL patches** (not Solo-Lead-specific), **present even with the display frozen**
+(`FREEZE_DISPLAY=1`). Character is now milder/shorter than at the start (the gross causes are gone).
+
+**Fixed this session (all committed, tests green):**
+- **Preset 32-param truncation** (`9caa5bf`) — apply buffers were `[32]`; presets carry 49 params,
+  so PLAY_MODE/UNISON/CHORUS_MODE/ARP (idx 33-49) were dropped → every patch booted at table
+  defaults (poly). New `PRESET_MAX_PARAMS=96` (`engine/preset.h`) used at all apply sites. **This
+  was the dominant crackle cause** (Solo Lead ran poly → 8 voices → soft_clip grit).
+- **Voice orphan/mute on mode change** (`30fa253`) — `set_play_mode` cleared tracking but didn't
+  silence gated voices → orphaned stuck voice (a sine) + accumulation to mute; now calls
+  `reset_all()` on change, and `engine_all_notes_off()` runs on every preset apply (ui.cpp +
+  ui_presets_state.cpp). Fixed the *mute* and the *original* sine — but a sine still recurs, so
+  there is ANOTHER stuck-voice path.
+- **Instant-attack limiter reverted** (`44a227b`) — it was effectively a hard clipper at threshold
+  (flat-tops transients); restored the ADR-0021 1 ms-attack limiter. Dormant for Solo Lead anyway.
+- **Build-flag determinism** (`0e5d402`), **mono+unison voice cap** (`73496d3`).
+
+**RULED OUT (don't re-chase):**
+- *Display-blit contention* — frozen display STILL crackles. (It does add deadline misses at high
+  poly voice counts — real, but not this residual.)
+- *soft_clip headroom* for Solo Lead — with PLAY_MODE loading, it's mono 2 voices: signal probe
+  showed `mono≈1.1, postg≈0.2, gr=1.00, over=0`, clean numbers. (Headroom may still matter for
+  genuinely-poly loud chords — open, low-pri.)
+- *MIDI note-on vel-0 not treated as note-off* — parser DOES convert it (`control/midi_in.c:134`).
+- *Instant-attack limiter* — reverted.
+
+**Leading hypotheses for the residual (a VOICE LEAK in the audio path):**
+1. **Note command-queue overflow under heavy smashing.** `CommandQueue<64>` (`engine/synth.cpp`
+   `s_cmds`). A hard 8-key chord smash can burst >64 note events between audio-thread drains; if
+   `push` drops on full, a dropped **note-off → stuck voice**. Intermittent, all patches. CHECK the
+   ring's full-behavior and whether bursts exceed 64.
+2. **Poly steal / note-off pitch→slot desync.** Under stealing, a stolen voice's original note-off
+   no-ops (`find_slot_for_pitch` miss); if the stealer's note-off is also lost/mismatched, the voice
+   sticks. General, intermittent.
+3. **Denormal/filter ring** producing a faint sine (P4 has no FTZ; ADR 0012). Less likely (VCA
+   gates by envelope), but a self-oscillating SVF on a stuck-gated voice fits ~600 Hz.
+
+**FIRST diagnostic next session (zero code):** smash, then **release ALL keys** — does the voice
+meter return to **0**? If it stays > 0 → **voice leak confirmed** (chase #1/#2). Ask Pascal or watch
+the meter. Then instrument: log/track voices still gated after all-notes-released; audit
+`s_cmds` push-on-full and the poly note_off matching under steal.
+
+**Diagnostics in-tree (behind flags; shipping image unaffected):**
+- `SYNTH_PROFILE`: audio-block cycle profiler + signal probe (`[PROFILE] sig mono/postg/gr/out`
+  via `engine_profile_read`) + `[PROFILE] audio avg/max/over`.
+- `SYNTH_FREEZE_DISPLAY`: paint once then freeze (isolates display contention).
+- Run: `make PROFILE=1 USBHOST_DEBUG=1 [FREEZE_DISPLAY=1] build install run` + `make sniff`.
+  (`USBHOST_DEBUG` keeps the USB-C console alive + routes the controller via USB-A; note its
+  per-MIDI-event `ESP_LOGI` is itself core-0 load — quiet it if it pollutes a measurement.)
+
+**Open follow-ups (non-blocking):** WS3 dirty-rect blit (Stage 2B — display is genuinely slow +
+cuts poly-chord contention underruns + frees budget for FX); optional poly headroom.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
