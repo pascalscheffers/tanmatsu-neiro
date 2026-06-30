@@ -393,6 +393,34 @@ offset the new code). Commit: 72b0d2f.
 **Note:** The device CPU-spike (mono release-tail pile-up causing periodic loudness dips)
 is a **separate open item** still under investigation — unrelated to this crackle fix.
 
+## 2026-06-30 — Signal-magnitude probe for master-chain crackle diagnosis (COMPLETE)
+
+Added a `SYNTH_PROFILE`-gated signal-magnitude probe to `engine/synth.cpp` `synth_render`
+step 6 (the per-sample loop). Four volatile float accumulators track peaks through the chain:
+
+- **mono** (`s_pk_mono`): peak of the raw voice-sum — what voices are contributing before gain.
+- **postg** (`s_pk_postgain`): peak fed into the limiter (post-gain). The key crackle indicator.
+- **gr** (`s_min_gr`): worst (lowest) limiter gain-reduction factor. 1.0 = limiter idle.
+- **out** (`s_pk_out`): peak output after `soft_clip`. Should stay ≤ 1.0; above that = hard clip.
+
+`engine_profile_read(pk_mono, pk_postgain, min_gr, pk_out)` (declared unconditionally in
+`engine/synth.h`; returns zeros when `SYNTH_PROFILE` off) snapshots+resets the accumulators.
+`app/app.c` calls it in the ~1 s PROFILE readout and prints:
+`[PROFILE] sig  mono=X.XX postg=X.XX gr=X.XX out=X.XX`
+
+To use: `make build PROFILE=1 && make install && make run` then `make sniff`.
+
+**Diagnosis guide:**
+- `postg` 0.6–0.9 with `gr ≈ 1.0` → headroom problem (soft_clip cubic zone; raise MASTER_GAIN
+  or tune voices down). Distortion is from soft_clip operating in its non-linear region.
+- `postg > 0.92` with `gr < 1.0` → limiter active (working as designed). Check `out` ≤ 1.0.
+- `out > 1.0` → soft_clip ceiling breached (postg×gr > 1.5); hard clip. Should not happen with
+  the instant-attack limiter in place (see ADR 0021 / limiter fix commit 72b0d2f).
+- All zeros → no audio rendered during the interval (silence); expected between notes.
+
+All probe runtime code is under `#ifdef SYNTH_PROFILE` — zero overhead in the shipping image.
+Commit: 983a7b3.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
