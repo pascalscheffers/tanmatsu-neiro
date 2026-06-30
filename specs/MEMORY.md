@@ -474,6 +474,31 @@ optional headroom for genuinely-poly loud patches; WS3 dirty-rect blit (Stage 2B
 the display-contention underruns that affect poly chords + frees budget for FX. Diagnostics
 (`SYNTH_PROFILE` audio + signal probes, `SYNTH_FREEZE_DISPLAY`) remain in-tree behind flags.
 
+## 2026-06-30 — Orphaned-voice regression: set_play_mode + preset-apply cleanup (COMPLETE)
+
+**Regression (follow-up to 9caa5bf):** Preset apply now loads ALL 49 params, so PLAY_MODE
+actually changes on preset switch. `set_play_mode()` only cleared tracking state (`mono_slot_`,
+stack, `unison_tag_`) but never silenced gated voices — any voice that was `gate==true` before
+the mode switch became an orphan: untracked, `note_off` unreachable. Result: a sustained
+~600 Hz stuck tone after the first patch switch, and voice-pool saturation (mute until restart)
+after repeated switches.
+
+**Fix A (`engine/voice_alloc.cpp`):** `set_play_mode()` now calls `reset_all()` on a real mode
+change instead of the partial tracking-only clear. `reset_all()` is already RT-safe (no alloc,
+no log, no blocking). Redundant partial-clear lines removed.
+
+**Fix B (`ui/ui.cpp`, `ui/ui_presets_state.cpp`):** `engine_all_notes_off()` added at the top
+of `ui_apply_params` (boot-load and `[`/`]` switch paths) and `apply_params` (audition/browse
+path). Clears all voices + arp before any patch load. `engine_all_notes_off` is lock-free
+(atomic flag); consumed by the audio thread at the top of the next block, before freshly-queued
+params drain — correct ordering guaranteed.
+
+**Test (`tests/host/test_alloc_unison_mono.cpp`, case F):** note_on in mono+unison then
+`set_play_mode(kPoly)` — asserts every slot has `gate==false` and `is_active()==false`.
+`test_ui_presets.cpp`: added `engine_all_notes_off` no-op stub so test build links.
+
+`make test` ✅ `make host` ✅ `make build` ✅ `make format` ✅. Commit: 30fa253.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
