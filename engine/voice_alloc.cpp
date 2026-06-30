@@ -212,62 +212,101 @@ void VoiceAlloc::note_on_mono(uint8_t pitch, uint8_t velocity, NoteExpression ex
     bool any_held = (mono_stack_top_ > 0);
     stack_push(pitch);  // push after sampling any_held
 
-    // Unison mono: release the old group and rebuild U voices for the new pitch.
+    // Unison mono: cap live voices at unison_count_ by reusing the current group.
     if (unison_count_ > 1) {
-        // Capture portamento state before releasing old group.
-        float old_effective = 0.0f;
-        bool  do_glide      = false;
+        // Capture portamento state before touching any group slots.
+        // old_tag is the current group's pitch (or kNoGroup if no group yet).
+        uint8_t old_tag       = (mono_slot_ >= 0) ? slots_[mono_slot_].pitch : kNoGroup;
+        float   old_effective = 0.0f;
+        bool    do_glide      = false;
         if (mono_slot_ >= 0 && slots_[mono_slot_].gate && portamento_time_ >= 0.001f) {
-            old_effective = (float)slots_[mono_slot_].pitch + glide_offset_;
+            old_effective = (float)old_tag + glide_offset_;
             do_glide      = true;
         }
 
-        // Release old group.
-        if (mono_slot_ >= 0) {
-            uint8_t old_tag = slots_[mono_slot_].pitch;
+        // Count the current group (tagged with old_tag, gated).
+        int cur_group_slots[kNumVoices];
+        int cur_group_count = 0;
+        if (old_tag != kNoGroup) {
             for (int i = 0; i < kNumVoices; i++) {
-                if (unison_tag_[i] == old_tag) {
-                    slots_[i].gate = false;
-                    unison_tag_[i] = kNoGroup;
-                    slots_[i].voice->note_off();
+                if (unison_tag_[i] == old_tag && slots_[i].gate) {
+                    cur_group_slots[cur_group_count++] = i;
                 }
             }
         }
 
-        // Set up glide.
-        if (do_glide) {
-            glide_offset_ = old_effective - (float)pitch;
-            glide_rate_   = fabsf(glide_offset_) / portamento_time_;
-        } else {
-            glide_offset_ = 0.0f;
-            glide_rate_   = 0.0f;
-        }
-
-        // Allocate U voices for the new pitch.
-        bool retrigger = (play_mode_ == PlayMode::kMono) || !any_held;
-        mono_slot_     = -1;
-        for (int u = 0; u < unison_count_; u++) {
-            int idx = find_free_slot();
-            if (idx < 0) {
-                idx              = find_steal_slot();
-                unison_tag_[idx] = kNoGroup;
-                slots_[idx].voice->reset();
-            }
-            VoiceSlot& s     = slots_[idx];
-            s.pitch          = pitch;
-            s.gate           = true;
-            s.timestamp      = ++tick_;
-            unison_tag_[idx] = pitch;
-            if (retrigger) {
-                s.voice->note_on(pitch, velocity, expr);
+        // Reuse path: current group exists and matches the desired unison count.
+        // Retag and retrigger those exact slots — no release tail, no pile-up.
+        bool reused = false;
+        if (cur_group_count == unison_count_) {
+            // Set up glide before retagging.
+            if (do_glide) {
+                glide_offset_ = old_effective - (float)pitch;
+                glide_rate_   = fabsf(glide_offset_) / portamento_time_;
             } else {
-                s.voice->note_on(pitch, velocity, expr);
-                // Same known legato limitation as the U=1 path (DaisySP ADSR restarts).
+                glide_offset_ = 0.0f;
+                glide_rate_   = 0.0f;
             }
-            if (mono_slot_ < 0) mono_slot_ = idx;  // first = reference for glide
+
+            bool retrigger = (play_mode_ == PlayMode::kMono) || !any_held;
+            mono_slot_     = cur_group_slots[0];  // first reused slot = glide reference
+            for (int gi = 0; gi < cur_group_count; gi++) {
+                int        idx   = cur_group_slots[gi];
+                VoiceSlot& s     = slots_[idx];
+                s.pitch          = pitch;
+                s.gate           = true;  // already true; make explicit
+                s.timestamp      = ++tick_;
+                unison_tag_[idx] = pitch;
+                // Retrigger regardless of legato (same limitation as U=1 path — DaisySP
+                // ADSR restarts on gate; retrigger var preserved for symmetry).
+                (void)retrigger;
+                s.voice->note_on(pitch, velocity, expr);
+            }
+            reused = true;
         }
 
-        // Apply initial glide + detune.
+        if (!reused) {
+            // Fallback: first note (no current group) or unison_count_ changed.
+            // Release old group (if any) and allocate fresh slots.
+            if (old_tag != kNoGroup) {
+                for (int i = 0; i < kNumVoices; i++) {
+                    if (unison_tag_[i] == old_tag) {
+                        slots_[i].gate = false;
+                        unison_tag_[i] = kNoGroup;
+                        slots_[i].voice->note_off();
+                    }
+                }
+            }
+
+            if (do_glide) {
+                glide_offset_ = old_effective - (float)pitch;
+                glide_rate_   = fabsf(glide_offset_) / portamento_time_;
+            } else {
+                glide_offset_ = 0.0f;
+                glide_rate_   = 0.0f;
+            }
+
+            bool retrigger = (play_mode_ == PlayMode::kMono) || !any_held;
+            mono_slot_     = -1;
+            for (int u = 0; u < unison_count_; u++) {
+                int idx = find_free_slot();
+                if (idx < 0) {
+                    idx              = find_steal_slot();
+                    unison_tag_[idx] = kNoGroup;
+                    slots_[idx].voice->reset();
+                }
+                VoiceSlot& s     = slots_[idx];
+                s.pitch          = pitch;
+                s.gate           = true;
+                s.timestamp      = ++tick_;
+                unison_tag_[idx] = pitch;
+                (void)retrigger;
+                s.voice->note_on(pitch, velocity, expr);
+                if (mono_slot_ < 0) mono_slot_ = idx;  // first = reference for glide
+            }
+        }
+
+        // Apply initial glide + detune (scans by new tag — correct after reuse or alloc).
         apply_detune(pitch, unison_count_, mono_slot_);
         // Add glide on top: re-push set_pitch_offset with glide for each group slot.
         if (fabsf(glide_offset_) > 0.001f) {
@@ -379,8 +418,10 @@ void VoiceAlloc::note_off_mono(uint8_t pitch) {
         uint8_t prev_pitch = mono_stack_[mono_stack_top_ - 1];
 
         if (unison_count_ > 1) {
-            // Unison mono steal-back: rebuild U voices for the previous note.
-            // Portamento from current effective pitch.
+            // Unison mono steal-back: reuse the prev_pitch group if it exists and
+            // matches unison_count_; otherwise fall back to release+allocate.
+
+            // Portamento: capture from the current (released) group's effective pitch.
             float old_effective = (float)s.pitch + glide_offset_;
             if (portamento_time_ >= 0.001f) {
                 glide_offset_ = old_effective - (float)prev_pitch;
@@ -390,36 +431,69 @@ void VoiceAlloc::note_off_mono(uint8_t pitch) {
                 glide_rate_   = 0.0f;
             }
 
-            // Release all slots in the current group.
-            uint8_t old_tag = s.pitch;
+            // Capture the current (to-be-released) group tag BEFORE modifying anything.
+            uint8_t cur_tag = s.pitch;
+
+            // Check whether there is already an intact prev_pitch group to reuse.
+            // (This can happen when the user holds A, presses B, then releases B —
+            // if A's slots were reused for B, they won't be in a separate group now.
+            // The reuse path in note_on_mono re-tags old slots to the new pitch, so
+            // a surviving prev_pitch group means the pool had spare slots.)
+            int prev_group_slots[kNumVoices];
+            int prev_group_count = 0;
             for (int i = 0; i < kNumVoices; i++) {
-                if (unison_tag_[i] == old_tag) {
-                    slots_[i].gate = false;
-                    unison_tag_[i] = kNoGroup;
-                    slots_[i].voice->note_off();
+                if (unison_tag_[i] == prev_pitch && slots_[i].gate) {
+                    prev_group_slots[prev_group_count++] = i;
                 }
             }
 
-            // Allocate U voices for prev_pitch.
             NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
-            mono_slot_ = -1;
-            for (int u = 0; u < unison_count_; u++) {
-                int idx = find_free_slot();
-                if (idx < 0) {
-                    idx              = find_steal_slot();
-                    unison_tag_[idx] = kNoGroup;
-                    slots_[idx].voice->reset();
+
+            if (prev_group_count == unison_count_) {
+                // Reuse the existing prev_pitch group — retag cur_tag group off first.
+                for (int i = 0; i < kNumVoices; i++) {
+                    if (unison_tag_[i] == cur_tag) {
+                        slots_[i].gate = false;
+                        unison_tag_[i] = kNoGroup;
+                        slots_[i].voice->note_off();
+                    }
                 }
-                VoiceSlot& sv    = slots_[idx];
-                sv.pitch         = prev_pitch;
-                sv.gate          = true;
-                sv.timestamp     = ++tick_;
-                unison_tag_[idx] = prev_pitch;
-                sv.voice->note_on(prev_pitch, 127, expr);
-                if (mono_slot_ < 0) mono_slot_ = idx;
+                // The prev_pitch group slots are already tagged correctly; just retrigger.
+                mono_slot_ = prev_group_slots[0];
+                for (int gi = 0; gi < prev_group_count; gi++) {
+                    int        idx = prev_group_slots[gi];
+                    VoiceSlot& sv  = slots_[idx];
+                    sv.timestamp   = ++tick_;
+                    sv.voice->note_on(prev_pitch, 127, expr);
+                }
+            } else {
+                // Fallback: release the current group and allocate fresh slots for prev_pitch.
+                for (int i = 0; i < kNumVoices; i++) {
+                    if (unison_tag_[i] == cur_tag) {
+                        slots_[i].gate = false;
+                        unison_tag_[i] = kNoGroup;
+                        slots_[i].voice->note_off();
+                    }
+                }
+                mono_slot_ = -1;
+                for (int u = 0; u < unison_count_; u++) {
+                    int idx = find_free_slot();
+                    if (idx < 0) {
+                        idx              = find_steal_slot();
+                        unison_tag_[idx] = kNoGroup;
+                        slots_[idx].voice->reset();
+                    }
+                    VoiceSlot& sv    = slots_[idx];
+                    sv.pitch         = prev_pitch;
+                    sv.gate          = true;
+                    sv.timestamp     = ++tick_;
+                    unison_tag_[idx] = prev_pitch;
+                    sv.voice->note_on(prev_pitch, 127, expr);
+                    if (mono_slot_ < 0) mono_slot_ = idx;
+                }
             }
 
-            // Apply detune + glide.
+            // Apply detune + glide (scans by prev_pitch tag).
             int group_slots[kNumVoices];
             int gc = 0;
             for (int i = 0; i < kNumVoices; i++) {

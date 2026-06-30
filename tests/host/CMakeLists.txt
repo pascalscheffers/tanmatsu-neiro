@@ -30,6 +30,8 @@ add_executable(tanmatsu-tests
     test_arp.cpp
     test_arp_clock.cpp
     test_sustain.cpp
+    # mono+unison voice-cap regression tests.
+    test_alloc_unison_mono.cpp
     # WO-3: preset browser state-machine tests (no PAX dependency).
     test_ui_presets.cpp
     "${REPO_ROOT}/ui/ui_presets_state.cpp"
