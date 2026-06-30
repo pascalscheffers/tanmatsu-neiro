@@ -421,6 +421,28 @@ To use: `make build PROFILE=1 && make install && make run` then `make sniff`.
 All probe runtime code is under `#ifdef SYNTH_PROFILE` — zero overhead in the shipping image.
 Commit: 983a7b3.
 
+## 2026-06-30 — Mono+unison voice-cap: slot reuse in note_on_mono / note_off_mono (COMPLETE)
+
+**Bug:** On the Solo Lead patch (legato, U=2, ENV_RELEASE=0.20 s), rapid retriggering drove
+the voice meter to 8 and spiked render cost. Root cause: the unison-mono `note_on_mono` path
+released the old group via `note_off()` (leaving a 200 ms release tail still rendering + active)
+and allocated fresh slots. Smashing faster than release time stacked tails up to the full pool.
+
+**Fix (`engine/voice_alloc.cpp`):** In both `note_on_mono` and `note_off_mono` (the `unison_count_ > 1`
+branches), check whether the current group is intact (gated slots tagged with old pitch, count ==
+`unison_count_`). If yes, **reuse those exact slots** — retag `unison_tag_`, update `pitch`/`timestamp`,
+call `voice->note_on()` to retrigger. No `note_off()` on the old group → no release tail. Fall back
+to the existing release+allocate path when the group is absent (first note) or its size doesn't match
+the current `unison_count_` (unison param changed between notes).
+
+**Invariant established:** mono live voices ≤ `unison_count_` at all times. Solo Lead voice meter
+stays at 2 regardless of retrigger rate. Render cost proportional to `unison_count_`, not the pool.
+
+**Tests (`tests/host/test_alloc_unison_mono.cpp`, 5 cases):** rapid retrigger cap, steal-back cap
+(4→2), U=1 mono regression, poly regression, unison-count-change fallback. All green.
+
+`make test` ✅ `make host` ✅ `make build` ✅ `make format` ✅ image 0x112540 B (46% free). Commit: 73496d3.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
