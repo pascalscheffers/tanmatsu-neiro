@@ -34,6 +34,13 @@ static constexpr uint8_t PRESET_MODEL_JUNO     = 1;
 // Maximum number of routing slots returned by preset_parse_routings().
 static constexpr int PRESET_MAX_ROUTINGS = kMaxRoutes;
 
+// Maximum number of params a preset can carry — buffers passed to
+// preset_factory_params()/preset_parse() must hold at least this many, or trailing
+// params (PLAY_MODE, UNISON, CHORUS_MODE, ARP_*, …) are silently dropped and the
+// patch loads at table defaults. Must be >= kJunoParamCount (currently 49); the
+// 512-byte blob format tops out near 78 params, so 96 is safe with headroom.
+static constexpr int PRESET_MAX_PARAMS = 96;
+
 // ---------------------------------------------------------------------------
 // Factory presets (hardcoded; no storage, no engine calls required)
 // ---------------------------------------------------------------------------

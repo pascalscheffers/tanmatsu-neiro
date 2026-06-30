@@ -75,9 +75,9 @@ static void apply_params(UIState* s, const char* name, int idx, const uint16_t* 
 // Audition helpers — load a preset into the engine + UIState.
 // ---------------------------------------------------------------------------
 static void audition_factory(UIState* s, int row) {
-    uint16_t ids[64];
-    float    vals[64];
-    int      count = preset_factory_params(row, ids, vals, 64);
+    uint16_t ids[PRESET_MAX_PARAMS];
+    float    vals[PRESET_MAX_PARAMS];
+    int      count = preset_factory_params(row, ids, vals, PRESET_MAX_PARAMS);
     if (count > 0) {
         apply_params(s, preset_factory_name(row), row, ids, vals, count);
     }
@@ -90,13 +90,13 @@ static void audition_user(UIState* s) {
     static uint8_t blob[PRESET_BLOB_MAX];
     int            bytes = platform_storage_load("user", blob, sizeof(blob));
     if (bytes <= 0) return;
-    static uint16_t ids[64];
-    static float    vals[64];
+    static uint16_t ids[PRESET_MAX_PARAMS];
+    static float    vals[PRESET_MAX_PARAMS];
     Routing         routings[PRESET_MAX_ROUTINGS];
     int             r_count = 0;
     char            name[PRESET_NAME_LEN + 1];
-    int             count =
-        preset_parse(blob, (size_t)bytes, name, sizeof(name), ids, vals, 64, routings, PRESET_MAX_ROUTINGS, &r_count);
+    int count = preset_parse(blob, (size_t)bytes, name, sizeof(name), ids, vals, PRESET_MAX_PARAMS, routings,
+                             PRESET_MAX_ROUTINGS, &r_count);
     if (count > 0) {
         apply_params(s, name, -1, ids, vals, count);
         engine_set_routings(routings, r_count);
