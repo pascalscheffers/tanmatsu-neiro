@@ -35,6 +35,12 @@ pkg_check_modules(RTMIDI REQUIRED rtmidi)
 # Stage 0.5: bench mode. Pass -DSYNTH_BENCH=ON to cmake (done by `make bench`).
 option(SYNTH_BENCH "Build the Stage 0.5 CPU profiling harness" OFF)
 
+# Device crackle diagnostics. Pass -DSYNTH_PROFILE=ON to enable audio-block
+# profiling + 1 s console readout. -DSYNTH_FREEZE_DISPLAY=ON freezes the display
+# after the first frame (less useful on host, but wired for consistency).
+option(SYNTH_PROFILE "Enable audio-block cycle profiler + 1 s console readout" OFF)
+option(SYNTH_FREEZE_DISPLAY "Freeze display after first frame (display-blit isolation)" OFF)
+
 set(HOST_SRCS
     # Stage 1c: allocator + JunoModel + chorus added; synth.cpp drives the pool.
     "${REPO_ROOT}/engine/synth.cpp"
@@ -78,6 +84,14 @@ add_executable(tanmatsu-synth-host ${HOST_SRCS})
 
 if(SYNTH_BENCH)
     target_compile_definitions(tanmatsu-synth-host PRIVATE SYNTH_BENCH=1)
+endif()
+
+if(SYNTH_PROFILE)
+    target_compile_definitions(tanmatsu-synth-host PRIVATE SYNTH_PROFILE=1)
+endif()
+
+if(SYNTH_FREEZE_DISPLAY)
+    target_compile_definitions(tanmatsu-synth-host PRIVATE SYNTH_FREEZE_DISPLAY=1)
 endif()
 
 target_include_directories(tanmatsu-synth-host PRIVATE

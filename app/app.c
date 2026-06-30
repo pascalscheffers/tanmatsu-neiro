@@ -80,6 +80,13 @@ static void render_cb(void* arg) {
     UIState*   s  = (UIState*)arg;
     pax_buf_t* fb = platform_framebuffer();
     if (!fb) return;
+#ifdef SYNTH_FREEZE_DISPLAY
+    // Freeze: let the first frame paint normally, then never repaint again.
+    // This removes display-blit / memory-bus pressure so an audio crackle test
+    // with PROFILE=1 isolates compute cost from core-0 contention.
+    static bool painted_once = false;
+    if (painted_once) return;
+#endif
     uint32_t seq = s->change_seq;         // volatile read
     if (seq == s_last_drawn_seq) return;  // nothing changed — skip draw + blit
 #ifdef SYNTH_PROFILE
@@ -119,6 +126,9 @@ static void render_cb(void* arg) {
     }
 #endif
     s_last_drawn_seq = seq;
+#ifdef SYNTH_FREEZE_DISPLAY
+    painted_once = true;
+#endif
 }
 
 void app_run(void) {
@@ -165,6 +175,9 @@ void app_run(void) {
     bool     has_render_task = platform_render_task_start(render_cb, &ui_state, RENDER_MS);
     bool     running         = true;
     uint64_t next_ctrl       = 0;
+#ifdef SYNTH_PROFILE
+    uint64_t next_prof = 0;
+#endif
 
     // SINGLE-PRODUCER INVARIANT: all engine_note_on/off calls happen on this one
     // task (via keyboard_handle_event and midi_router_poll). The s_cmds SPSC ring
@@ -221,6 +234,19 @@ void app_run(void) {
             next_ctrl = now + RENDER_MS;
         }
 
+#ifdef SYNTH_PROFILE
+        // Audio-block cycle readout — ~1 s cadence, independent of render rate.
+        if (now >= next_prof) {
+            uint32_t avg_cyc, max_cyc, over, count;
+            platform_audio_profile_read(&avg_cyc, &max_cyc, &over, &count);
+            uint32_t hz  = platform_cycles_per_sec();
+            uint32_t div = hz / 1000000u;
+            if (div == 0) div = 1;
+            printf("[PROFILE] audio avg=%u max=%u over=%u/%u us-budget=1333\n", (unsigned)(avg_cyc / div),
+                   (unsigned)(max_cyc / div), (unsigned)over, (unsigned)count);
+            next_prof = now + 1000u;
+        }
+#endif
         platform_sleep_ms(POLL_MS);
     }
 

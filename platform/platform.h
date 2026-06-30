@@ -124,6 +124,19 @@ uint32_t platform_cycles_per_sec(void);
 void platform_sleep_ms(uint32_t ms);
 
 // ---------------------------------------------------------------------------
+// Audio-block cycle profiler (diagnostic seam — always declared, always links)
+// ---------------------------------------------------------------------------
+// Snapshot and reset audio-block render-cycle stats accumulated by the device
+// audio task. Benign cross-core race is acceptable — this is diagnostic only.
+// Returns zeros when SYNTH_PROFILE is not defined (no-op in shipping builds).
+// All output pointers must be non-NULL.
+//   out_avg_cyc  — average render cycles per block (since last call)
+//   out_max_cyc  — peak render cycles per block (since last call)
+//   out_over     — number of blocks that exceeded the 480k-cycle budget
+//   out_count    — total blocks counted (the denominator for the average)
+void platform_audio_profile_read(uint32_t* out_avg_cyc, uint32_t* out_max_cyc, uint32_t* out_over, uint32_t* out_count);
+
+// ---------------------------------------------------------------------------
 // Storage (Stage 2d) — key/blob store
 // ---------------------------------------------------------------------------
 // Synchronous key/value blob store. On device: ESP-IDF NVS (keys ≤ 15 chars,

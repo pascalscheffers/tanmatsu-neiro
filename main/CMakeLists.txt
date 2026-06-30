@@ -106,3 +106,14 @@ endif()
 if(SYNTH_USB_HOST_DEBUG)
     idf_build_set_property(COMPILE_OPTIONS "-DSYNTH_USB_HOST_DEBUG=1" APPEND)
 endif()
+
+# Device crackle diagnostics (make build PROFILE=1 / FREEZE_DISPLAY=1):
+#   PROFILE=1         — audio-block cycle profiler + 1 s console readout.
+#   FREEZE_DISPLAY=1  — freeze display after first frame (isolates blit contention).
+# All new runtime code is under #ifdef; shipping image is unaffected.
+if(PROFILE)
+    idf_build_set_property(COMPILE_OPTIONS "-DSYNTH_PROFILE=1" APPEND)
+endif()
+if(FREEZE_DISPLAY)
+    idf_build_set_property(COMPILE_OPTIONS "-DSYNTH_FREEZE_DISPLAY=1" APPEND)
+endif()

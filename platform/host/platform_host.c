@@ -313,6 +313,19 @@ int platform_storage_load(const char* key, void* buf, size_t max_len) {
 }
 
 // ---------------------------------------------------------------------------
+// Audio-block cycle profiler read — host stub
+// ---------------------------------------------------------------------------
+// The host has no dedicated audio task and no cycle-budget pressure; always
+// returns zeros so callers compile and link on both targets.
+void platform_audio_profile_read(uint32_t* out_avg_cyc, uint32_t* out_max_cyc, uint32_t* out_over,
+                                 uint32_t* out_count) {
+    *out_avg_cyc = 0;
+    *out_max_cyc = 0;
+    *out_over    = 0;
+    *out_count   = 0;
+}
+
+// ---------------------------------------------------------------------------
 // Render task (input-latency fix) — host stubs
 // ---------------------------------------------------------------------------
 // SDL must render on the main thread; returning false lets app.c call

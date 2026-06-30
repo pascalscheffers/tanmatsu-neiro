@@ -74,6 +74,20 @@ static pax_orientation_t bsp_to_pax_orientation(bsp_display_rotation_t rot) {
 static QueueHandle_t s_input_queue = NULL;
 
 // ---------------------------------------------------------------------------
+// Audio-block cycle profiler (SYNTH_PROFILE only)
+// ---------------------------------------------------------------------------
+// Budget derivation: 360 MHz × 64 frames / 48000 Hz = 480 000 cycles/block.
+// These counters measure the render COMPUTE only; the i2s_channel_write
+// DMA-wait is excluded by design — it IS the real-time deadline mechanism.
+#ifdef SYNTH_PROFILE
+static const uint32_t    kAudioBlockBudgetCyc = 480000u;  // 360 MHz × 64 / 48000
+static volatile uint64_t s_ab_sum             = 0;
+static volatile uint32_t s_ab_count           = 0;
+static volatile uint32_t s_ab_max             = 0;
+static volatile uint32_t s_ab_over            = 0;
+#endif
+
+// ---------------------------------------------------------------------------
 // Audio
 // ---------------------------------------------------------------------------
 static i2s_chan_handle_t        s_i2s         = NULL;
@@ -101,7 +115,17 @@ static void audio_task(void* arg) {
     (void)arg;
     const size_t n = s_block;
     while (atomic_load(&s_audio_run)) {
+#ifdef SYNTH_PROFILE
+        uint32_t cyc_start = esp_cpu_get_cycle_count();
+#endif
         s_render(s_left, s_right, n, s_render_user);
+#ifdef SYNTH_PROFILE
+        uint32_t dc = esp_cpu_get_cycle_count() - cyc_start;
+        s_ab_sum   += dc;
+        s_ab_count++;
+        if (dc > s_ab_max) s_ab_max = dc;
+        if (dc > kAudioBlockBudgetCyc) s_ab_over++;
+#endif
         for (size_t i = 0; i < n; i++) {
             s_interleaved[i * 2 + 0] = to_i16(s_left[i]);
             s_interleaved[i * 2 + 1] = to_i16(s_right[i]);
@@ -515,4 +539,32 @@ void platform_render_task_stop(void) {
         vTaskDelay(pdMS_TO_TICKS(2));
     }
     s_render_task = NULL;
+}
+
+// ---------------------------------------------------------------------------
+// Audio-block cycle profiler read + reset
+// ---------------------------------------------------------------------------
+void platform_audio_profile_read(uint32_t* out_avg_cyc, uint32_t* out_max_cyc, uint32_t* out_over,
+                                 uint32_t* out_count) {
+#ifdef SYNTH_PROFILE
+    // Snapshot (benign cross-core race — diagnostic only).
+    uint64_t sum   = s_ab_sum;
+    uint32_t count = s_ab_count;
+    uint32_t max   = s_ab_max;
+    uint32_t over  = s_ab_over;
+    // Reset for the next window.
+    s_ab_sum       = 0;
+    s_ab_count     = 0;
+    s_ab_max       = 0;
+    s_ab_over      = 0;
+    *out_avg_cyc   = count ? (uint32_t)(sum / count) : 0u;
+    *out_max_cyc   = max;
+    *out_over      = over;
+    *out_count     = count;
+#else
+    *out_avg_cyc = 0;
+    *out_max_cyc = 0;
+    *out_over    = 0;
+    *out_count   = 0;
+#endif
 }

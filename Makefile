@@ -35,6 +35,13 @@ USBHOST_DEFINE := -DSYNTH_USB_HOST_DEBUG=1
 else
 USBHOST_DEFINE :=
 endif
+# Device crackle diagnostics:
+#   PROFILE=1          — audio-block cycle profiler + 1 s console readout.
+#   FREEZE_DISPLAY=1   — freeze the display after the first frame (isolates
+#                        display-blit contention from audio compute).
+# Both flags are no-ops in the shipping image (all code is under #ifdef).
+PROFILE_DEFINE      := $(if $(filter 1,$(PROFILE)),-DPROFILE=1,)
+FREEZE_DEFINE       := $(if $(filter 1,$(FREEZE_DISPLAY)),-DFREEZE_DISPLAY=1,)
 FAT ?= 0
 SDKCONFIG_DEFAULTS ?= sdkconfigs/general;sdkconfigs/$(DEVICE)
 SDKCONFIG ?= sdkconfig_$(DEVICE)
@@ -62,7 +69,7 @@ $(warning "Unknown device, defaulting to ESP32 $(DEVICE)")
 IDF_TARGET ?= esp32
 endif
 
-IDF_PARAMS := -B $(BUILD) build -DDEVICE=$(DEVICE) -DSDKCONFIG_DEFAULTS="$(SDKCONFIG_DEFAULTS)" -DSDKCONFIG=$(SDKCONFIG) -DIDF_TARGET=$(IDF_TARGET) -DFAT=$(FAT) $(BENCH_DEFINE) $(USBHOST_DEFINE)
+IDF_PARAMS := -B $(BUILD) build -DDEVICE=$(DEVICE) -DSDKCONFIG_DEFAULTS="$(SDKCONFIG_DEFAULTS)" -DSDKCONFIG=$(SDKCONFIG) -DIDF_TARGET=$(IDF_TARGET) -DFAT=$(FAT) $(BENCH_DEFINE) $(USBHOST_DEFINE) $(PROFILE_DEFINE) $(FREEZE_DEFINE)
 
 #####
 
