@@ -531,21 +531,25 @@ crackle**, on **ALL patches** (not Solo-Lead-specific), **present even with the 
 - *MIDI note-on vel-0 not treated as note-off* — parser DOES convert it (`control/midi_in.c:134`).
 - *Instant-attack limiter* — reverted.
 
-**Leading hypotheses for the residual (a VOICE LEAK in the audio path):**
-1. **Note command-queue overflow under heavy smashing.** `CommandQueue<64>` (`engine/synth.cpp`
-   `s_cmds`). A hard 8-key chord smash can burst >64 note events between audio-thread drains; if
-   `push` drops on full, a dropped **note-off → stuck voice**. Intermittent, all patches. CHECK the
-   ring's full-behavior and whether bursts exceed 64.
-2. **Poly steal / note-off pitch→slot desync.** Under stealing, a stolen voice's original note-off
-   no-ops (`find_slot_for_pitch` miss); if the stealer's note-off is also lost/mismatched, the voice
-   sticks. General, intermittent.
-3. **Denormal/filter ring** producing a faint sine (P4 has no FTZ; ADR 0012). Less likely (VCA
-   gates by envelope), but a self-oscillating SVF on a stuck-gated voice fits ~600 Hz.
+**CONFIRMED 2026-06-30 (Pascal):** after smashing then releasing ALL keys on Solo Lead, the voice
+meter **stays at 2** (= `unison_count`). So it's a **voice leak**: most notes release fine, but the
+**last note's mono+unison group never gets released** — it stays gated → the stuck ~600 Hz sine,
+and 2 dead voices drone/contend → the residual crackle. Stuck count == unison_count, persistent.
 
-**FIRST diagnostic next session (zero code):** smash, then **release ALL keys** — does the voice
-meter return to **0**? If it stays > 0 → **voice leak confirmed** (chase #1/#2). Ask Pascal or watch
-the meter. Then instrument: log/track voices still gated after all-notes-released; audit
-`s_cmds` push-on-full and the poly note_off matching under steal.
+**Prime suspect — `note_off_mono` (mono+unison) final-release path, `engine/voice_alloc.cpp`.**
+Likely introduced/exposed by WS4 (`73496d3`, mono slot-reuse). WS4's tests assert the *cap*
+("≤ 2 gated", "steal-back yields 2") but **never assert that releasing all keys returns to 0
+active voices** — so a "final note-off leaves the group gated" leak passes them. Trace: the
+`note_off_mono` "no more held notes" branch (releases group by `tag = slots_[mono_slot_].pitch`)
+and how the WS4 reuse path in `note_on_mono` sets `mono_slot_` / `unison_tag_` — a desync between
+`mono_slot_.pitch`, the gated group's tag, and the mono note-stack would make the final note-off
+match nothing. Also check the steal-back branch. **Add a regression test: play → release all →
+assert 0 gated AND 0 active voices** (the missing assertion).
+
+Lower-probability fallbacks if the above isn't it: `CommandQueue<64>` (`s_cmds`) dropping a
+note-off on overflow under heavy smashing; poly steal / note-off pitch→slot desync; denormal SVF
+ring (P4 no FTZ, ADR 0012). But the clean "stuck at exactly unison_count" points hard at the
+mono+unison release path.
 
 **Diagnostics in-tree (behind flags; shipping image unaffected):**
 - `SYNTH_PROFILE`: audio-block cycle profiler + signal probe (`[PROFILE] sig mono/postg/gr/out`
