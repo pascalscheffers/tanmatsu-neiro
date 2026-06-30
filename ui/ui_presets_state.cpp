@@ -55,6 +55,11 @@ static float clamp01(float x) {
 // Apply physical param values to the engine + sync the norms shadow.
 // ---------------------------------------------------------------------------
 static void apply_params(UIState* s, const char* name, int idx, const uint16_t* ids, const float* vals, int count) {
+    // Clear all voices and arp state before loading a preset so no gated voice
+    // from the previous preset survives the switch (stuck-tone / accumulate-mute).
+    // engine_all_notes_off() is lock-free (atomic flag); safe to call from the
+    // control thread; the audio thread consumes it at the top of the next block.
+    engine_all_notes_off();
     for (int i = 0; i < count; i++) {
         engine_set_param(ids[i], vals[i]);
         if (ids[i] < UI_NORM_TABLE_SIZE) {

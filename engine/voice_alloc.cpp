@@ -23,16 +23,11 @@ void VoiceAlloc::init(SynthModel* model) {
 
 void VoiceAlloc::set_play_mode(PlayMode mode) {
     if (play_mode_ == mode) return;
-    play_mode_      = mode;
-    // Reset mono state when switching modes.
-    mono_slot_      = -1;
-    mono_stack_top_ = 0;
-    glide_offset_   = 0.0f;
-    glide_rate_     = 0.0f;
-    // Clear unison tags — the new mode starts fresh.
-    for (int i = 0; i < kNumVoices; i++) {
-        unison_tag_[i] = kNoGroup;
-    }
+    play_mode_ = mode;
+    // Silence and fully reset all voices so any gated voice from the previous
+    // mode does not become an orphan (untracked, note_off unreachable).
+    // reset_all() is RT-safe: no alloc, no log, no blocking.
+    reset_all();
 }
 
 void VoiceAlloc::set_portamento_time(float seconds) {

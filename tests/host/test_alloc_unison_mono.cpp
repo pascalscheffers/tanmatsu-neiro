@@ -214,10 +214,64 @@ void test_unison_mono_count_change() {
     test_pass();
 }
 
+/* -------------------------------------------------------------------------
+ * F. Play-mode change silences all voices (Fix A regression).
+ *
+ * Root cause (commit 9caa5bf follow-up): set_play_mode() only cleared tracking
+ * state (mono_slot_, stack, tags) but never called voice->reset().  Any voice
+ * that was gate==true before the mode switch stayed gated and kept rendering,
+ * now unreachable by note_off — the "stuck tone".
+ *
+ * Fix: set_play_mode() calls reset_all() on a real change.
+ * Assertion: after switching from mono to poly, every slot has gate==false and
+ * is_active()==false.  Also checks mono_slot_ reset via the white-box accessor.
+ * ---------------------------------------------------------------------- */
+void test_play_mode_change_silences_voices() {
+    test_begin("set_play_mode: all voices silenced on real mode change (no orphans)");
+
+    JunoModel  model;
+    VoiceAlloc alloc;
+    model.init(kSr);
+    alloc.init(&model);
+
+    // Start in mono+legato with U=2 so multiple gated slots are live.
+    alloc.set_play_mode(PlayMode::kMono);
+    alloc.set_unison_count(2);
+
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+    alloc.note_on(60, 100, expr);  // gate 2 slots
+
+    // Confirm precondition: ≥1 slot is gated.
+    int before = count_gated(alloc.slots());
+    TEST_ASSERT(before >= 1, "play_mode_change: precondition — at least 1 slot gated before switch");
+
+    // Switch to poly — this is the mode change that previously left orphans.
+    alloc.set_play_mode(PlayMode::kPoly);
+
+    // Post-condition A: every slot must have gate == false.
+    for (int i = 0; i < kNumVoices; i++) {
+        TEST_ASSERT(!alloc.slots()[i].gate, "play_mode_change: slot gate must be false after mode switch");
+    }
+
+    // Post-condition B: every voice must be inactive (envelope done / reset).
+    for (int i = 0; i < kNumVoices; i++) {
+        TEST_ASSERT(!alloc.slots()[i].voice->is_active(), "play_mode_change: voice must be inactive after mode switch");
+    }
+
+    // Post-condition C: total gated count is zero.
+    TEST_ASSERT(count_gated(alloc.slots()) == 0, "play_mode_change: 0 gated slots after mode switch");
+
+    // Post-condition D: mono_slot_ reset (glide_offset via white-box accessor).
+    TEST_ASSERT(alloc.glide_offset() == 0.0f, "play_mode_change: glide_offset reset after mode switch");
+
+    test_pass();
+}
+
 void test_alloc_unison_mono_suite() {
     test_unison_mono_rapid_retrigger();
     test_unison_mono_steal_back_cap();
     test_unison_mono_u1_regression();
     test_unison_mono_poly_regression();
     test_unison_mono_count_change();
+    test_play_mode_change_silences_voices();
 }

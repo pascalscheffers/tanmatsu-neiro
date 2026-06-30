@@ -36,6 +36,7 @@ extern "C" {
 void  engine_set_param(uint16_t /*id*/, float /*value*/) {}
 void  engine_set_param_norm(uint16_t /*id*/, float /*norm*/) {}
 void  engine_set_routings(const struct Routing* /*r*/, int /*n*/) {}
+void  engine_all_notes_off(void) {}
 float engine_get_param(uint16_t /*id*/) {
     return 0.0f;
 }

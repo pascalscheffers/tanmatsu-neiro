@@ -203,6 +203,11 @@ static float clamp01(float x) {
 // Shared by factory-preset and user-preset loading paths.
 static void ui_apply_params(UIState* s, const char* name, int preset_idx, const uint16_t* ids, const float* values,
                             int count) {
+    // Clear all voices and arp state before loading a preset so no gated voice
+    // from the previous preset survives the switch (stuck-tone / accumulate-mute).
+    // engine_all_notes_off() is lock-free (atomic flag); safe to call from the
+    // control thread; the audio thread consumes it at the top of the next block.
+    engine_all_notes_off();
     for (int i = 0; i < count; i++) {
         engine_set_param(ids[i], values[i]);
         if (ids[i] < UI_NORM_TABLE_SIZE) {
