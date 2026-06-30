@@ -94,6 +94,20 @@ static double   s_arp_phase     = 0.0;  // samples until next step; 0 = fire now
 static bool     s_arp_had_notes = false;
 static uint32_t s_arp_step      = 0;  // step counter for swing parity
 
+#ifdef SYNTH_PROFILE
+// Signal-magnitude probe (diagnostic only — never in the shipping image).
+// Written on the audio thread (synth_render), read+reset on the control thread
+// (engine_profile_read). Benign cross-core race: diagnostic accuracy is sufficient.
+// s_pk_mono:     peak of the raw voice-sum (pre-gain), per render block batch
+// s_pk_postgain: peak fed to the limiter (post-gain, pre-GR)
+// s_min_gr:      worst (lowest) limiter gain-reduction factor seen
+// s_pk_out:      peak output after soft_clip
+static volatile float s_pk_mono     = 0.0f;
+static volatile float s_pk_postgain = 0.0f;
+static volatile float s_min_gr      = 1.0f;
+static volatile float s_pk_out      = 0.0f;
+#endif
+
 void synth_init(uint32_t sample_rate, size_t block_size) {
     s_sample_rate = (float)sample_rate;
     s_juno_model.init((float)sample_rate);
@@ -422,6 +436,17 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
             float gr = s_limiter.process(fmaxf(fabsf(lg), fabsf(rg)));
             left[i]  = soft_clip(lg * gr);
             right[i] = soft_clip(rg * gr);
+#ifdef SYNTH_PROFILE
+            {
+                float mono_abs = fabsf(s_mono[i]);
+                float postgain = fmaxf(fabsf(lg), fabsf(rg));
+                float out_abs  = fabsf(left[i]);
+                if (mono_abs > s_pk_mono) s_pk_mono = mono_abs;
+                if (postgain > s_pk_postgain) s_pk_postgain = postgain;
+                if (gr < s_min_gr) s_min_gr = gr;
+                if (out_abs > s_pk_out) s_pk_out = out_abs;
+            }
+#endif
         } else {
             // Chorus off: output mono signal to both channels (no stereo spread).
             float m  = s_mono[i] * gain;
@@ -429,6 +454,16 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
             float v  = soft_clip(m * gr);
             left[i]  = v;
             right[i] = v;
+#ifdef SYNTH_PROFILE
+            {
+                float mono_abs = fabsf(s_mono[i]);
+                float out_abs  = fabsf(v);
+                if (mono_abs > s_pk_mono) s_pk_mono = mono_abs;
+                if (fabsf(m) > s_pk_postgain) s_pk_postgain = fabsf(m);
+                if (gr < s_min_gr) s_min_gr = gr;
+                if (out_abs > s_pk_out) s_pk_out = out_abs;
+            }
+#endif
         }
     }
 }
@@ -573,4 +608,27 @@ uint64_t engine_clock_tick_pos(void) {
 
 float engine_clock_bpm(void) {
     return s_clock.bpm();
+}
+
+// --- Signal-magnitude probe (diagnostic, SYNTH_PROFILE only) ----------------
+// Snapshot-and-reset the four master-chain peak accumulators.  Called from the
+// control thread (~1 s cadence); single-writer audio / single-reader control —
+// the benign race is acceptable for a diagnostic (ADR/work-order).
+// Returns zeros when SYNTH_PROFILE is off (shipping image unchanged).
+void engine_profile_read(float* pk_mono, float* pk_postgain, float* min_gr, float* pk_out) {
+#ifdef SYNTH_PROFILE
+    *pk_mono      = s_pk_mono;
+    *pk_postgain  = s_pk_postgain;
+    *min_gr       = s_min_gr;
+    *pk_out       = s_pk_out;
+    s_pk_mono     = 0.0f;
+    s_pk_postgain = 0.0f;
+    s_min_gr      = 1.0f;
+    s_pk_out      = 0.0f;
+#else
+    *pk_mono     = 0.0f;
+    *pk_postgain = 0.0f;
+    *min_gr      = 0.0f;
+    *pk_out      = 0.0f;
+#endif
 }

@@ -119,6 +119,15 @@ void engine_all_notes_off(void);
 // Control-thread helper for the MIDI router (Stage 5c-iii).
 uint16_t engine_cc_to_param(uint8_t cc);
 
+// Diagnostic (SYNTH_PROFILE): snapshot + reset the master-chain signal-magnitude probe.
+// Benign cross-core race acceptable for a diagnostic readout.
+// pk_mono:     peak of the raw voice-sum (pre-gain) since the last call.
+// pk_postgain: peak value fed into the limiter (post-gain, pre-GR) since the last call.
+// min_gr:      worst (lowest) limiter gain-reduction factor seen since the last call.
+// pk_out:      peak output after soft_clip since the last call.
+// Returns zeros in all four outputs when SYNTH_PROFILE is not defined.
+void engine_profile_read(float* pk_mono, float* pk_postgain, float* min_gr, float* pk_out);
+
 #ifdef __cplusplus
 }
 #endif
