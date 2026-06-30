@@ -562,6 +562,21 @@ mono+unison release path.
 **Open follow-ups (non-blocking):** WS3 dirty-rect blit (Stage 2B — display is genuinely slow +
 cuts poly-chord contention underruns + frees budget for FX); optional poly headroom.
 
+## 2026-06-30 — Buried-note off in mono+unison must not leak voices (COMPLETE — resolves OPEN crackle handoff)
+
+**Bug (the residual sticky ~600 Hz sine):** On mono+legato U=2, on A → on B → off A (buried) → off B left two voices gated forever. Root cause in `note_off_mono`: `stack_remove(A)` ran, but `s.pitch` (the sounding slot) was B, not A. The steal-back branch fired with `prev_pitch=B` and `cur_tag=B` — the same group — so it gated B off, retriggered it without restoring `pitch`/`gate`/`unison_tag_`, then off B found nothing gated. Leak == `unison_count` voices stuck indefinitely.
+
+**Fix (commit 29d89d1, `engine/voice_alloc.cpp`):**
+- PRIMARY: Guard at top of `note_off_mono` (after `mono_slot_` and `s` are obtained): `if (s.pitch != pitch) return;` — a buried note only ran `stack_remove`, the sounding group is untouched.
+- DEFENSIVE: In the steal-back reuse retrigger loop (`prev_group_count == unison_count_` branch), explicitly restore `sv.pitch = prev_pitch`, `sv.gate = true`, `unison_tag_[idx] = prev_pitch` alongside the existing timestamp + note_on calls.
+
+**Regression test (case G, `tests/host/test_alloc_unison_mono.cpp`):** Two scenarios — buried-first then sounding release order, and sounding-first order — both assert `count_gated == 0` AND every `voice->is_active() == false` after full release.
+
+`make test` ✅ (all pass, new case G + existing A–F green) `make host` ✅ `make build` ✅ `make format` ✅.
+Image: 0x112540 B (46% partition free, DIRAM delta ~0). Commit: 29d89d1.
+
+**Resolves:** the OPEN crackle voice-leak handoff (2026-06-30 investigation log). Pending Pascal's device verification (play → release all keys → voice meter should return to 0).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
