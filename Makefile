@@ -40,8 +40,12 @@ endif
 #   FREEZE_DISPLAY=1   — freeze the display after the first frame (isolates
 #                        display-blit contention from audio compute).
 # Both flags are no-ops in the shipping image (all code is under #ifdef).
-PROFILE_DEFINE      := $(if $(filter 1,$(PROFILE)),-DPROFILE=1,)
-FREEZE_DEFINE       := $(if $(filter 1,$(FREEZE_DISPLAY)),-DFREEZE_DISPLAY=1,)
+# NOTE: unlike BENCH/USBHOST_DEBUG, these two share the default build/$(DEVICE)
+# dir with the shipping build, so they MUST be passed with an explicit 0/1 every
+# time — omitting the -D leaves the previous value stale in CMakeCache.txt and
+# the flag stays "on" until `make clean`. CMake's if(VAR) treats "0" as false.
+PROFILE_DEFINE      := -DPROFILE=$(if $(filter 1,$(PROFILE)),1,0)
+FREEZE_DEFINE       := -DFREEZE_DISPLAY=$(if $(filter 1,$(FREEZE_DISPLAY)),1,0)
 FAT ?= 0
 SDKCONFIG_DEFAULTS ?= sdkconfigs/general;sdkconfigs/$(DEVICE)
 SDKCONFIG ?= sdkconfig_$(DEVICE)
