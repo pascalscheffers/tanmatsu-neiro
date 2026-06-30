@@ -443,6 +443,37 @@ stays at 2 regardless of retrigger rate. Render cost proportional to `unison_cou
 
 `make test` ✅ `make host` ✅ `make build` ✅ `make format` ✅ image 0x112540 B (46% free). Commit: 73496d3.
 
+## 2026-06-30 — ROOT CAUSE of the "crackle": preset apply truncated at 32 params (FIXED)
+
+The multi-day crackle hunt ended here. **Preset apply used 32-entry id/val buffers**
+(`ui.cpp` boot-load/user-restore/preset-switch) but every factory preset carries **49**
+params. PLAY_MODE, UNISON_COUNT, CHORUS_MODE, PORTAMENTO, and all ARP_* sit past index 32 →
+**silently dropped → loaded at param-table defaults.** "Solo Lead" (mono+legato+unison-2)
+booted **poly with default unison** → 8 voices on an 8-key smash → `soft_clip` driven into its
+nonlinear zone (grit) **plus** 8-voice display-blit contention (underruns) = the crackle.
+
+Diagnosis path (all the prior diagnostic work paid off): signal probe showed `gr=1.00`
+(limiter never engaged) with `postg`=0.6–0.9 (soft_clip nonlinear) and `mono`≈5 (8 voices);
+audio probe showed `over`=12–18, `max`≈3000 µs with live display (contention) vs `over`=0,
+`max`=843 µs frozen. Pascal manually set PLAY_MODE=2 → `mono`=1.08, `postg`=0.2, `over`=0,
+crackle gone — proving the patch was running poly.
+
+**Fix (commit 9caa5bf):** new `PRESET_MAX_PARAMS = 96` (≥ kJunoParamCount=49, blob-format
+headroom) in `engine/preset.h`; all apply buffers sized to it — `ui.cpp` (3 sites) +
+`ui_presets_state.cpp` (audition path, which already used 64 — why *browsing* a preset sounded
+right but *booting* didn't). Fixes ALL presets, not just Solo Lead (chorus/arp/unison/play-mode
+were defaulted everywhere). `make host` ✅ `make test` ✅.
+
+**Also (commit 0e5d402):** build-flag determinism — `PROFILE`/`FREEZE_DISPLAY` now passed as
+explicit `-DVAR=0/1` so an omitted flag clears the stale CMakeCache entry (they share the
+default build dir, unlike BENCH/USBHOST_DEBUG which fork dirs). No more `make clean` needed to
+drop a diagnostic flag.
+
+**Open/low-pri follow-ups:** revert the instant-attack limiter (it's a clipper, dormant now);
+optional headroom for genuinely-poly loud patches; WS3 dirty-rect blit (Stage 2B) still cuts
+the display-contention underruns that affect poly chords + frees budget for FX. Diagnostics
+(`SYNTH_PROFILE` audio + signal probes, `SYNTH_FREEZE_DISPLAY`) remain in-tree behind flags.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
