@@ -33,13 +33,14 @@ visual ships before it.
   whole 800×480 buffer — that's the 1.15 MB PSRAM transfer to kill.
 
 ## Kickoff gate
-- **G6 — WS3 dirty-region model + partial-present seam (architecture + CPU-budget). 🛑 OPEN.**
-  Decision: does `platform_present()` gain a dirty-rectangle parameter (partial blit), or does
-  the platform diff framebuffers itself? And what is the dirty-region API the UI exposes
-  (per-widget invalidation vs a coalesced bounding box)? This changes the HAL seam *and* is the
-  whole point of the audio-bandwidth win — Opus/Pascal ratify before 6a is authored. Recommendation:
-  add an optional dirty-rect to the present seam (host can ignore it, device honours it) + a
-  small `ui_invalidate(rect)` coalescer in `ui/`. Record as an ADR.
+- **G6 — WS3 dirty-region model + partial-present seam (architecture + CPU-budget). ✅ RESOLVED
+  (2026-07-06, [ADR 0022](../decisions/0022-dirty-rect-present-seam.md)).** Ratified: the present
+  seam becomes `platform_present(int y0, int y1)` carrying a **full-width horizontal scanline
+  band** (zero-copy on device — a band of the 800-wide framebuffer is contiguous; host converts
+  only those rows). The UI exposes a coalesced-band API (`ui_invalidate(y0,y1)` /
+  `ui_dirty_take` / `ui_invalidate_all`), **not** per-widget rects. Draw model: keep the full
+  redraw, blit only the band (zero stale-pixel risk; incremental draw deferred). 6a is now
+  authorable.
 
 ## Sub-stage decomposition (running order: 6a → 6b)
 
