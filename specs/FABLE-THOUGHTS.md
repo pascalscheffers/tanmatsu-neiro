@@ -1,46 +1,17 @@
  
-%%% Original prompt:
-
-I want an analysis of this project, with the intent to make it the best musical soft synth on Tanmatsu I can with the limited resources of the device, limited sonnet 5 opus 4.8 tokens.
-  
-  Focus on things the older models would miss and save them in I fairly
-  continuous live stream of work/analysis items in specs/FABLE-THOUGHTS.md, the end of this file. Do not wait until a final conclusion
-  is made, write as you go, tokens may run out before you do. 
-  
-Things I'm particularly interested in:
-- Musicality. Ways to interact with the synth in interesting ways. One thing I don't like about the current implementation is the keyboard. The rectangular grid makes for an awkward standard 12 tone layout. Which is also not super useful. Some kind of interval/harmony based keyboard where you set the key center or it follows dynamically... or. multiple layouts for musical styles. Think like an accordion keyboard, but modern and dynamic. Intstantly fun and intuitive.
-- Rythm. Something which makes it more percussion / bass line than regular synth. Again needs research and fresh ideas. 
-- Algorithmic optimisations/efficiency. We're on quite limited hardware. If there are tricks to make the dsp code more efficient/faster? Preferably at low/no audible cost, but if something is inaudible but gains more voices. fine tuning for ESP32-P4 perhaps.
-- Is there anything we can do with the radio / CPU / signal processing capabilities of the C6 radio that would be interesting for a synth?
-
-Overall - looking for Synth features and improvements which are uniquely suited to tanmatsu. 
-
-Critital: Do no implement. Design, give code snippets. Be frugal with tokens for these and early out. Short and sweet suggestions. Assume I'll be able to expand on the idea and prompt the lower tier models effectively.
-
-Make a short and sweet plan of this, then quickly exit plan mode without too many questions unless critical information is missing.
-%%% end of original prompt.
-
-%%% The orginal prompt did not consider UI/UX at all. Spend some time on Screen UI and UX improvements. This is equal value to the musicality ideas. The features need to be accessible. The screen is big and can help people understand. The actual synth tuning settings are a bit less interesting than good UX on the musicality and voice selection. Update items below to include UI/UX hints and add an overall UI/UX design section.
-%%% → done in pass 2: see §6 and the UI-hint bullets in §§1–2; priorities reworked. 
-
-
-
----
 
 # Fable analysis — 2026-07-06
 
 Written incrementally, best ideas first. Each item: the idea, why it fits *this* device/
 codebase, a sketch, effort (S/M/L), and a one-line work-order hook for Sonnet/Opus.
 
-> **Pass 2 (2026-07-06), addressing the %%% notes:** §1a reworked for the unstaggered
-> grid (fourths grid replaces Wicki–Hayden as flagship); §2's step count fixed against
-> the real top row (13 keys → 2×8 bank mapping); UI hints folded into §§1–2; new
-> **§6 Screen UI/UX** section added; priorities updated.
+> **Executable plan:** this analysis is now sub-staged into work-orders under `specs/stages/`
+> (running order ratified below). Per-section pointers are inline. WS3 was pulled to the front
+> (Pascal's call) because it gates all of §6 and is a crackle lever.
 
 ## 1. Keyboard: stop emulating a piano — the badge is a button-field instrument
 
-%%% The keyboard is an exactly vertical / horizontal rectangle. There is no staggering. 1QAZ is a perfect column. The scheme below may need adjustment?
-%%% → correct, and it changes the flagship. Reworked below.
+> → **[Stage 7](stages/stage-7-keyboard.md)** (7a refactor · 7b fourths · 7c instrument view · 7d scale-lock · 7e chord row); §6c ships here too.
 
 **The core reframe:** the Tanmatsu QWERTY is not a bad piano; it's a *good button-grid
 instrument*. The grid is a **true rectangle** — no row stagger, `1QAZ` is a perfect
@@ -138,9 +109,7 @@ independent, parallel-safe worker job.
 
 ## 2. Rhythm: the badge already has a TR-808 front panel
 
-%%% The top row is `1234567890-=` That is only 13 keys? Not sure how you'd get to 16 from there.
-%%% → right: `` ` `` + `1`–`0` + `-` `=` is 13 before backspace, so one straight row of 16
-doesn't exist. Fix: use **two rows of 8** — reworked below.
+> → **[Stage 9](stages/stage-9-rhythm-groovebox.md)** (9a euclid · 9c/9c′ 303 · 9e drums); §6b HUD, §5 LEDs, §6e browser fold in here.
 
 **The core reframe:** the QWERTY keyboard *is* a TR sequencer front panel — just folded.
 Map **steps 1–8 to `1…8` and steps 9–16 to `Q…I` directly beneath them**: a 2×8 bank.
@@ -225,6 +194,8 @@ the groove box.
 
 ## 3. P4 efficiency: fix the spikes before chasing throughput
 
+> → WS3 (§3c.1) promoted to **[Stage 6](stages/stage-6-display-foundation.md)** (first). Rest of §3 → **[Stage 8](stages/stage-8-efficiency-ui.md)** (8a cap · 8d profile wins; §3b = won't-do); §6a/§6d fold in here.
+
 Your own profile data says average load is fine (8 voices ≈ 52%); the crackle is
 **per-block spikes** (note-on bursts + blit contention, per the open MEMORY handoff). So
 the highest-value "optimizations" are spike-flatteners, not inner-loop rewrites.
@@ -278,6 +249,8 @@ while (admitted < kMaxNoteOnsPerBlock ? s_cmds.pop(cmd) : pop_offs_only(cmd)) { 
 
 ## 4. C6 radio: badge-to-badge jam sync is the one that matters
 
+> → **[Stage 10](stages/stage-10-radio.md)** (10a bring-up · 10a′ jam sync · 10b BLE-MIDI · 10c mod source). Gate-dense; Ableton Link = GPL, do not vendor.
+
 Reality check first: the C6 hangs off SDIO and needs the `esp-hosted`/`esp_wifi_remote`
 stack on the P4 side — that's real heap, flash, and power (why it's off today). So gate
 everything here behind "radio page ON", and pick features where *wireless is the point*,
@@ -317,6 +290,8 @@ once 4a has paid the esp-hosted tax.
 
 ## 5. Tanmatsu-unique grab bag
 
+> → distributed: LEDs + velocity-by-row → [Stage 9](stages/stage-9-rhythm-groovebox.md); scope page + headphone-detect → [Stage 8](stages/stage-8-efficiency-ui.md); SD banks → dependency note (deferred); personality header → don't-block-don't-build.
+
 - **6 RGB LEDs (coprocessor):** beat/bar indicator (downbeat = accent color), arp/seq step
   chase, voice-count meter, limiter-GR red flash. Control-side I2C, trivially cheap, huge
   stage presence. **S.** Do it alongside §2 — a groove box needs blinkenlights.
@@ -337,6 +312,8 @@ once 4a has paid the esp-hosted tax.
   once 2a exists.
 
 ## 6. Screen UI/UX — the 800×480 display is the other superpower
+
+> → not a stage of its own: each item folds into the feature it serves. §6a/§6d → [Stage 8](stages/stage-8-efficiency-ui.md); §6b → [Stage 9](stages/stage-9-rhythm-groovebox.md); §6c → [Stage 7](stages/stage-7-keyboard.md); §6e → [Stage 9](stages/stage-9-rhythm-groovebox.md). Widget scaffold (`draw_curve`) + WS3 prereq → [Stage 6](stages/stage-6-display-foundation.md).
 
 *(Added in pass 2.)* Hardware synths ship 128×64 OLEDs; softsynths get full GUIs. The
 Tanmatsu is a hardware instrument with a softsynth's screen — currently spent on nine
@@ -413,7 +390,18 @@ params as mini-bars) so patches are visually recognizable before they load. The 
 audition-with-revert model is exactly right — keep it; this is presentation only. Later:
 category sort once SD-card banks (§5) exist. **Effort:** S–M.
 
-## Priorities if I had one campaign to spend
+## Priorities — RATIFIED running order (2026-07-06, Pascal)
+
+The list below was my analysis-time guess. **The executable order Pascal ratified** overrides it:
+WS3 first (gates §6, is a crackle lever), then §1 → §3 → §2 → §4, §6 folded into the stage each
+item serves. One clean Sonnet 5 context per sub-stage; "do the next stage" walks the sequence:
+
+> `6a` → `6b` → `7a` → `7b` → `7c` → `7d` → `7e` → `8a` → `8b` → `8c` → `8d` → `9a` → `9b` →
+> `9c` → `9c′` → `9d` → `9e` → `9f` → `10a` → `10a′` → `10b` → `10c`.
+
+See `specs/stages/stage-6…10` for the closed-work-order briefs + gates.
+
+### Original pass-2 guess (superseded, kept for rationale)
 
 *(Reworked in pass 2 — UI/UX is load-bearing, and WS3 gates it.)*
 
