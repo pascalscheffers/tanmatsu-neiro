@@ -132,6 +132,7 @@ and tracked per stage thereafter against the ratified per-voice budget.
 | 0 | 936 KB (55% free) | — | audio scratch (`s_left/right/interleaved`) | framebuffer | — | sine engine; no IRAM placement yet |
 | 0.5 | (bench build only) | — | — | — | **480 000 cyc/blk @ 360 MHz** | measured on device (-O2); proxy voice ~2 610 cyc/blk; 8 voices = 4.4% period (`stages/stage-0.5-results.md`) |
 | ADR 0021 limiter | — | — | `s_limiter` (5 floats, ~20 B DRAM) | — | **~10 cyc/blk** (est.) | master-bus peak limiter; ~5 flops/frame × 64 frames; no libm in render path; inlines into IRAM via header-only `dsp/limiter.h` |
+| 6a WS3 dirty-rect present | ≈1097 KB / 0x112700 (46% partition free) | — | +1 `uint32_t` dirty-band word (`ui_dirty.cpp`) | framebuffer (unchanged) | present-side only | ADR 0022: `platform_present(y0,y1)` blits only the dirty scanline band instead of the full 800×480 framebuffer; near-neutral flash/RAM (one word + a few functions) — the win is PSRAM-bandwidth on the *device*, not measured on host; on-device A/B (`PROFILE=1`, chord held during redraw) is Pascal's verification step |
 
 ## Polyphony — 8 voices + unison (ADR 0003, rationale amended)
 **8 voices** with optional **unison** (stack/detune for fatness) rather than 16 thin voices.

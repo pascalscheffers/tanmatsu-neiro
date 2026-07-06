@@ -800,3 +800,16 @@ extern "C" void ui_draw(pax_buf_t* fb, uint64_t millis, const UIState* s) {
         ui_overlay_draw_keyguide(fb, s);
     }
 }
+
+// Chrome-band accessors (ADR 0022): expose the status-strip and content-area
+// scanline ranges so app.c can invalidate the right band without duplicating
+// the layout #defines above.
+extern "C" void ui_band_status(int* y0, int* y1) {
+    *y0 = (int)(SCREEN_H - STATUS_H);
+    *y1 = (int)SCREEN_H;
+}
+
+extern "C" void ui_band_content(int* y0, int* y1) {
+    *y0 = (int)CONTENT_Y;
+    *y1 = (int)(SCREEN_H - STATUS_H);
+}

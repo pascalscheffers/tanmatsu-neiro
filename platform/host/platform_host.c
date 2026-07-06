@@ -119,15 +119,24 @@ pax_buf_t* platform_framebuffer(void) {
     return &s_fb;
 }
 
-void platform_present(void) {
-    // Convert the panel-native framebuffer to ARGB8888 (host pays the tax, ADR
-    // 0011). pax_get_index_conv normalizes whatever the buffer format is, so the
-    // result matches the device's on-screen color exactly.
-    const int count = WIN_W * WIN_H;
-    for (int i = 0; i < count; i++) {
+void platform_present(int y0, int y1) {
+    if (y0 < 0) y0 = 0;
+    if (y1 > WIN_H) y1 = WIN_H;
+    if (y0 >= y1) return;
+
+    // Convert only the dirty band to ARGB8888 (host pays the tax, ADR 0011;
+    // ADR 0022 narrows it to [y0,y1)). pax_get_index_conv normalizes whatever
+    // the buffer format is, so the result matches the device's on-screen
+    // color exactly.
+    for (int i = y0 * WIN_W; i < y1 * WIN_W; i++) {
         s_present[i] = 0xFF000000u | pax_get_index_conv(&s_fb, i);
     }
-    SDL_UpdateTexture(s_texture, NULL, s_present, WIN_W * 4);
+    // The texture retains previously-updated rows outside the band, so
+    // updating just this sub-rect and re-copying the whole texture to the
+    // window is correct and cheap (GPU blit, not the PSRAM lever ADR 0022
+    // targets).
+    SDL_Rect r = {0, y0, WIN_W, y1 - y0};
+    SDL_UpdateTexture(s_texture, &r, s_present + (size_t)y0 * WIN_W, WIN_W * 4);
     SDL_RenderClear(s_renderer);
     SDL_RenderCopy(s_renderer, s_texture, NULL, NULL);
     SDL_RenderPresent(s_renderer);

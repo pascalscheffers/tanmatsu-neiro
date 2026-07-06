@@ -14,6 +14,7 @@
 #include "platform.h"
 #include "synth.h"
 #include "ui.h"
+#include "ui_dirty.h"
 #ifdef SYNTH_BENCH
 #include "bench.h"
 #endif
@@ -51,7 +52,7 @@ static void bench_screen(const char* l1, const char* l2) {
     pax_draw_text(fb, 0xFFFFFFFF, pax_font_sky_mono, 24, 12, 12, "Tanmatsu Synth - CPU bench");
     pax_draw_text(fb, 0xFF30C0FF, pax_font_sky_mono, 20, 12, 56, l1);
     if (l2) pax_draw_text(fb, 0xFF7A7A8A, pax_font_sky_mono, 16, 12, 88, l2);
-    platform_present();
+    platform_present(0, (int)pax_buf_get_height(fb));
 }
 
 // Block until the user presses a key on the badge (or asks to quit).
@@ -99,7 +100,18 @@ static void render_cb(void* arg) {
 #ifdef SYNTH_PROFILE
     uint64_t t1 = platform_cycles_now();
 #endif
-    platform_present();
+    // ADR 0022: ui_draw always fully repaints the framebuffer, so it is
+    // always correct; only the blit is narrowed. The failure mode of the
+    // whole dirty-band scheme is therefore "present more," never "present
+    // stale": a missed/raced ui_invalidate yields an empty band here, which
+    // falls back to a full present; a lost union still gets picked up (as a
+    // superset) on the next bump.
+    int py0, py1;
+    if (!ui_dirty_take(&py0, &py1)) {
+        py0 = 0;
+        py1 = (int)pax_buf_get_height(fb);
+    }
+    platform_present(py0, py1);
 #ifdef SYNTH_PROFILE
     uint64_t t2       = platform_cycles_now();
     uint64_t cyc_draw = t1 - t0;
@@ -192,14 +204,35 @@ void app_run(void) {
         while (platform_poll_event(&ev)) {
             if (ev.type == PLATFORM_EV_QUIT) running = false;
             keyboard_handle_event(&ev);
-            if (ui_handle_event(&ui_state, &ev)) ui_state.change_seq++;
+            int  prev_page     = ui_state.page;
+            bool prev_keyguide = ui_state.show_keyguide;
+            if (ui_handle_event(&ui_state, &ev)) {
+                ui_state.change_seq++;
+                if (ui_state.page != prev_page || ui_state.show_keyguide != prev_keyguide) {
+                    ui_invalidate_all();
+                } else {
+                    int a, b;
+                    ui_band_content(&a, &b);
+                    ui_invalidate(a, b);
+                }
+            }
         }
         midi_router_poll();
         {
             uint16_t fid;
             float    fnorm;
             if (midi_router_take_param_focus(&fid, &fnorm)) {
-                if (ui_focus_param(&ui_state, fid, fnorm)) ui_state.change_seq++;
+                int prev_page = ui_state.page;
+                if (ui_focus_param(&ui_state, fid, fnorm)) {
+                    ui_state.change_seq++;
+                    if (ui_state.page != prev_page) {
+                        ui_invalidate_all();
+                    } else {
+                        int a, b;
+                        ui_band_content(&a, &b);
+                        ui_invalidate(a, b);
+                    }
+                }
             }
         }
 
@@ -212,6 +245,9 @@ void app_run(void) {
                 ui_state.active_voices = v;
                 ui_state.last_voices   = v;
                 ui_state.change_seq++;
+                int a, b;
+                ui_band_status(&a, &b);
+                ui_invalidate(a, b);
             } else {
                 ui_state.active_voices = v;
             }
@@ -219,6 +255,9 @@ void app_run(void) {
                 ui_state.octave      = o;
                 ui_state.last_octave = o;
                 ui_state.change_seq++;
+                int a, b;
+                ui_band_status(&a, &b);
+                ui_invalidate(a, b);
             } else {
                 ui_state.octave = o;
             }
@@ -226,7 +265,12 @@ void app_run(void) {
             // Drive hold-to-repeat for F1/F2 shape buttons (WO-5). State writes
             // happen inside ui_tick; bump change_seq afterwards if a repeat fired.
             ui_tick(&ui_state, now);
-            if (ui_state.held_dir != 0) ui_state.change_seq++;
+            if (ui_state.held_dir != 0) {
+                ui_state.change_seq++;
+                int a, b;
+                ui_band_content(&a, &b);
+                ui_invalidate(a, b);
+            }
 
             // On host there is no render task; draw inline on the main thread.
             if (!has_render_task) render_cb(&ui_state);

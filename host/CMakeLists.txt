@@ -73,7 +73,8 @@ set(HOST_SRCS
     "${REPO_ROOT}/ui/ui_overlay.cpp"
     "${REPO_ROOT}/ui/ui_icons.cpp"
     "${REPO_ROOT}/ui/ui_page_table.cpp"
-    "${REPO_ROOT}/ui/ui_focus.cpp")
+    "${REPO_ROOT}/ui/ui_focus.cpp"
+    "${REPO_ROOT}/ui/ui_dirty.cpp")
 
 if(SYNTH_BENCH)
     list(APPEND HOST_SRCS "${REPO_ROOT}/engine/bench.c")

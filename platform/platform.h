@@ -83,8 +83,11 @@ bool platform_init(void);
 // display.
 pax_buf_t* platform_framebuffer(void);
 
-// Push the current framebuffer contents to the screen.
-void platform_present(void);
+// Push framebuffer rows [y0, y1) (a full-width band) to the screen. A
+// full-screen present is platform_present(0, height). Implementations clamp
+// 0 <= y0 < y1 <= height and no-op if the clamped range is empty (ADR 0022:
+// dirty-region present seam — narrows the PSRAM/panel blit to what changed).
+void platform_present(int y0, int y1);
 
 // Start the audio sink, which begins calling `render` on its own thread/context.
 // Returns false if audio could not be started.

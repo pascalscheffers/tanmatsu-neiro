@@ -615,6 +615,35 @@ build install run` + `make sniff`, smash 8 hard on Juno EP, read `[PROFILE] audi
 
 Lesson (RT rule 6): amplitude intuition was wrong; the signal probe + cycle profiler settled it.
 
+## 2026-07-06 — Stage 6a: WS3 dirty-rect present (COMPLETE, resolves G6/ADR 0022)
+
+Replaced the full-screen `platform_present()` with a coalesced full-width scanline-band present.
+New `ui/ui_dirty.{h,cpp}`: `ui_invalidate(y0,y1)` / `ui_invalidate_all()` / `ui_dirty_take()`, one
+packed `volatile uint32_t` band word (hi16=y0, lo16=y1). `platform_present(void)` →
+`platform_present(int y0,int y1)`; device backend does a zero-copy row-offset blit (captures
+`s_fb_bpp` from the chosen panel format at init — was previously implicit); host converts +
+`SDL_UpdateTexture`s only the band rows. `app.c` wires invalidation at all five `change_seq`
+sites: nav/nudge/page/keyguide and MIDI auto-focus → full-screen on page/keyguide change, else
+content band (`ui_band_content`); voice-meter + octave → status band (`ui_band_status`, the
+note-on/off hot path); held-dir repeat → content band. `render_cb` takes the band with a
+full-present fallback when nothing is pending (first frame, or a raced/missed invalidate).
+
+**Three-band mapping:** whole-screen (page/keyguide change) / content `[40,442)` / status
+`[442,480)` (`ui/ui.cpp` `CONTENT_Y`/`SCREEN_H`/`STATUS_H`).
+
+**Safety property:** `ui_draw` still fully repaints every frame, so the framebuffer is always
+correct — only the blit is narrowed. Failure mode is "present more, never stale": an empty/raced
+band falls back to full-screen; a lost union is a superset next bump. This makes the scheme
+race-tolerant across the control/render task split.
+
+`make host`/`make test`/`make build` all green, membrane clean. `make size`: flash 0x112700
+(≈1097 KB, 46% partition free) — near-neutral as expected (present-side change only). Stage 6a
+marked done in `specs/stages/stage-6-display-foundation.md`; row added to the `specs/02` budget
+table. **Not yet measured:** on-device PSRAM traffic / block-time `over` count before vs after —
+that A/B (`PROFILE=1`, 8-note chord held during redraw) is Pascal's device-verification step;
+host has no PSRAM lever to observe. If `over` drops toward 0, that closes the WS3 half of the
+open poly-crackle handoff (2026-06-30, above); 6b (`draw_curve` widget) can proceed independently.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

@@ -52,15 +52,15 @@ visual ships before it.
 | 6b `draw_curve` widget | S | **Sonnet · low** (pure, mechanical widget) | — |
 
 
-**6a — WS3 dirty-rect blit (FOUNDATION).** Replace the full-screen present with small dirty
-regions over static chrome. UI tracks invalidated rectangles; `platform_present` blits only
-those. *Seams:* `ui/ui.cpp` (+ maybe a small `ui/ui_dirty.*`), `platform/platform.h` present
-seam, `platform/device/` + `platform/host/` present impls. *Acceptance:* no full-screen blit on
-a param nudge / step tick; device A/B shows reduced PSRAM traffic; **crackle-under-redraw
-regression clean** (`PROFILE=1`, redraw while an 8-note chord holds). *One-context fit:* likely,
-but **split-if** the dirty-region tracking (ui) and the partial-blit path (both platform
-backends) together blow the budget → `6a-i` (dirty-region tracking + `ui_invalidate` in `ui/`)
-then `6a-ii` (partial-present in the HAL + both backends). **G6 gates authoring.**
+**6a — WS3 dirty-rect blit (FOUNDATION). ✅ DONE (2026-07-06).** Replaced the full-screen present
+with a coalesced full-width scanline-band present per ADR 0022. Landed in one context (no split
+needed): `ui/ui_dirty.{h,cpp}` (new coalescer), `ui/ui.cpp`/`ui.h` chrome-band accessors,
+`app/app.c` invalidation wiring at all five `change_seq` sites + band-present in `render_cb`,
+`platform/platform.h` seam (`platform_present(int y0,int y1)`), both backends (device: zero-copy
+row-offset blit; host: converts + updates only the band). `make host`/`make build`/`make test`
+green; membrane clean; flash 0x112700 (near-neutral, as expected — see MEMORY.md). On-device
+PSRAM/block-time A/B (the crackle-under-redraw regression check) is Pascal's verification step
+(host has no PSRAM lever to measure).
 
 **6b — `draw_curve` shared widget scaffold** (§6a widget only — no page wiring yet). A tiny PAX
 polyline helper so later stages draw shapes, not numbers. *Seams:* new `ui/ui_widgets.{h,cpp}`:

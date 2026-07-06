@@ -81,6 +81,13 @@ void ui_draw(pax_buf_t* fb, uint64_t millis, const UIState* s);
 // If the PRESET page is currently auditioning, the audition is cleared first.
 bool ui_focus_param(UIState* s, uint16_t param_id, float norm);
 
+// Chrome-band accessors (ADR 0022): the scanline range [*y0, *y1) of the
+// bottom status strip / the page content area, in framebuffer rows. Lets
+// callers outside ui.cpp (app.c) invalidate the right band without
+// duplicating ui.cpp's layout #defines.
+void ui_band_status(int* y0, int* y1);
+void ui_band_content(int* y0, int* y1);
+
 #ifdef __cplusplus
 }
 #endif

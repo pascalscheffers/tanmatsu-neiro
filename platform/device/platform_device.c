@@ -41,6 +41,10 @@ static pax_buf_t s_fb           = {0};
 static size_t    s_h_res        = 0;
 static size_t    s_v_res        = 0;
 static bool      s_have_display = false;
+// Bytes per pixel of s_fb, set once at init from the chosen panel format (ADR
+// 0022): the dirty-band present needs this to offset into the framebuffer by
+// row, and the format is panel-dependent so it must not be hardcoded.
+static size_t    s_fb_bpp       = 0;
 
 static pax_buf_type_t bsp_to_pax_format(bsp_display_color_format_t fmt) {
     switch (fmt) {
@@ -51,6 +55,18 @@ static pax_buf_type_t bsp_to_pax_format(bsp_display_color_format_t fmt) {
         case BSP_DISPLAY_COLOR_FORMAT_24_888RGB:
         default:
             return PAX_BUF_24_888RGB;
+    }
+}
+
+static size_t pax_format_bpp(pax_buf_type_t fmt) {
+    switch (fmt) {
+        case PAX_BUF_16_565RGB:
+            return 2;
+        case PAX_BUF_32_8888ARGB:
+            return 4;
+        case PAX_BUF_24_888RGB:
+        default:
+            return 3;
     }
 }
 
@@ -172,7 +188,9 @@ bool platform_init(void) {
     bsp_display_endianness_t   endian;
     res = bsp_display_get_parameters(&s_h_res, &s_v_res, &color_format, &endian);
     if (res == ESP_OK) {
-        pax_buf_init(&s_fb, NULL, s_h_res, s_v_res, bsp_to_pax_format(color_format));
+        pax_buf_type_t pax_fmt = bsp_to_pax_format(color_format);
+        pax_buf_init(&s_fb, NULL, s_h_res, s_v_res, pax_fmt);
+        s_fb_bpp = pax_format_bpp(pax_fmt);
         pax_buf_reversed(&s_fb, endian == BSP_DISPLAY_ENDIAN_BIG);
         pax_buf_set_orientation(&s_fb, bsp_to_pax_orientation(bsp_display_get_default_rotation()));
         s_have_display = true;
@@ -207,9 +225,16 @@ pax_buf_t* platform_framebuffer(void) {
     return s_have_display ? &s_fb : NULL;
 }
 
-void platform_present(void) {
+void platform_present(int y0, int y1) {
     if (!s_have_display) return;
-    bsp_display_blit(0, 0, s_h_res, s_v_res, pax_buf_get_pixels(&s_fb));
+    if (y0 < 0) y0 = 0;
+    if (y1 > (int)s_v_res) y1 = (int)s_v_res;
+    if (y0 >= y1) return;
+    // A full-width band of the framebuffer is contiguous, so this is a zero-
+    // copy pointer offset into the same buffer bsp_display_blit already reads
+    // from (ADR 0022) — no scratch buffer, no per-row packing.
+    bsp_display_blit(0, (size_t)y0, s_h_res, (size_t)y1,
+                     (const uint8_t*)pax_buf_get_pixels(&s_fb) + (size_t)y0 * s_h_res * s_fb_bpp);
 }
 
 bool platform_audio_start(const platform_audio_config_t* cfg, platform_audio_render_fn render, void* user) {
