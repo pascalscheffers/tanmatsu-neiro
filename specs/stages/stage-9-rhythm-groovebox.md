@@ -46,6 +46,19 @@ turns the synth into an instrument with a genre and a face. Priority within §2 
 
 ## Sub-stage decomposition (running order: 9a → 9b → 9c → 9c′ → 9d → 9e → 9f)
 
+**Dispatch (ADR 0017 tier+effort grid):**
+
+| Sub-stage | Effort | Worker | Gate |
+|---|---|---|---|
+| 9a Euclidean arp | S | **Sonnet · medium** | — |
+| 9b PERFORM HUD | M | **Sonnet · medium** | — |
+| 9c 303 sequencer core | M | **Sonnet · high** (mod-matrix accent routing — sonic) | G9c |
+| 9c′ 303 UI + pattern-in-preset | M | **Sonnet · medium** (format decided at gate) | G9c′, needs 9b+9c |
+| 9d RGB LED indicators | S | **Sonnet · low** (control-side I2C, mechanical) | — |
+| 9e drum voice section | M | **Sonnet · high** (new DSP correctness) | G9e |
+| 9f preset browser polish | S–M | **Sonnet · medium** | — |
+
+
 **9a — Euclidean arp (§2b — highest fun-per-token).** Add `ARP_EUCLID_LEN` (1–16) +
 `ARP_EUCLID_FILL` (0–16); mask arp steps with `euclid_hit(s,fill,len) = fill>0 && (s*fill)%len < fill`
 (Bresenham, no Bjorklund). Rests keep the clock so it locks with 9c. *Seams:* two ARP params

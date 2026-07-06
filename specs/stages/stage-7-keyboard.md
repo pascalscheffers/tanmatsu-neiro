@@ -43,6 +43,17 @@ the screen (7c) is what makes the new layouts learnable in one session.
 
 ## Sub-stage decomposition (running order: 7a → 7b → 7c → 7d → 7e)
 
+**Dispatch (ADR 0017 tier+effort grid):**
+
+| Sub-stage | Effort | Worker | Gate |
+|---|---|---|---|
+| 7a layout dispatch refactor | S–M | **Sonnet · medium** (behaviour-preserving refactor — must not change notes) | — |
+| 7b fourths grid | S–M | **Sonnet · medium** | G7a |
+| 7c instrument-view overlay | M | **Sonnet · medium** (chord lookup is fiddly but not sonic) | needs 6a |
+| 7d scale-lock + key center | S | **Sonnet · medium** | G7b |
+| 7e Stradella chord row | S | **Sonnet · medium** | needs 7d |
+
+
 **7a — Layout dispatch refactor (FOUNDATION, do first).** Turn `key_to_semitone` into a
 layout-fn dispatch + a static scancode→(row,col) table. *Seams:* `control/keyboard.{c,h}`;
 `KeyPos{row,col}` + `layout_fn` pointer; default layout = today's piano fill (behaviour

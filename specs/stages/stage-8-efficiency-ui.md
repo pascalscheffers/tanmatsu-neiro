@@ -40,6 +40,16 @@ instrument" polish that WS3 (Stage 6) just made free.
 
 ## Sub-stage decomposition (running order: 8a → 8b → 8c → 8d)
 
+**Dispatch (ADR 0017 tier+effort grid):**
+
+| Sub-stage | Effort | Worker | Gate |
+|---|---|---|---|
+| 8a note-on admission cap | S | **Sonnet · high** (audio-thread command drain — sacred path, correctness-critical) | G8a |
+| 8b curve-header graphics | M | **Sonnet · medium** | needs 6b |
+| 8c wayfinding pack | S–M | **Sonnet · medium** | — |
+| 8d profile-gated cheap wins | S each | **Sonnet · high** (DSP/build correctness, NaN guards, bench-gated) | G8d |
+
+
 **8a — Note-on admission cap (§3a — directly targets the open poly-crackle item).** In
 `synth.cpp`'s command drain, admit at most `kMaxNoteOnsPerBlock` (=2) note-ons per block; leave
 the rest in the queue for next block. Note-offs unlimited. *Seams:* `engine/synth.cpp` drain

@@ -43,6 +43,16 @@ campaign — schedule when an L-sized slot exists.
 
 ## Sub-stage decomposition (running order: 10a → 10a′ → 10b → 10c)
 
+**Dispatch (ADR 0017 tier+effort grid):**
+
+| Sub-stage | Effort | Worker | Gate |
+|---|---|---|---|
+| 10a esp-hosted / C6 bring-up | L | **Sonnet · high** (fiddly stack bring-up; may need Opus-assisted steering) | G10a |
+| 10a′ ESP-NOW jam sync | S | **Sonnet · high** (TSF timing correctness) | needs 10a |
+| 10b BLE-MIDI | M | **Sonnet · medium** | G10b |
+| 10c radio mod source | S | **Sonnet · low** | needs 10a |
+
+
 **10a — esp-hosted / C6 bring-up (§4a prerequisite, FOUNDATION).** Stand up the radio stack behind
 a "radio page ON" toggle; ESP-NOW send/recv of a smoke-test packet; **measure heap/flash/power**.
 This is the bulk of §4a and must land before any sync logic. *Seams:* `platform/device/` radio

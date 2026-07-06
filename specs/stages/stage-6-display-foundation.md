@@ -43,6 +43,14 @@ visual ships before it.
 
 ## Sub-stage decomposition (running order: 6a → 6b)
 
+**Dispatch (ADR 0017 tier+effort grid):**
+
+| Sub-stage | Effort | Worker | Gate |
+|---|---|---|---|
+| 6a WS3 dirty-rect blit | M | **Sonnet · high** (audio-bandwidth + present-timing correctness — a miss is audible) | G6 |
+| 6b `draw_curve` widget | S | **Sonnet · low** (pure, mechanical widget) | — |
+
+
 **6a — WS3 dirty-rect blit (FOUNDATION).** Replace the full-screen present with small dirty
 regions over static chrome. UI tracks invalidated rectangles; `platform_present` blits only
 those. *Seams:* `ui/ui.cpp` (+ maybe a small `ui/ui_dirty.*`), `platform/platform.h` present
