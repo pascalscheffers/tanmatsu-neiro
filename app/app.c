@@ -106,8 +106,15 @@ static void render_cb(void* arg) {
     // stale": a missed/raced ui_invalidate yields an empty band here, which
     // falls back to a full present; a lost union still gets picked up (as a
     // superset) on the next bump.
-    int py0, py1;
-    if (!ui_dirty_take(&py0, &py1)) {
+    // The very first present must be full-screen: the panel/SDL texture starts
+    // with undefined contents, and the frame-1 status reconciliation (voices +
+    // octave, above) only invalidates the narrow status band — so an incidental
+    // partial band would leave the freshly-drawn content area never blitted.
+    // s_last_drawn_seq is still 0 only on this first paint (change_seq starts at
+    // 1); ui_dirty_take still runs first to clear the pending band either way.
+    int  py0, py1;
+    bool have_band = ui_dirty_take(&py0, &py1);
+    if (!have_band || s_last_drawn_seq == 0) {
         py0 = 0;
         py1 = (int)pax_buf_get_height(fb);
     }
