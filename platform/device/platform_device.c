@@ -233,7 +233,9 @@ void platform_present(int y0, int y1) {
     // A full-width band of the framebuffer is contiguous, so this is a zero-
     // copy pointer offset into the same buffer bsp_display_blit already reads
     // from (ADR 0022) — no scratch buffer, no per-row packing.
-    bsp_display_blit(0, (size_t)y0, s_h_res, (size_t)y1,
+    // bsp_display_blit takes (x, y, width, HEIGHT, buffer) — the 4th arg is a
+    // row count, not the bottom coordinate, so it must be y1 - y0.
+    bsp_display_blit(0, (size_t)y0, s_h_res, (size_t)(y1 - y0),
                      (const uint8_t*)pax_buf_get_pixels(&s_fb) + (size_t)y0 * s_h_res * s_fb_bpp);
 }
 
