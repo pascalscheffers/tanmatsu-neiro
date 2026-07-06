@@ -1,4 +1,6 @@
  
+%%% Original prompt:
+
 I want an analysis of this project, with the intent to make it the best musical soft synth on Tanmatsu I can with the limited resources of the device, limited sonnet 5 opus 4.8 tokens.
   
   Focus on things the older models would miss and save them in I fairly
@@ -16,6 +18,12 @@ Overall - looking for Synth features and improvements which are uniquely suited 
 Critital: Do no implement. Design, give code snippets. Be frugal with tokens for these and early out. Short and sweet suggestions. Assume I'll be able to expand on the idea and prompt the lower tier models effectively.
 
 Make a short and sweet plan of this, then quickly exit plan mode without too many questions unless critical information is missing.
+%%% end of original prompt.
+
+%%% The orginal prompt did not consider UI/UX at all. Spend some time on Screen UI and UX improvements. This is equal value to the musicality ideas. The features need to be accessible. The screen is big and can help people understand. The actual synth tuning settings are a bit less interesting than good UX on the musicality and voice selection. Update items below to include UI/UX hints and add an overall UI/UX design section.
+%%% → done in pass 2: see §6 and the UI-hint bullets in §§1–2; priorities reworked. 
+
+
 
 ---
 
@@ -24,35 +32,54 @@ Make a short and sweet plan of this, then quickly exit plan mode without too man
 Written incrementally, best ideas first. Each item: the idea, why it fits *this* device/
 codebase, a sketch, effort (S/M/L), and a one-line work-order hook for Sonnet/Opus.
 
+> **Pass 2 (2026-07-06), addressing the %%% notes:** §1a reworked for the unstaggered
+> grid (fourths grid replaces Wicki–Hayden as flagship); §2's step count fixed against
+> the real top row (13 keys → 2×8 bank mapping); UI hints folded into §§1–2; new
+> **§6 Screen UI/UX** section added; priorities updated.
+
 ## 1. Keyboard: stop emulating a piano — the badge is a button-field instrument
 
-**The core reframe:** the Tanmatsu QWERTY is not a bad piano; it's a *good concertina*.
-It's a ~14×5 staggered button grid — the exact geometry that isomorphic layouts
-(Wicki–Hayden, harmonic table) were designed for. The QWERTY row stagger (~half a key)
-is the half-offset those layouts want. The current GarageBand layout throws this away and
-inherits the piano's worst property (every key needs different fingering) with none of its
-benefits (no velocity, no width). Isomorphic layouts have the property that **every chord
-and interval is the same finger-shape in every key** — that's the "instantly fun and
-intuitive" you asked for, and it's the thing a rectangular grid does *better* than a piano.
+%%% The keyboard is an exactly vertical / horizontal rectangle. There is no staggering. 1QAZ is a perfect column. The scheme below may need adjustment?
+%%% → correct, and it changes the flagship. Reworked below.
+
+**The core reframe:** the Tanmatsu QWERTY is not a bad piano; it's a *good button-grid
+instrument*. The grid is a **true rectangle** — no row stagger, `1QAZ` is a perfect
+column (confirmed against the badge keymap: the coprocessor reports per-key fields that
+the BSP translates to standard PC set-1 scancodes, so a scancode→(row,col) table is
+trivial and exact). That's roughly 4 playable rows × 10–13 aligned columns. The current
+GarageBand layout inherits the piano's worst property (every key signature needs
+different fingering) with none of its benefits (no velocity, no width). Isomorphic
+layouts have the property that **every chord and interval is the same finger-shape in
+every key** — that's the "instantly fun and intuitive" you asked for, and it's the thing
+a rectangular grid does *better* than a piano.
 
 All of these are just alternative fills of one function — the seam already exists:
 `key_to_semitone()` in `control/keyboard.c` (public via `keyboard_semitone_for_key()`),
 consumed by the F5 overlay (`ui/ui_overlay.cpp`) with no table duplication. Generalize to
 a layout-table pointer and everything downstream (overlay included) follows.
 
-### 1a. Wicki–Hayden layout (the flagship — do this one first)
+### 1a. Fourths grid — LinnStrument/Push layout (the flagship, do this one first)
 
-Axes: right = +2 semitones, up-right = +7 (fifth), up-left = +5 (fourth). Four usable
-rows (`zxcv…`, `asdf…`, `qwer…`, `1234…`) give ~2.5 octaves without octave-shift, vs 1.3
-now. A major triad is one compact shape *everywhere*; scales are two alternating rows.
+*Reworked for the unstaggered grid.* Wicki–Hayden's defining move — a fifth is the
+diagonal to the half-offset key above — **requires row stagger**; on a true rectangle
+every classic W–H finger shape skews and the layout's whole selling point evaporates.
+But an unstaggered rectangle is *exactly* the geometry of the **fourths grid** used by
+the LinnStrument and Ableton Push: **+1 semitone per column rightward, +5 semitones (a
+perfect fourth) per row upward**. The badge becomes the bottom four strings of a bass in
+all-fourths tuning.
+
+Four rows (`zxcv…`, `asdf…`, `qwer…`, `1234…`) × 10–13 columns ≈ 2+ octaves without
+octave-shift (vs 1.3 now). A major triad is one compact shape *everywhere*; the same
+pitch is reachable in several places, and that redundancy is a feature (compact
+voicings) — plus any guitarist or bassist can play it within a minute. Make the row
+interval a stepped param (`ROW_INTERVAL`: +3/+4/+5/+7 — the LinnStrument does exactly
+this), so fourths is merely the default and fifths/thirds tunings are free.
 
 ```c
-// keyboard.c — layouts become data. Grid position (row, col) per key, one formula per layout.
+// keyboard.c — layouts become data. Grid position (row, col) per key, one formula.
 typedef struct { uint8_t row, col; } KeyPos;          // from a scancode→pos table
-static int wicki_hayden_semitone(KeyPos p) {
-    // row 0 = zxcv row. Each row up: +7 then +5 alternating ≈ +6/row with stagger,
-    // equivalently: semis = col*2 + row*5 + (row+1)/2*2;  tune constants to taste.
-    return p.col * 2 + p.row * 5 + ((p.row + 1) / 2) * 2;
+static int grid_semitone(KeyPos p) {
+    return p.col + p.row * s_row_interval;            // 5 = fourths (default)
 }
 ```
 
@@ -60,9 +87,15 @@ The BSP delivers scancodes (row/col is derivable from a static 60-entry table); 
 side uses `SDL_Scancode`, which is *already* positional (layout-independent) — nice bonus:
 musical typing stops breaking on non-US keyboards.
 
+- **UI hint:** an isomorphic layout is only learnable if the screen teaches it. Ship the
+  §6c *instrument view* (upgraded F5 overlay) **with** the layout, not after: every cell
+  shows its note name, the current root gets an accent dot in every octave, held keys
+  light up, in-scale keys brighten when 1b is on. That one screen turns "weird layout"
+  into "self-teaching instrument" in a session.
 - **Effort:** S–M (one table + one enum param + overlay render per layout).
-- **WO hook:** "Add `KEYB_LAYOUT` stepped param (Piano/Wicki–Hayden); scancode→(row,col)
-  table in keyboard.c; overlay draws note names from the active layout fn."
+- **WO hook:** "Add `KEYB_LAYOUT` stepped param (Piano/Grid) + `ROW_INTERVAL`;
+  scancode→(row,col) table in keyboard.c; overlay draws note names from the active
+  layout fn."
 
 ### 1b. Scale-locked dynamic layout with movable key center
 
@@ -75,6 +108,10 @@ shift = chromatic accidental. Dynamic follow (key center tracks the last-played 
 simple weighted pitch-class histogram) is a v2 toggle — start with explicit setting, it's
 one param row and zero magic.
 
+- **UI hint:** show KEY/SCALE as a permanent badge in the status strip ("E min pent")
+  whenever a non-chromatic layout is active — the player must always know what the keys
+  currently mean. In the §6c instrument view, color by degree (root strongest, 5th next)
+  rather than binary in/out of scale.
 - **Effort:** S (a 12-entry table per scale; reuses the same layout seam as 1a).
 - **WO hook:** "Add SCALE + KEY_CENTER params (GROUP_GLOBAL) + `scale_layout_semitone()`;
   overlay shows degree numbers + note names."
@@ -85,8 +122,12 @@ Top row (`1234…`) becomes **chord buttons in the current key**: I ii iii IV V 
 then secondary dominants / borrowed chords further right. One press = engine_note_on ×3–4
 (control-side loop, audio thread untouched). With ARP_ON + LATCH this is instantly a
 one-finger accompaniment machine; with the 303 mode below it's a bassline+chords duo on
-one badge. Depends on 1b's KEY_CENTER/SCALE params — build after it.
+one badge. Depends on 1b's KEY_CENTER/SCALE params — build after it. The physical top
+row has 13 note keys (`` ` `` `1`–`0` `-` `=`): 7 diatonic degrees + 6 spice chords.
 
+- **UI hint:** the §6c instrument view labels the chord row with live roman numerals
+  *and* concrete names ("IV / A maj") for the current key; the held chord's name renders
+  large. This is how non-theorists learn what they're playing.
 - **Effort:** S once 1b exists.
 - **WO hook:** "Chord-row mode: top row triggers diatonic triads of KEY_CENTER/SCALE;
   velocity from BASE_VELOCITY; release = matching note_offs (track per-key note lists)."
@@ -97,10 +138,18 @@ independent, parallel-safe worker job.
 
 ## 2. Rhythm: the badge already has a TR-808 front panel
 
-**The core reframe:** a row of the QWERTY keyboard *is* a 16-step TR sequencer front
-panel. `1234567890` + four more keys = 16 physical step buttons in a straight line, with
-the screen right above them to show the running step. No synth-with-a-screen has that;
-step toggling with real buttons is the whole reason people love x0x boxes. Everything in
+%%% The top row is `1234567890-=` That is only 13 keys? Not sure how you'd get to 16 from there.
+%%% → right: `` ` `` + `1`–`0` + `-` `=` is 13 before backspace, so one straight row of 16
+doesn't exist. Fix: use **two rows of 8** — reworked below.
+
+**The core reframe:** the QWERTY keyboard *is* a TR sequencer front panel — just folded.
+Map **steps 1–8 to `1…8` and steps 9–16 to `Q…I` directly beneath them**: a 2×8 bank.
+That's arguably *better* than a straight 16 — the pattern reads as two bars of eighths,
+each step key sits in a perfect column with its +8 twin, and the screen right above draws
+the same 2×8 grid with the running step chasing through it, so physical geometry = screen
+geometry = pattern structure. (`9 0 - =` stay free for run/stop, pattern select, length.)
+Step toggling with real buttons is the whole reason people love x0x boxes; no
+synth-with-a-screen has the display *adjacent to* the step keys like this. Everything in
 this section is **control-side** (a sequencer task feeding `engine_note_on/off` through the
 existing `CommandQueue`) — the sacred audio thread is untouched.
 
@@ -119,9 +168,15 @@ A 303 is: mono + slide + accent + 16-step pattern. The engine already has mono/l
   cutoff dest) if the matrix's cutoff scaling is fixed (known cosmetic-no-op issue from the
   Launchkey session) — fixing that unlocks accent *and* repays existing debt.
 
-Entry UI: step keys toggle gate; hold step + arrows set pitch; hold step + F1/F2 = accent/
-slide. Pattern storage rides the preset blob (spec 05 already reserves a pattern model).
+Entry UI: step keys (2×8 bank, `1…8` / `Q…I`) toggle gate; hold step + arrows set pitch;
+hold step + F1/F2 = accent/slide. Pattern storage rides the preset blob (spec 05 already
+reserves a pattern model).
 
+- **UI hint:** the on-screen 2×8 grid mirrors the keys — gate = filled cell, accent =
+  bright cell, slide = tie-line into the next cell, pitch as small note name under each
+  step, running step highlighted. While a step is held, a large readout shows that step's
+  note/accent/slide (same "big transient value" pattern as §6d). Lives on the PERFORM
+  HUD (§6b).
 - **Effort:** M (sequencer core + step-entry UI + pattern-in-preset).
 - **WO hook:** "SEQ mode on the PERFORM page: 16-step mono pattern, accent→VCF depth via
   matrix, slide via legato note-overlap, runs off the existing 96 PPQN arp clock."
@@ -143,8 +198,12 @@ Two param rows on the ARP group; rests keep the clock so it locks with 2a. E(3,8
 bass patch is instant dembow; E(5,16) is instant acid. This is the highest
 fun-per-token item in this file.
 
-- **WO hook:** "Two ARP params + euclid mask in the arp tick; overlay/PERFORM page shows
-  the pattern as dots."
+- **UI hint:** draw E(fill,len) as a **ring of dots** with the playhead sweeping it (the
+  canonical Euclidean visual — it makes the two params self-explanatory in a way the
+  numbers never will). Small enough to live in the PERFORM HUD *and* next to the param
+  rows while editing.
+- **WO hook:** "Two ARP params + euclid mask in the arp tick; PERFORM page shows the
+  pattern as a playhead ring."
 
 ### 2c. One cheap drum voice (percussion channel, not a second engine)
 
@@ -277,13 +336,95 @@ once 4a has paid the esp-hosted tax.
   (bottom row = accent) — turns a hardware limitation into a playing technique. Free
   once 2a exists.
 
+## 6. Screen UI/UX — the 800×480 display is the other superpower
+
+*(Added in pass 2.)* Hardware synths ship 128×64 OLEDs; softsynths get full GUIs. The
+Tanmatsu is a hardware instrument with a softsynth's screen — currently spent on nine
+text-list param pages plus a status strip. Honest, but text-shaped. Three principles for
+where the pixels should go instead:
+
+1. **Show shapes, not numbers.** Envelopes, filter curves, patterns — draw the thing the
+   param *is*. A number plus a bar is what a 128×64 synth is forced into; we aren't.
+2. **Make performance state glanceable.** While playing you look at the screen from arm's
+   length; the important state (tempo, pattern, key/scale, octave, voices) must read at
+   that distance.
+3. **The screen teaches the instrument.** Every §1/§2 musicality feature only lands if
+   the display explains it live (grid note-map, chord names, pattern rings). UI is not
+   polish on those features — it's half of each feature.
+
+**Hard prerequisite: WS3 dirty-rect blit.** The full-screen 1.15 MB PSRAM blit steals the
+audio core's memory bandwidth (the known crackle lever). Every idea below is designed as
+**small dirty regions over static chrome** — no full-screen animation, ever. Land WS3
+first; it converts all of §6 from "audio risk" to "free".
+
+### 6a. Draw the curve, not the number (per-page graphic headers)
+
+One tiny shared widget — `draw_curve(rect, pts[], n, accent)`, a PAX polyline — then each
+param page gets a header graphic derived from its params, redrawn only on param change:
+
+- **AMP/MOD ENV:** the actual ADSR curve, the segment being edited highlighted.
+- **FILTER:** magnitude response (precompute ~64 log-spaced points from cutoff/res on the
+  control side — analytic SVF response, no FFT).
+- **LFO:** one cycle of the active waveform + a live phase dot (dirty-rect just the dot).
+- **OSC:** single-cycle sketch of the current DCO mix (shapes are known analytically).
+
+Biggest "feels like a real instrument" upgrade per token in the UI. **Effort:** S per
+page once the widget exists; M total. **WO hook:** "ui_widgets: draw_curve; ENV/FILTER/
+LFO/OSC page headers render from live params, redraw on param-dirty only."
+
+### 6b. PERFORM page → performance HUD
+
+The page you *leave on* while playing: big BPM readout (tap-tempo target — the engine
+hook already exists, spec 03 "still deferred"), arp state, Euclid ring (2b), the 2×8
+sequencer grid (2a), KEY/SCALE badge (1b), octave, voice meter. Param rows stay below the
+HUD; F1/F2 nudge as usual. Glanceable from a meter away. **Effort:** M, grows with §2
+features. **WO hook:** "PERFORM header block: BPM/key/octave large-type + pattern
+widgets, dirty-rect per widget."
+
+### 6c. F5 overlay → instrument view (the §1 bridge)
+
+Grow the key-guide overlay into a full-width live map of the active layout: every cell =
+key cap + note name; held keys light; root marked in every octave; scale-degree coloring
+when 1b is on; chord row labeled with roman numerals (1c). Add a **chord-name readout**
+("C#m7") when ≥3 notes are held — a ~50-line control-side pitch-class-set lookup, and one
+of the highest play-value-per-line features in this file. Musicality features ship *with*
+their instrument-view rendering, not after. **Effort:** M. **WO hook:** "ui_overlay:
+render from active layout fn (grid-aware), held-note highlights from engine voice state,
+chord-name lookup table."
+
+### 6d. Navigation & wayfinding (four S-sized fixes)
+
+- **Page tab strip:** nine abbreviated tabs across the top (~85 px each at 800 px wide),
+  current page lit. Kills "where am I" during arrow-cycling and makes CC auto-focus jumps
+  legible — you *see* the tab switch when a knob grabs focus.
+- **Stepped params as carousel:** render prev/next option dimmed beside the current value
+  (`… SAW [PULSE] SUB …`) so option spaces are discoverable without stepping through.
+- **Big transient value readout:** while F1/F2 nudge, show the value large near the row;
+  fade ~500 ms after release. Fixes squinting at a 10 px bar mid-tweak.
+- **Contextual footer:** per-page key hints in the status strip (PRESET shows
+  audition/revert; PERFORM shows seq/run keys) instead of one static string.
+
+**WO hook:** one WO, four independent acceptance boxes.
+
+### 6e. Preset browser as instrument, not file list
+
+Two-column browse with big patch name + category tag + a **fingerprint sparkline** (8 key
+params as mini-bars) so patches are visually recognizable before they load. The existing
+audition-with-revert model is exactly right — keep it; this is presentation only. Later:
+category sort once SD-card banks (§5) exist. **Effort:** S–M.
+
 ## Priorities if I had one campaign to spend
+
+*(Reworked in pass 2 — UI/UX is load-bearing, and WS3 gates it.)*
 
 1. **§2b Euclidean arp + §3a note-on cap** — two S-sized WOs, immediate groove + fixes
    the open crackle item.
-2. **§1 keyboard campaign** (refactor WO, then Wicki–Hayden + scale-lock) — transforms
-   what the instrument *is*.
-3. **§2a 303 sequencer + LEDs** — gives it a genre and a face.
-4. **WS3 dirty-rect blit** — unlocks FX budget and the scope page (already planned; keep
-   it queued).
-5. **§4a jam sync** — the demo nobody else can do; schedule when an L-sized slot exists.
+2. **WS3 dirty-rect blit** — promoted: it gates all of §6 *and* is the known audio-side
+   bandwidth lever. Nothing visual ships before it.
+3. **§1 keyboard campaign + §6c instrument view together** (layout refactor WO, then
+   fourths grid + scale-lock, each with its overlay rendering) — transforms what the
+   instrument *is*, and the screen is what makes the new layouts learnable.
+4. **§6a curve headers + §6d wayfinding** — the "feels like a real instrument" polish
+   pass; cheap once WS3 is in.
+5. **§2a 303 sequencer + §6b PERFORM HUD + LEDs** — gives it a genre and a face.
+6. **§4a jam sync** — the demo nobody else can do; schedule when an L-sized slot exists.
