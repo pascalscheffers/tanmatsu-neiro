@@ -748,6 +748,33 @@ this closes the poly-crackle handoff; if it doesn't, the next lever is Stage 8d 
 64→128, `-funsafe-math` — each device-bench-gated, G8d) or a deeper per-voice `note_on()` cost
 profile.
 
+## 2026-07-07 — Stage 8 diag: per-region CPU sub-timers + voice-meter A/B (COMPLETE, Phase-1)
+
+Key-smash crackle persists **after** Stage 8a. New device profile: idle `audio avg=78 max=80
+over=0`; smash `avg=780 max=2743 over=15/750`, `sig gr=1.00` (limiter never engages — amplitude
+falsified again). Two stacked CPU problems: sustained `avg=780` = the 8-voice steady render
+floor (58% of the 1333us budget); transient `max=2743` (2× budget) = the underruns that crackle.
+Stage 8a only spreads note-on cost — can't lower the floor or the spikes. Whole-block profiler
+can't say WHERE the cycles go, so Pascal chose **diagnose-first** (PD6) before any Phase-2 fix.
+
+- **`engine/synth.cpp` + `synth.h`**: `SYNTH_PROFILE`-only per-region cycle sub-timers via the
+  portable `platform_cycles_now()` seam — `t_drain` (steps 1..1b), `t_voices` (step 5 voice-sum),
+  `t_master` (step 6 chain). New `engine_profile_read_cpu(drain,voices,master)` snapshots+resets
+  per-block averages (mirrors the amplitude-probe reset pattern). The t1..t2 gap (param push/LFO/
+  chorus setup) is unmeasured → shows as `audio_avg − drain − voices − master`.
+- **`app/app.c`**: prints `[PROFILE] cpu drain=.. voices=.. master=.. us-per-block`. Also, under
+  `SYNTH_PROFILE`, the voice-count meter is routed to `printf("[PROFILE] voices=%d")` **instead**
+  of the status-band `ui_invalidate` blit — an A/B to rule out blit contention on voice churn.
+  Octave indicator left live (separate change path).
+- All new code behind `#ifdef SYNTH_PROFILE` → shipping image byte-unchanged. `make host` +
+  `make test` green (211/211), `make PROFILE=1 build` links clean (46% flash free). Commit 8e5c24b.
+
+**Next (Pascal, on-device):** `make PROFILE=1 build install run` + `make sniff`; smash 5-8 keys
+(poly, arp off). Read the `cpu` line: `voices≈avg` → floor dominates → Phase-2 = Stage 8d
+(block 64→128, fast-math on `dsp/`); big `drain` on spike windows → note-on/steal-reset cost →
+precompute ADSR coeffs; `over` drops only with the voice-meter print → status-band contention →
+coalesce the meter. Then dispatch the chosen Phase-2 fix. Plan: `smashing-the-keys-*.md`.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
