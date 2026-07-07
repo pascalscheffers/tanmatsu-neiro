@@ -777,13 +777,27 @@ contention on voice-count churn**, NOT the audio floor. Sub-timers confirm the f
 note-on cost is a non-issue and **Stage 8d is not needed**. ~90us/voice → 8 voices stays under
 budget.
 
-**Fix (Phase-2, d54500e):** `app/app.c` debounces the voice meter — keeps the drawn value fresh
-but only commits the status-band `ui_invalidate` once the count holds steady for
-`VOICE_METER_STABLE_MS` (100ms). A chord smash (rapid churn) now produces no mid-play blits
-(matching the A/B); the meter settles imperceptibly at rest. Octave indicator untouched. The
-Phase-1 `SYNTH_PROFILE` per-region CPU sub-timers + `cpu` readout are kept (useful diagnostics).
-Host + 211 tests green; device build clean. **Pending Pascal's on-device confirm:** smash 5-8
-keys on a poly patch — audio should stay clean (no crackle), meter still tracks at rest.
+**Attempted fix (d54500e) — FALSIFIED 2026-07-07.** Added a voice-meter debounce (`app/app.c`,
+`VOICE_METER_STABLE_MS=100ms`, commit d54500e). It did NOT stop the crackle: a fresh device run
+still shows `over=18 max=2676us` while smashing to 8 voices. Pascal also confirms a **frozen
+display (SYNTH_FREEZE_DISPLAY) still crackles** — so it is **NOT blit contention**. The Phase-1
+A/B `over=0` was a red herring (that run peaked at 6 voices and didn't hit the pattern). The
+debounce is kept (harmless; fewer redundant blits) but is not the fix.
+
+**Re-diagnosis (open).** Audio profile: `avg≈646 max=2676` (2× budget), `over=7..18`, but the
+per-region AVG sub-timers sum to the avg (`drain≈0 voices≈560 master≈70`) — i.e. a *typical*
+block is fine; the crackle is **one rare block per window** the avg can't localize. 2676us
+(~960k cyc) is far too big for note-on transcendentals → smells like a **stall or preemption**,
+not steady compute. `voices≈90us/voice`, floor stays under budget even at 8 → not the floor.
+
+**Next diag (commit 3b3af48):** added per-region **MAX** (not just avg) + a 4th `setup` region
+(steps 2–4) so the four regions now tile the whole block. `cpu` line is now
+`drain=avg/max setup=avg/max voices=avg/max master=avg/max`. **Pascal, on-device:** `make
+PROFILE=1 build install run` + `make sniff`, smash 5–8 keys, read the over>0 window's `cpu`
+line. Which region's MAX ≈ the whole-block `audio max`? drain→note-on/steal cold code;
+voices→per-voice render stall (likely DaisySP flash I-cache, vendor .cpp still in flash per
+synth.cpp header); setup→param/arp; none match / all-modest→preemption (needs mcycle-vs-minstret
+split next). That picks the real Phase-2 lever.
 
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
