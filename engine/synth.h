@@ -128,11 +128,17 @@ uint16_t engine_cc_to_param(uint8_t cc);
 // Returns zeros in all four outputs when SYNTH_PROFILE is not defined.
 void engine_profile_read(float* pk_mono, float* pk_postgain, float* min_gr, float* pk_out);
 
-// Diagnostic (SYNTH_PROFILE): snapshot + reset the per-region CPU sub-timers as
-// per-block averages in CPU cycles (divide by platform_cycles_per_sec()/1e6 for us).
-// Splits the whole-block audio cost into command-drain / voice-sum / master-chain
-// so a profile says WHERE the smash-crackle cycles go. Zeros when off.
-void engine_profile_read_cpu(uint32_t* drain_cyc, uint32_t* voices_cyc, uint32_t* master_cyc);
+// Diagnostic (SYNTH_PROFILE): per-region CPU sub-timers, per-block AVG and MAX in
+// CPU cycles (divide by platform_cycles_per_sec()/1e6 for us). The four regions
+// tile the whole audio block; the MAX fields expose the smash-crackle spike (one
+// rare block/window) that an avg-only readout hides. Zeros when off.
+typedef struct {
+    uint32_t drain_avg, drain_max;    // steps 1..1b: note/clock/sched drain
+    uint32_t setup_avg, setup_max;    // steps 2..4: param drain/push, arp, LFO, chorus
+    uint32_t voices_avg, voices_max;  // step 5: voice-sum loop
+    uint32_t master_avg, master_max;  // step 6: master chain loop
+} EngineCpuProfile;
+void engine_profile_read_cpu(EngineCpuProfile* out);
 
 #ifdef __cplusplus
 }

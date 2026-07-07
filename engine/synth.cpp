@@ -108,15 +108,23 @@ static volatile float s_pk_postgain = 0.0f;
 static volatile float s_min_gr      = 1.0f;
 static volatile float s_pk_out      = 0.0f;
 
-// Per-region CPU sub-timers (cycles). Split the whole-block audio cost into
-// command-drain / voice-sum / master-chain so a profile says WHERE the time goes
-// (steady 8-voice floor vs note-on/steal burst). Accumulated per block on the
-// audio thread, snapshot+reset on the control thread (engine_profile_read_cpu).
-// Benign cross-core race — diagnostic accuracy is sufficient (same as above).
-static volatile uint64_t s_cpu_drain  = 0;  // steps 1..1b (note + clock + sched drain)
-static volatile uint64_t s_cpu_voices = 0;  // step 5 voice-sum loop
-static volatile uint64_t s_cpu_master = 0;  // step 6 master chain loop
-static volatile uint32_t s_cpu_blocks = 0;  // blocks accumulated since last read
+// Per-region CPU sub-timers (cycles). Split the whole-block audio cost into four
+// regions so a profile says WHERE the time goes — crucially both AVG and MAX per
+// region, because the smash-crackle spike is one rare block/window (avg=646 but
+// max=2676us): an avg-only readout hides it. The four regions together cover the
+// entire block (no gap), so a per-region max that matches the whole-block audio
+// max pins the culprit; if none match, the spike is preemption/stall outside the
+// markers' additive model. Accumulated per block on the audio thread,
+// snapshot+reset on the control thread (engine_profile_read_cpu). Benign race.
+static volatile uint64_t s_cpu_drain      = 0;  // steps 1..1b (note + clock + sched drain)
+static volatile uint64_t s_cpu_setup      = 0;  // steps 2..4 (param drain/push, arp, LFO, chorus)
+static volatile uint64_t s_cpu_voices     = 0;  // step 5 voice-sum loop
+static volatile uint64_t s_cpu_master     = 0;  // step 6 master chain loop
+static volatile uint32_t s_cpu_drain_max  = 0;
+static volatile uint32_t s_cpu_setup_max  = 0;
+static volatile uint32_t s_cpu_voices_max = 0;
+static volatile uint32_t s_cpu_master_max = 0;
+static volatile uint32_t s_cpu_blocks     = 0;  // blocks accumulated since last read
 #endif
 
 void synth_init(uint32_t sample_rate, size_t block_size) {
@@ -514,13 +522,22 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     }
 
 #ifdef SYNTH_PROFILE
-    // Accumulate this block's per-region cycle costs. master = end-of-block
-    // (now) minus t3; the t1..t2 gap (param push / LFO inject / chorus setup) is
-    // deliberately unmeasured — it shows up as (audio_avg - drain - voices - master).
+    // Accumulate this block's per-region cycle costs (avg via sum, plus max).
+    // The four regions tile the whole block: drain=[t0,t1] setup=[t1,t2]
+    // voices=[t2,t3] master=[t3,end].
     uint64_t _cpu_end = platform_cycles_now();
-    s_cpu_drain      += (_cpu_t1 - _cpu_t0);
-    s_cpu_voices     += (_cpu_t3 - _cpu_t2);
-    s_cpu_master     += (_cpu_end - _cpu_t3);
+    uint32_t d_drain  = (uint32_t)(_cpu_t1 - _cpu_t0);
+    uint32_t d_setup  = (uint32_t)(_cpu_t2 - _cpu_t1);
+    uint32_t d_voices = (uint32_t)(_cpu_t3 - _cpu_t2);
+    uint32_t d_master = (uint32_t)(_cpu_end - _cpu_t3);
+    s_cpu_drain      += d_drain;
+    s_cpu_setup      += d_setup;
+    s_cpu_voices     += d_voices;
+    s_cpu_master     += d_master;
+    if (d_drain > s_cpu_drain_max) s_cpu_drain_max = d_drain;
+    if (d_setup > s_cpu_setup_max) s_cpu_setup_max = d_setup;
+    if (d_voices > s_cpu_voices_max) s_cpu_voices_max = d_voices;
+    if (d_master > s_cpu_master_max) s_cpu_master_max = d_master;
     s_cpu_blocks++;
 #endif
 }
@@ -691,24 +708,34 @@ void engine_profile_read(float* pk_mono, float* pk_postgain, float* min_gr, floa
 }
 
 // --- Per-region CPU sub-timers (diagnostic, SYNTH_PROFILE only) --------------
-// Snapshot-and-reset the drain/voices/master cycle accumulators as PER-BLOCK
-// AVERAGES (total cycles / blocks since last call), so the caller can print them
-// in the same us units as the whole-block audio profiler. Zeros when the probe
-// saw no blocks or SYNTH_PROFILE is off (shipping image unchanged).
-void engine_profile_read_cpu(uint32_t* drain_cyc, uint32_t* voices_cyc, uint32_t* master_cyc) {
+// Snapshot-and-reset the four region accumulators as PER-BLOCK AVG (total/blocks)
+// and MAX cycles, so the caller can print them in the same us units as the
+// whole-block audio profiler. The MAX fields are what expose the smash-crackle
+// spike (one rare block/window). Zeros when the probe saw no blocks or
+// SYNTH_PROFILE is off (shipping image unchanged).
+void engine_profile_read_cpu(EngineCpuProfile* out) {
 #ifdef SYNTH_PROFILE
     uint32_t blocks = s_cpu_blocks;
     if (blocks == 0) blocks = 1;
-    *drain_cyc   = (uint32_t)(s_cpu_drain / blocks);
-    *voices_cyc  = (uint32_t)(s_cpu_voices / blocks);
-    *master_cyc  = (uint32_t)(s_cpu_master / blocks);
-    s_cpu_drain  = 0;
-    s_cpu_voices = 0;
-    s_cpu_master = 0;
-    s_cpu_blocks = 0;
+    out->drain_avg   = (uint32_t)(s_cpu_drain / blocks);
+    out->setup_avg   = (uint32_t)(s_cpu_setup / blocks);
+    out->voices_avg  = (uint32_t)(s_cpu_voices / blocks);
+    out->master_avg  = (uint32_t)(s_cpu_master / blocks);
+    out->drain_max   = s_cpu_drain_max;
+    out->setup_max   = s_cpu_setup_max;
+    out->voices_max  = s_cpu_voices_max;
+    out->master_max  = s_cpu_master_max;
+    s_cpu_drain      = 0;
+    s_cpu_setup      = 0;
+    s_cpu_voices     = 0;
+    s_cpu_master     = 0;
+    s_cpu_drain_max  = 0;
+    s_cpu_setup_max  = 0;
+    s_cpu_voices_max = 0;
+    s_cpu_master_max = 0;
+    s_cpu_blocks     = 0;
 #else
-    *drain_cyc  = 0;
-    *voices_cyc = 0;
-    *master_cyc = 0;
+    out->drain_avg = out->setup_avg = out->voices_avg = out->master_avg = 0;
+    out->drain_max = out->setup_max = out->voices_max = out->master_max = 0;
 #endif
 }

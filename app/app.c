@@ -320,11 +320,14 @@ void app_run(void) {
             engine_profile_read(&pk_mono, &pk_postgain, &min_gr, &pk_out);
             printf("[PROFILE] sig  mono=%.2f postg=%.2f gr=%.2f out=%.2f\n", (double)pk_mono, (double)pk_postgain,
                    (double)min_gr, (double)pk_out);
-            // Per-region CPU split (avg us/block): where the smash-crackle cost lives.
-            uint32_t drain_cyc, voices_cyc, master_cyc;
-            engine_profile_read_cpu(&drain_cyc, &voices_cyc, &master_cyc);
-            printf("[PROFILE] cpu  drain=%u voices=%u master=%u us-per-block\n", (unsigned)(drain_cyc / div),
-                   (unsigned)(voices_cyc / div), (unsigned)(master_cyc / div));
+            // Per-region CPU split (avg/max us per block): where the smash-crackle
+            // spike lives. The max fields matter — the spike is one rare block/window.
+            EngineCpuProfile cp;
+            engine_profile_read_cpu(&cp);
+            printf("[PROFILE] cpu  drain=%u/%u setup=%u/%u voices=%u/%u master=%u/%u us(avg/max)\n",
+                   (unsigned)(cp.drain_avg / div), (unsigned)(cp.drain_max / div), (unsigned)(cp.setup_avg / div),
+                   (unsigned)(cp.setup_max / div), (unsigned)(cp.voices_avg / div), (unsigned)(cp.voices_max / div),
+                   (unsigned)(cp.master_avg / div), (unsigned)(cp.master_max / div));
             next_prof = now + 1000u;
         }
 #endif
