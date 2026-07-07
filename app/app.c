@@ -40,6 +40,14 @@
 #define POLL_MS   1u
 #define RENDER_MS 16u
 
+// Voice-meter debounce (Stage 8 diag, 2026-07-07). The active-voice count churns
+// rapidly while smashing a chord; blitting the status band on every change starves
+// core-1 audio's PSRAM access -> block-budget overrun -> crackle (device A/B: with
+// the meter blit suppressed, over=0/max~633us; with it live, over=15/max=2743us).
+// Only commit a meter redraw once the count has held steady this long, so a smash
+// produces no mid-play blits and the meter still settles imperceptibly at rest.
+#define VOICE_METER_STABLE_MS 100u
+
 #ifdef SYNTH_BENCH_INTERACTIVE
 // Device bench is interactive: the badge console (USB-Serial-JTAG) and badgelink
 // (USB-OTG) can't share the USB-C, so an AppFS-launched app starts with its
@@ -248,25 +256,28 @@ void app_run(void) {
         // --- Control tick + inline render (when no render task) ---
         uint64_t now = platform_millis();
         if (now >= next_ctrl) {
-            int v = engine_active_voices();
-            int o = keyboard_octave();
+            int v                  = engine_active_voices();
+            int o                  = keyboard_octave();
+            // Keep the drawn value fresh; the status-band blit is debounced so a
+            // chord smash (rapid voice-count churn) doesn't starve the audio task.
+            ui_state.active_voices = v;
             if (v != ui_state.last_voices) {
-                ui_state.active_voices = v;
-                ui_state.last_voices   = v;
+                static int      s_vpend       = -1;
+                static uint64_t s_vpend_since = 0;
+                if (v != s_vpend) {  // new candidate -> (re)start the debounce window
+                    s_vpend       = v;
+                    s_vpend_since = now;
+                }
+                if (now - s_vpend_since >= VOICE_METER_STABLE_MS) {
+                    ui_state.last_voices = v;
+                    ui_state.change_seq++;
+                    int a, b;
+                    ui_band_status(&a, &b);
+                    ui_invalidate(a, b);
 #ifdef SYNTH_PROFILE
-                // A/B (Phase-1 diagnosis): suppress the status-band blit on voice
-                // churn and route the count to the console instead, to rule out
-                // status-band blit contention as a crackle spike source. The octave
-                // indicator below is deliberately left live (separate change path).
-                printf("[PROFILE] voices=%d\n", v);
-#else
-                ui_state.change_seq++;
-                int a, b;
-                ui_band_status(&a, &b);
-                ui_invalidate(a, b);
+                    printf("[PROFILE] voices=%d\n", v);
 #endif
-            } else {
-                ui_state.active_voices = v;
+                }
             }
             if (o != ui_state.last_octave) {
                 ui_state.octave      = o;
