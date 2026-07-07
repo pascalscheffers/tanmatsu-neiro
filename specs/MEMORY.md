@@ -769,11 +769,21 @@ can't say WHERE the cycles go, so Pascal chose **diagnose-first** (PD6) before a
 - All new code behind `#ifdef SYNTH_PROFILE` → shipping image byte-unchanged. `make host` +
   `make test` green (211/211), `make PROFILE=1 build` links clean (46% flash free). Commit 8e5c24b.
 
-**Next (Pascal, on-device):** `make PROFILE=1 build install run` + `make sniff`; smash 5-8 keys
-(poly, arp off). Read the `cpu` line: `voices≈avg` → floor dominates → Phase-2 = Stage 8d
-(block 64→128, fast-math on `dsp/`); big `drain` on spike windows → note-on/steal-reset cost →
-precompute ADSR coeffs; `over` drops only with the voice-meter print → status-band contention →
-coalesce the meter. Then dispatch the chosen Phase-2 fix. Plan: `smashing-the-keys-*.md`.
+**RESOLVED 2026-07-07 (device A/B, commit d54500e).** The A/B settled it: with the voice-meter
+blit suppressed (routed to printf), smashing to 6 voices gave `over=0 max~633us`; with the blit
+live the same smash gave `over=15 max=2743us`. So the poly-crackle spikes are **status-band blit
+contention on voice-count churn**, NOT the audio floor. Sub-timers confirm the floor is fine:
+6 voices = `voices=539us + master=68us ≈ avg=621us` (< 1333 budget), `drain=0` → Stage 8a
+note-on cost is a non-issue and **Stage 8d is not needed**. ~90us/voice → 8 voices stays under
+budget.
+
+**Fix (Phase-2, d54500e):** `app/app.c` debounces the voice meter — keeps the drawn value fresh
+but only commits the status-band `ui_invalidate` once the count holds steady for
+`VOICE_METER_STABLE_MS` (100ms). A chord smash (rapid churn) now produces no mid-play blits
+(matching the A/B); the meter settles imperceptibly at rest. Octave indicator untouched. The
+Phase-1 `SYNTH_PROFILE` per-region CPU sub-timers + `cpu` readout are kept (useful diagnostics).
+Host + 211 tests green; device build clean. **Pending Pascal's on-device confirm:** smash 5-8
+keys on a poly patch — audio should stay clean (no crackle), meter still tracks at rest.
 
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
