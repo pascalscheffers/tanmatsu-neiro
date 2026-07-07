@@ -6,6 +6,55 @@ just above the "Open Opus gates" section** (which stays last). Lean — link to 
 restate. When this passes ~200 lines, rotate older entries into the archive.
 
 
+## 2026-07-07 — 6a.1: rotated-panel band-present fix implemented (COMPLETE, resolves the handoff below)
+
+Implemented the closed work-order from ADR 0023 (see the handoff entry directly below for the
+full RC1–RC3 + lost-union diagnosis).
+
+- **`platform/device/platform_device.c`**: `platform_present(y0,y1)` now clamps to logical height
+  `s_h_res` (not a hardcoded 480), maps the logical band to a raw column range
+  `X0=s_h_res-y1, X1=s_h_res-y0`, and either (a) full zero-copy blits
+  `bsp_display_blit(0,0,s_h_res,s_v_res,pix)` when the band width `w ≥ BAND_PACK_THRESHOLD`
+  (240 logical px — the pack-vs-full traffic breakeven, `w = s_h_res/2`) or the scratch alloc
+  failed, or (b) packs the raw column window row-by-row into one of two alternating PSRAM
+  scratch buffers and blits the sub-window. Scratch buffers (`240 * s_v_res * s_fb_bpp` = 576 KB
+  each, ~1.15 MB total) are `heap_caps_malloc(..., MALLOC_CAP_SPIRAM)`'d once in `platform_init`
+  right after display params are known; a failed alloc logs `ESP_LOGE` and permanently falls back
+  to full-blit-only present (display stays usable, just slower) rather than leaving it dead.
+  Every `bsp_display_blit` call site now carries the RC2 end-exclusive-coordinate comment.
+- **`ui/ui_dirty.cpp`**: `s_band` changed from a plain `volatile uint32_t` to `std::atomic<uint32_t>`
+  (the file is `.cpp`, so C++ `<atomic>` was used instead of C11 `<stdatomic.h>` — `_Atomic` in a
+  `.cpp` compiled by g++ doesn't accept `stdatomic.h`'s macros). `ui_dirty_take` does one
+  `exchange(EMPTY_BAND)` (take + clear indivisibly); `ui_invalidate` does a `compare_exchange_weak`
+  union loop; `ui_invalidate_all` is a single plain `store` (safe without a CAS: `[0,0xFFFF)` is
+  already a superset of anything a racing union could produce). Closes the lost-union race named
+  in ADR 0023's "Secondary" root cause.
+- **`app/app.c`**: `render_cb`'s comment above `ui_dirty_take` corrected — no longer claims a lost
+  union "gets picked up on the next bump" (that was the bug); now states the race is closed via
+  `std::atomic`. No logic change (`platform_present(0, pax_buf_get_height(fb))` on the first frame
+  was already correct under the logical-coordinate contract).
+- **Host backend**: unchanged, confirmed still builds/tests (already logical coords).
+- **`specs/02-synth-architecture.md`**: budget-table row added for 6a.1 (+1.15 MB PSRAM scratch,
+  flash 0x1128c0/46% free).
+
+**Verify:** `make host` ✅ `make test` (183/183 incl. voice-alloc/arp/MIDI/limiter suites) ✅
+`make build` ✅ `make format` ✅. Membrane clean (`ui_dirty.{h,cpp}` and `app/app.c` have no
+esp_/bsp_ includes). Flash 0x1128c0 (≈1,124 KB, 46% partition free) vs. prior 0x112700 — the
+scratch buffers are PSRAM (not flash), so the flash delta is just the new pack/blit logic.
+
+**Decisions made that the work-order didn't spell out:**
+- `ui_invalidate_all` uses a plain `atomic_store`, not a CAS loop, since `[0,0xFFFF)` unions to
+  itself with any input — documented inline so a future reader doesn't "fix" it into an
+  unnecessary CAS.
+- `ui_dirty.cpp`/`.h` doc comments updated from "C11 atomics" to "`std::atomic`" for accuracy
+  (the module is C++ even though its public API is `extern "C"`).
+
+**Still open:** on-device visual verification is Pascal's step (ADR 0023 acceptance: full startup
+paint; per-press row updates on amp-page up/down; aligned preset-page separators while scrolling;
+watch for a 1-px sliver/mirror off-by-one at a band edge in the `X0/X1` mapping) — plus the
+before/after `PROFILE` present numbers this ADR was written to fix, still unmeasured (ADR 0015
+rule).
+
 ## 2026-07-07 — 6a display corruption diagnosed → ADR 0023 + 6a.1 work-order (HANDOFF)
 
 Pascal reported on-device corruption after 6a (partial startup paint; up/down updates only a
@@ -26,7 +75,9 @@ fix: **[ADR 0023](decisions/0023-rotated-panel-band-present.md)**; closed work-o
 - **Fix (6a.1):** present seam speaks logical coords; device maps band→raw columns, packs into
   one of two 576 KB PSRAM scratch buffers (DMA2D is async) and blits the sub-window; bands
   ≥ 240 px fall back to full zero-copy blit (traffic breakeven).
-- **State:** docs committed; 6a.1 dispatch is next (Sonnet · high). Then re-measure PROFILE.
+- **State:** ~~docs committed; 6a.1 dispatch is next (Sonnet · high). Then re-measure PROFILE.~~
+  **6a.1 implemented — see the entry directly above.** On-device verification + PROFILE
+  re-measurement still pending (Pascal).
 
 ## 2026-06-29 — UI overhaul (WO-1…WO-6) COMPLETE — capstone
 

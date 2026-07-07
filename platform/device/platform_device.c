@@ -15,6 +15,7 @@
 #include "driver/gpio.h"
 #include "driver/i2s_std.h"
 #include "esp_cpu.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -45,6 +46,16 @@ static bool      s_have_display = false;
 // 0022): the dirty-band present needs this to offset into the framebuffer by
 // row, and the format is panel-dependent so it must not be hardcoded.
 static size_t    s_fb_bpp       = 0;
+
+// Present-side breakeven and scratch buffers (ADR 0023): the panel is
+// portrait-native (s_h_res x s_v_res raw = 480 x 800) but PAX rotates the UI
+// 270 degrees into it, so a logical scanline band maps to a raw COLUMN range,
+// not a contiguous row range. Narrow column windows are packed into a
+// scratch buffer and blitted; wide ones (>= half the logical width) are
+// cheaper to blit whole. See platform_present() for the derivation.
+#define BAND_PACK_THRESHOLD 240u  // logical px; = s_h_res / 2, the breakeven width
+static uint8_t* s_scratch[2]   = {NULL, NULL};
+static int      s_scratch_next = 0;
 
 static pax_buf_type_t bsp_to_pax_format(bsp_display_color_format_t fmt) {
     switch (fmt) {
@@ -194,6 +205,24 @@ bool platform_init(void) {
         pax_buf_reversed(&s_fb, endian == BSP_DISPLAY_ENDIAN_BIG);
         pax_buf_set_orientation(&s_fb, bsp_to_pax_orientation(bsp_display_get_default_rotation()));
         s_have_display = true;
+
+        // Two PSRAM scratch buffers for the pack-and-blit present path (ADR
+        // 0023), sized for the widest column window the pack path ever
+        // handles (BAND_PACK_THRESHOLD logical px, raw column window of the
+        // same width, full raw height). Allocated once here, not per-present
+        // (no allocation in the present/audio path). If either allocation
+        // fails, platform_present() falls back to full-screen blits only —
+        // slower, but still correct — rather than leaving the display dead.
+        size_t scratch_bytes = (size_t)BAND_PACK_THRESHOLD * s_v_res * s_fb_bpp;
+        for (int i = 0; i < 2; i++) {
+            s_scratch[i] = heap_caps_malloc(scratch_bytes, MALLOC_CAP_SPIRAM);
+            if (s_scratch[i] == NULL) {
+                ESP_LOGE(TAG,
+                         "present scratch buffer %d alloc failed (%u bytes) -- "
+                         "falling back to full-blit-only present",
+                         i, (unsigned)scratch_bytes);
+            }
+        }
     } else if (res != ESP_ERR_NOT_SUPPORTED) {
         ESP_LOGE(TAG, "display params failed: %d", res);
         return false;
@@ -227,16 +256,61 @@ pax_buf_t* platform_framebuffer(void) {
 
 void platform_present(int y0, int y1) {
     if (!s_have_display) return;
+
+    // The present seam speaks LOGICAL UI scanlines (ADR 0023 §1). The raw
+    // framebuffer is s_h_res x s_v_res (480 x 800, portrait-native panel);
+    // PAX rotates the 800x480 landscape UI into it (PAX_O_ROT_CW), so the
+    // logical height equals the raw WIDTH (s_h_res), not the raw height.
+    // Derive the clamp from s_h_res rather than hardcode 480.
+    int logical_h = (int)s_h_res;
     if (y0 < 0) y0 = 0;
-    if (y1 > (int)s_v_res) y1 = (int)s_v_res;
+    if (y1 > logical_h) y1 = logical_h;
     if (y0 >= y1) return;
-    // A full-width band of the framebuffer is contiguous, so this is a zero-
-    // copy pointer offset into the same buffer bsp_display_blit already reads
-    // from (ADR 0022) — no scratch buffer, no per-row packing.
-    // bsp_display_blit takes (x, y, width, HEIGHT, buffer) — the 4th arg is a
-    // row count, not the bottom coordinate, so it must be y1 - y0.
-    bsp_display_blit(0, (size_t)y0, s_h_res, (size_t)(y1 - y0),
-                     (const uint8_t*)pax_buf_get_pixels(&s_fb) + (size_t)y0 * s_h_res * s_fb_bpp);
+
+    // PAX_O_ROT_CW maps logical (x, y) -> raw (s_h_res - y, x)
+    // (pax_orientation.c: pax_orient_ccw3_vec2f), so a logical scanline band
+    // [y0, y1) is a raw COLUMN range [X0, X1), not a row range (ADR 0023 RC1).
+    int x0 = logical_h - y1;
+    int x1 = logical_h - y0;
+    if (x0 < 0) x0 = 0;
+    if (x1 > (int)s_h_res) x1 = (int)s_h_res;
+    if (x0 >= x1) return;
+    size_t w = (size_t)(x1 - x0);
+
+    const uint8_t* pix = (const uint8_t*)pax_buf_get_pixels(&s_fb);
+
+    // Full-blit fallback at the breakeven width, or if the scratch buffers
+    // failed to allocate. Breakeven math (ADR 0023): the pack path moves
+    // ~4*w*s_v_res*bpp bytes (pack read + pack write + draw-bitmap read +
+    // panel-fb write); the full path moves ~2*s_h_res*s_v_res*bpp (read +
+    // write). Equal at w = s_h_res/2 = BAND_PACK_THRESHOLD.
+    bool scratch_ok = s_scratch[0] != NULL && s_scratch[1] != NULL;
+    if (w >= BAND_PACK_THRESHOLD || !scratch_ok) {
+        // bsp_display_blit's 3rd/4th args are END-EXCLUSIVE coordinates
+        // (x_end, y_end) on the tanmatsu target -- it forwards straight to
+        // esp_lcd_panel_draw_bitmap(panel, x_start, y_start, x_end, y_end,
+        // buf), NOT (width, height) as bsp/display.h's doc comment claims
+        // (ADR 0023 RC2 -- upstream doc/impl mismatch, flagged for a
+        // badge-bsp fix). Here x_end=s_h_res and y_end=s_v_res are also the
+        // full width/height, so this call is correct either reading.
+        bsp_display_blit(0, 0, s_h_res, s_v_res, pix);
+        return;
+    }
+
+    // Pack path: copy the raw column window [x0, x1) into a scratch buffer,
+    // one raw row at a time, then blit just that column strip. Two scratch
+    // buffers, alternated per call: use_dma2d=true makes bsp_display_blit's
+    // draw_bitmap async, so the flush semaphore inside it only serializes
+    // the *next* blit call, not our repacking of a buffer the in-flight
+    // DMA2D transfer may still be reading (ADR 0023).
+    uint8_t* scratch = s_scratch[s_scratch_next];
+    s_scratch_next   = 1 - s_scratch_next;
+    for (size_t r = 0; r < s_v_res; r++) {
+        memcpy(scratch + r * w * s_fb_bpp, pix + (r * s_h_res + (size_t)x0) * s_fb_bpp, w * s_fb_bpp);
+    }
+    // bsp_display_blit(x_start, y_start, x_end, y_end, buffer) -- end-exclusive
+    // coordinates, see the RC2 comment above.
+    bsp_display_blit((size_t)x0, 0, (size_t)x1, s_v_res, scratch);
 }
 
 bool platform_audio_start(const platform_audio_config_t* cfg, platform_audio_render_fn render, void* user) {

@@ -63,7 +63,9 @@ green; membrane clean; flash 0x112700 (near-neutral, as expected — see MEMORY.
 PSRAM/block-time A/B (the crackle-under-redraw regression check) is Pascal's verification step
 (host has no PSRAM lever to measure). **2026-07-07: on-device corruption found — see 6a.1 below.**
 
-**6a.1 — rotated-panel band-present fix (debug brief). 🔴 OPEN (2026-07-07).** 6a corrupts the
+**6a.1 — rotated-panel band-present fix (debug brief). ✅ DONE (2026-07-07, implementation).**
+On-device visual verification + PROFILE re-measurement still pending (Pascal) — see `MEMORY.md`.
+6a corrupts the
 on-device display: startup paints partially; up/down updates only a mid-screen chunk; preset-page
 separators misalign while scrolling; left/right (full invalidate) fixes everything. Root causes
 (three, all device-present side — change detection is **correct**) and the decided fix are in

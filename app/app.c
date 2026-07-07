@@ -103,9 +103,11 @@ static void render_cb(void* arg) {
     // ADR 0022: ui_draw always fully repaints the framebuffer, so it is
     // always correct; only the blit is narrowed. The failure mode of the
     // whole dirty-band scheme is therefore "present more," never "present
-    // stale": a missed/raced ui_invalidate yields an empty band here, which
-    // falls back to a full present; a lost union still gets picked up (as a
-    // superset) on the next bump.
+    // stale": an empty band here (nothing invalidated since the last take)
+    // falls back to a full present. The ui_dirty_take/ui_invalidate race that
+    // used to risk a silently dropped union is closed with std::atomic (ADR
+    // 0023) — a union either lands fully before or fully after a concurrent
+    // take, never lost in between.
     // The very first present must be full-screen: the panel/SDL texture starts
     // with undefined contents, and the frame-1 status reconciliation (voices +
     // octave, above) only invalidates the narrow status band — so an incidental

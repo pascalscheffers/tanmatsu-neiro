@@ -25,11 +25,12 @@ void ui_invalidate_all(void);
 // Return the coalesced pending band in *y0/*y1 and clear it. Returns false
 // (leaving *y0/*y1 untouched) if nothing is pending.
 //
-// Single-writer-per-field pattern (ui_invalidate from the control task,
-// ui_dirty_take from the render task) via one volatile aligned 32-bit word —
-// same rationale as UIState.change_seq (ui.h): atomic on RV32, and a race
-// between a union write and a take-clear is benign (see app.c render_cb):
-// the failure mode is "present more, never stale."
+// ui_invalidate runs on the control task, ui_dirty_take on the render task.
+// Backed by a std::atomic<uint32_t> word: ui_dirty_take does an atomic exchange
+// (take + clear in one indivisible step) and ui_invalidate does a
+// compare-exchange union loop, so a union and a take can never interleave
+// into a lost update (ADR 0023) — a union either lands fully before or
+// fully after a concurrent take.
 bool ui_dirty_take(int* y0, int* y1);
 
 #ifdef __cplusplus
