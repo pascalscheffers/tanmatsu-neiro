@@ -169,17 +169,37 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     //    - arp_on=false: existing direct path to s_alloc (byte-identical to pre-arp).
     bool    arp_on = s_params.get(ParamId::ARP_ON) > 0.5f;
     NoteCmd cmd;
-    while (s_cmds.pop(cmd)) {
-        if (arp_on) {
+    if (arp_on) {
+        // Unchanged: arp feeds the scheduler, which is already rate-limited,
+        // so drain everything into s_arp with no admission cap.
+        while (s_cmds.pop(cmd)) {
             if (cmd.type == NoteCmd::kNoteOn) {
                 s_arp.note_on(cmd.pitch, cmd.velocity);
             } else {
                 s_arp.note_off(cmd.pitch);
             }
-        } else {
+        }
+    } else {
+        // Stage 8a: cap note-on admissions per block. A chord slamming N
+        // note-ons into one block spikes render time past budget and starves
+        // the blocking I2S DMA (specs/MEMORY.md poly-crackle diagnosis).
+        // Break-and-leave: once the cap is hit, peek (don't pop) the next
+        // kNoteOn and stop draining -- it and everything behind it (including
+        // any note-offs) wait for the next block, at most ~1.33ms later.
+        // Nothing is ever dropped; note-offs never trip the cap themselves.
+        int note_ons_admitted = 0;
+        while (true) {
+            if (note_ons_admitted >= kMaxNoteOnsPerBlock) {
+                NoteCmd next;
+                if (s_cmds.peek(next) && next.type == NoteCmd::kNoteOn) {
+                    break;  // leave remaining commands queued for next block
+                }
+            }
+            if (!s_cmds.pop(cmd)) break;
             if (cmd.type == NoteCmd::kNoteOn) {
                 NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
                 s_alloc.note_on(cmd.pitch, cmd.velocity, expr);
+                note_ons_admitted++;
             } else {
                 s_alloc.note_off(cmd.pitch);
             }

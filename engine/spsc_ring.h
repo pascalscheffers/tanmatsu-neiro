@@ -44,6 +44,19 @@ public:
         return true;
     }
 
+    // Consumer (audio thread). Non-destructive: copies the element the next
+    // pop() would return into out, without advancing tail_. Returns false if
+    // empty. Safe to call from the same single consumer as pop() (no extra
+    // synchronization needed — same thread, same ordering as pop()).
+    bool peek(T& out) const {
+        const size_t tail = tail_.load(std::memory_order_relaxed);
+        if (tail == head_.load(std::memory_order_acquire)) {
+            return false;  // empty
+        }
+        out = buf_[tail];
+        return true;
+    }
+
 private:
     T                   buf_[Cap];
     std::atomic<size_t> head_{0};  // written by producer only

@@ -717,6 +717,37 @@ that A/B (`PROFILE=1`, 8-note chord held during redraw) is Pascal's device-verif
 host has no PSRAM lever to observe. If `over` drops toward 0, that closes the WS3 half of the
 open poly-crackle handoff (2026-06-30, above); 6b (`draw_curve` widget) can proceed independently.
 
+## 2026-07-07 — WO-8a: note-on admission cap (COMPLETE, resolves G8a)
+
+Fixed the poly-crackle root cause (see 2026-07-06 handoff, above): a chord landing 4-8 note-ons
+in one audio block spiked render time past the 1333us block budget (allocator scan + `note_on()`
+init x N), starving the blocking I2S DMA — NOT amplitude/headroom (`gr=1.00` during crackle,
+falsified). Fix: `engine/synth_config.h` adds `kMaxNoteOnsPerBlock = 2` (2/block spreads an
+8-note chord over 4 blocks ~5.3ms, below strum perception; note-offs stay uncapped). `engine/
+spsc_ring.h` gets `SpscRing::peek()` — non-destructive lookahead, purely additive, used by both
+the note queue and (available to) the param store. `engine/synth.cpp`'s direct-path drain
+(arp_on==false) now uses break-and-leave: once the cap is hit, `peek` the next command; if it's
+a `kNoteOn`, stop draining and leave it + everything behind it (including note-offs) queued for
+the next block (~1.33ms max extra latency on a trailing note-off, nothing ever dropped). Arp
+path (arp_on==true) is untouched — drains everything into `s_arp`, no cap, as before.
+
+New test `tests/host/test_note_cap.cpp` (registered in `CMakeLists.txt`/`main.cpp`): since the
+real drain lives inside the IRAM `synth_render` and isn't host-testable in isolation, it exercises
+(a) `SpscRing::peek()` correctness (empty, non-destructive, tracks next pop) and (b) a drain
+helper mirroring synth.cpp's break-and-leave logic byte-for-byte against the same
+`CommandQueue<Cap>` type — 8-note chord spreads over exactly ceil(8/2)=4 drains with none
+dropped/duplicated, and a note-on/note-off interleaved burst loses nothing.
+
+`make host`/`make test` green (211/211 — 4 new), `make build` green, `make format` clean,
+membrane grep clean (no `esp_`/`bsp_`/`SDL` above `platform/`). `make size`: flash image
+1,124,306 bytes total (DIRAM 27.39% used) — near-neutral (control-path change only).
+
+**Remaining verification (Pascal, on-device):** PROFILE A/B — smash 5-8 keys on the Juno EP
+patch, watch the `over` (block-time-exceeded) counter before vs after. If `over` drops toward 0
+this closes the poly-crackle handoff; if it doesn't, the next lever is Stage 8d (block size
+64→128, `-funsafe-math` — each device-bench-gated, G8d) or a deeper per-voice `note_on()` cost
+profile.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

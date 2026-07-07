@@ -18,6 +18,7 @@ add_executable(tanmatsu-tests
     test_voice.cpp
     test_alloc.cpp
     test_command_queue.cpp
+    test_note_cap.cpp
     test_param_store.cpp
     test_saturate.cpp
     test_limiter.cpp
