@@ -253,10 +253,18 @@ void app_run(void) {
             if (v != ui_state.last_voices) {
                 ui_state.active_voices = v;
                 ui_state.last_voices   = v;
+#ifdef SYNTH_PROFILE
+                // A/B (Phase-1 diagnosis): suppress the status-band blit on voice
+                // churn and route the count to the console instead, to rule out
+                // status-band blit contention as a crackle spike source. The octave
+                // indicator below is deliberately left live (separate change path).
+                printf("[PROFILE] voices=%d\n", v);
+#else
                 ui_state.change_seq++;
                 int a, b;
                 ui_band_status(&a, &b);
                 ui_invalidate(a, b);
+#endif
             } else {
                 ui_state.active_voices = v;
             }
@@ -301,6 +309,11 @@ void app_run(void) {
             engine_profile_read(&pk_mono, &pk_postgain, &min_gr, &pk_out);
             printf("[PROFILE] sig  mono=%.2f postg=%.2f gr=%.2f out=%.2f\n", (double)pk_mono, (double)pk_postgain,
                    (double)min_gr, (double)pk_out);
+            // Per-region CPU split (avg us/block): where the smash-crackle cost lives.
+            uint32_t drain_cyc, voices_cyc, master_cyc;
+            engine_profile_read_cpu(&drain_cyc, &voices_cyc, &master_cyc);
+            printf("[PROFILE] cpu  drain=%u voices=%u master=%u us-per-block\n", (unsigned)(drain_cyc / div),
+                   (unsigned)(voices_cyc / div), (unsigned)(master_cyc / div));
             next_prof = now + 1000u;
         }
 #endif

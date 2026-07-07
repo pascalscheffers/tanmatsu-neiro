@@ -128,6 +128,12 @@ uint16_t engine_cc_to_param(uint8_t cc);
 // Returns zeros in all four outputs when SYNTH_PROFILE is not defined.
 void engine_profile_read(float* pk_mono, float* pk_postgain, float* min_gr, float* pk_out);
 
+// Diagnostic (SYNTH_PROFILE): snapshot + reset the per-region CPU sub-timers as
+// per-block averages in CPU cycles (divide by platform_cycles_per_sec()/1e6 for us).
+// Splits the whole-block audio cost into command-drain / voice-sum / master-chain
+// so a profile says WHERE the smash-crackle cycles go. Zeros when off.
+void engine_profile_read_cpu(uint32_t* drain_cyc, uint32_t* voices_cyc, uint32_t* master_cyc);
+
 #ifdef __cplusplus
 }
 #endif

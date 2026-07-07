@@ -27,6 +27,7 @@
 #include "param_desc.h"
 #include "param_id.h"
 #include "param_store.h"
+#include "platform.h"  // platform_cycles_now() — SYNTH_PROFILE CPU sub-timers
 #include "scheduler.h"
 #include "synth.h"
 #include "synth_config.h"
@@ -106,6 +107,16 @@ static volatile float s_pk_mono     = 0.0f;
 static volatile float s_pk_postgain = 0.0f;
 static volatile float s_min_gr      = 1.0f;
 static volatile float s_pk_out      = 0.0f;
+
+// Per-region CPU sub-timers (cycles). Split the whole-block audio cost into
+// command-drain / voice-sum / master-chain so a profile says WHERE the time goes
+// (steady 8-voice floor vs note-on/steal burst). Accumulated per block on the
+// audio thread, snapshot+reset on the control thread (engine_profile_read_cpu).
+// Benign cross-core race — diagnostic accuracy is sufficient (same as above).
+static volatile uint64_t s_cpu_drain  = 0;  // steps 1..1b (note + clock + sched drain)
+static volatile uint64_t s_cpu_voices = 0;  // step 5 voice-sum loop
+static volatile uint64_t s_cpu_master = 0;  // step 6 master chain loop
+static volatile uint32_t s_cpu_blocks = 0;  // blocks accumulated since last read
 #endif
 
 void synth_init(uint32_t sample_rate, size_t block_size) {
@@ -159,6 +170,11 @@ void synth_init(uint32_t sample_rate, size_t block_size) {
 IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     (void)user;
     size_t frames = n < kMaxBlock ? n : kMaxBlock;
+
+#ifdef SYNTH_PROFILE
+    // CPU sub-timers: mark region boundaries; accumulate at the end of the block.
+    uint64_t _cpu_t0 = platform_cycles_now(), _cpu_t1 = 0, _cpu_t2 = 0, _cpu_t3 = 0;
+#endif
 
     // 1. Drain control-thread note commands. This is the only place the voice
     //    pool is mutated (for direct notes); voices cannot race with the UI thread.
@@ -280,6 +296,10 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
             }
         });
     }
+
+#ifdef SYNTH_PROFILE
+    _cpu_t1 = platform_cycles_now();  // end of command/clock/scheduler drain
+#endif
 
     // 2. Advance the param store smoothers and update targets from the ring.
     s_params.drain();
@@ -431,12 +451,18 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     }
 
     // 5. Sum all active voices into the mono bus.
+#ifdef SYNTH_PROFILE
+    _cpu_t2 = platform_cycles_now();  // start of voice-sum
+#endif
     memset(s_mono, 0, frames * sizeof(float));
     for (int v = 0; v < kNumVoices; v++) {
         if (slots[v].voice->is_active()) {
             slots[v].voice->render(s_mono, frames);
         }
     }
+#ifdef SYNTH_PROFILE
+    _cpu_t3 = platform_cycles_now();  // end of voice-sum / start of master chain
+#endif
 
     // 6. Mono bus → stereo chorus → master gain → peak limiter → soft-clip → output
     //    (ADR 0016 / ADR 0021).
@@ -486,6 +512,17 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
 #endif
         }
     }
+
+#ifdef SYNTH_PROFILE
+    // Accumulate this block's per-region cycle costs. master = end-of-block
+    // (now) minus t3; the t1..t2 gap (param push / LFO inject / chorus setup) is
+    // deliberately unmeasured — it shows up as (audio_avg - drain - voices - master).
+    uint64_t _cpu_end = platform_cycles_now();
+    s_cpu_drain      += (_cpu_t1 - _cpu_t0);
+    s_cpu_voices     += (_cpu_t3 - _cpu_t2);
+    s_cpu_master     += (_cpu_end - _cpu_t3);
+    s_cpu_blocks++;
+#endif
 }
 
 // Control thread (core 0): enqueue for the audio thread to apply.
@@ -650,5 +687,28 @@ void engine_profile_read(float* pk_mono, float* pk_postgain, float* min_gr, floa
     *pk_postgain = 0.0f;
     *min_gr      = 0.0f;
     *pk_out      = 0.0f;
+#endif
+}
+
+// --- Per-region CPU sub-timers (diagnostic, SYNTH_PROFILE only) --------------
+// Snapshot-and-reset the drain/voices/master cycle accumulators as PER-BLOCK
+// AVERAGES (total cycles / blocks since last call), so the caller can print them
+// in the same us units as the whole-block audio profiler. Zeros when the probe
+// saw no blocks or SYNTH_PROFILE is off (shipping image unchanged).
+void engine_profile_read_cpu(uint32_t* drain_cyc, uint32_t* voices_cyc, uint32_t* master_cyc) {
+#ifdef SYNTH_PROFILE
+    uint32_t blocks = s_cpu_blocks;
+    if (blocks == 0) blocks = 1;
+    *drain_cyc   = (uint32_t)(s_cpu_drain / blocks);
+    *voices_cyc  = (uint32_t)(s_cpu_voices / blocks);
+    *master_cyc  = (uint32_t)(s_cpu_master / blocks);
+    s_cpu_drain  = 0;
+    s_cpu_voices = 0;
+    s_cpu_master = 0;
+    s_cpu_blocks = 0;
+#else
+    *drain_cyc  = 0;
+    *voices_cyc = 0;
+    *master_cyc = 0;
 #endif
 }
