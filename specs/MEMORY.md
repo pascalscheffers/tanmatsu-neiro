@@ -6,6 +6,28 @@ just above the "Open Opus gates" section** (which stays last). Lean — link to 
 restate. When this passes ~200 lines, rotate older entries into the archive.
 
 
+## 2026-07-07 — 6a display corruption diagnosed → ADR 0023 + 6a.1 work-order (HANDOFF)
+
+Pascal reported on-device corruption after 6a (partial startup paint; up/down updates only a
+mid-screen chunk; preset-page separators misalign; left/right fixes all). Full analysis + decided
+fix: **[ADR 0023](decisions/0023-rotated-panel-band-present.md)**; closed work-order: **6a.1** in
+[stage-6](stages/stage-6-display-foundation.md). Key facts:
+
+- **Change detection was NOT the bug** — `ui_dirty` coalescing and all app.c invalidate sites are
+  correct (one minor lost-union race, fixed in 6a.1).
+- **RC1:** panel is portrait-native 480×800 under 270° PAX rotation → UI logical y = raw
+  framebuffer **column** (`480−y`), so the "row band" blit painted a vertical strip. ADR 0022's
+  zero-copy premise was false on this hardware.
+- **RC2:** `bsp_display_blit` header says width/height but the tanmatsu impl forwards to
+  `esp_lcd_panel_draw_bitmap`'s **end-exclusive** coords. d00623e ("pass band height") was a
+  misdiagnosis that made small bands blit *nothing* — revert its interpretation. **Upstream
+  badge-bsp doc/impl mismatch — flag/patch per spec 07.**
+- **RC3:** first-frame full present used logical height (480) of 800 raw rows.
+- **Fix (6a.1):** present seam speaks logical coords; device maps band→raw columns, packs into
+  one of two 576 KB PSRAM scratch buffers (DMA2D is async) and blits the sub-window; bands
+  ≥ 240 px fall back to full zero-copy blit (traffic breakeven).
+- **State:** docs committed; 6a.1 dispatch is next (Sonnet · high). Then re-measure PROFILE.
+
 ## 2026-06-29 — UI overhaul (WO-1…WO-6) COMPLETE — capstone
 
 Six work-orders delivered a complete UI/interaction overhaul (all committed, all tests green):

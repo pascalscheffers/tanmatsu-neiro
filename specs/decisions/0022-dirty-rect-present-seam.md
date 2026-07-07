@@ -1,6 +1,12 @@
 # ADR 0022 — Dirty-region present seam: full-width scanline band
 
-**Status:** accepted (2026-07-06). Resolves the **G6 kickoff gate** of
+**Status:** accepted (2026-07-06); **amended by [ADR 0023](0023-rotated-panel-band-present.md)**
+(2026-07-07) — the "full-width band is contiguous → zero-copy" device mechanism below is wrong on
+the Tanmatsu: the panel is portrait-native 480×800 under a 270° PAX rotation, so a logical UI
+y-band is a set of raw framebuffer *columns*. The seam shape (logical y-band, full redraw +
+narrowed blit) stands; the device implementation is ADR 0023's pack-and-blit hybrid.
+
+Resolves the **G6 kickoff gate** of
 [Stage 6](../stages/stage-6-display-foundation.md) (WS3 dirty-rect blit). Companion to
 **ADR 0007** (the HAL membrane / `platform/platform.h`), **ADR 0011** (the device gets the
 optimal representation, the host pays the conversion tax), and **ADR 0015** (how we spend the

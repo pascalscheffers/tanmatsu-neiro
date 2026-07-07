@@ -49,6 +49,7 @@ visual ships before it.
 | Sub-stage | Effort | Worker | Gate |
 |---|---|---|---|
 | 6a WS3 dirty-rect blit | M | **Sonnet · high** (audio-bandwidth + present-timing correctness — a miss is audible) | G6 |
+| 6a.1 rotated-panel band fix | M | **Sonnet · high** (coordinate mapping + async-DMA correctness; fully specified in ADR 0023) | — |
 | 6b `draw_curve` widget | S | **Sonnet · low** (pure, mechanical widget) | — |
 
 
@@ -60,7 +61,46 @@ needed): `ui/ui_dirty.{h,cpp}` (new coalescer), `ui/ui.cpp`/`ui.h` chrome-band a
 row-offset blit; host: converts + updates only the band). `make host`/`make build`/`make test`
 green; membrane clean; flash 0x112700 (near-neutral, as expected — see MEMORY.md). On-device
 PSRAM/block-time A/B (the crackle-under-redraw regression check) is Pascal's verification step
-(host has no PSRAM lever to measure).
+(host has no PSRAM lever to measure). **2026-07-07: on-device corruption found — see 6a.1 below.**
+
+**6a.1 — rotated-panel band-present fix (debug brief). 🔴 OPEN (2026-07-07).** 6a corrupts the
+on-device display: startup paints partially; up/down updates only a mid-screen chunk; preset-page
+separators misalign while scrolling; left/right (full invalidate) fixes everything. Root causes
+(three, all device-present side — change detection is **correct**) and the decided fix are in
+**[ADR 0023](../decisions/0023-rotated-panel-band-present.md)**; read it first, it is the spec.
+Summary: (RC1) UI logical y = raw framebuffer *column* under the 270° panel rotation, so the
+row-band blit painted a vertical strip; (RC2) `bsp_display_blit` takes **end-exclusive coords**
+despite its header saying width/height — d00623e's "height" arg makes small bands blit *nothing*
+(revert that interpretation); (RC3) the first-frame full present used logical height 480 of 800
+raw rows.
+
+*Work-order scope (≤ 4 files):*
+- `platform/device/platform_device.c` — `platform_present` now maps the **logical** band
+  `[y0,y1)` to raw columns `X0=480−y1, X1=480−y0`; if `y1−y0 ≥ 240` do a full zero-copy blit
+  `bsp_display_blit(0, 0, s_h_res, s_v_res, pix)`, else pack the column window into a scratch
+  buffer (per raw row `r`: `memcpy(scratch + r*w*bpp, pix + (r*480 + X0)*bpp, w*bpp)`) and
+  `bsp_display_blit(X0, 0, X1, s_v_res, scratch)`. **Two** PSRAM scratch buffers (240·800·bpp
+  each, `heap_caps_malloc(..., MALLOC_CAP_SPIRAM)` at display init, fail loud), alternated per
+  present — `use_dma2d=true` makes the blit async and the BSP flush semaphore only serializes
+  the next blit, not our repack. Clamp the band to logical height (480). Comment the RC2
+  end-coordinate semantics at the call site.
+- `ui/ui_dirty.cpp` — close the lost-union race: `atomic_exchange` in `ui_dirty_take`,
+  compare-and-swap loop in `ui_invalidate` (C11 atomics; the word is already 32-bit aligned).
+- `app/app.c` — fix the now-wrong comment about lost unions being "picked up on the next bump";
+  the first-frame full present via `pax_buf_get_height` is *correct* under the new logical-band
+  contract (no code change needed there).
+- Host backend: **unchanged** (already logical coords). Verify `make host` still presents bands.
+
+*Acceptance:* `make build`/`make host`/`make test` green; membrane clean; on device (Pascal
+verifies): boot paints the whole screen; amp-page up/down moves the selection arrow + full row
+on every single press; preset-page scroll keeps separators aligned; left/right still clean.
+Record before/after `PROFILE` present numbers + the scratch PSRAM spend in `MEMORY.md` and the
+spec-02 budget. Verify the `X0/X1` mapping's off-by-one visually (a 1-px sliver artifact at a
+band edge means the mirror is off by one).
+
+*Upstream flag (Pascal):* badge-bsp `bsp/display.h` documents `(x, y, width, height)` but the
+tanmatsu target forwards to `esp_lcd_panel_draw_bitmap`'s end-exclusive coords — report/patch
+upstream per spec 07.
 
 **6b — `draw_curve` shared widget scaffold** (§6a widget only — no page wiring yet). A tiny PAX
 polyline helper so later stages draw shapes, not numbers. *Seams:* new `ui/ui_widgets.{h,cpp}`:
