@@ -125,6 +125,22 @@ static volatile uint32_t s_cpu_setup_max  = 0;
 static volatile uint32_t s_cpu_voices_max = 0;
 static volatile uint32_t s_cpu_master_max = 0;
 static volatile uint32_t s_cpu_blocks     = 0;  // blocks accumulated since last read
+
+// Stage 8 diag: worst-block snapshot for the voices region. Avg/max hides the
+// one rare bad block's full shape; this freezes it. Discriminator:
+//   ipc (instret/cycles) low, instret ~flat        -> memory/cache stall
+//     - vmax_cyc dominates voices_cyc              -> one cold voice (PSRAM/wavetable)
+//     - vmax_cyc small relative to voices_cyc       -> spread/global stall (I-cache XIP)
+//   instret high, active LOW                        -> preemption by another task
+//   instret high, scaling with active, ipc normal    -> genuine compute in voice render
+static volatile uint32_t s_worst_voices_cyc     = 0;  // selection key: largest d_voices seen
+static volatile uint32_t s_worst_voices_instret = 0;
+static volatile uint32_t s_worst_active         = 0;  // active voice count in that block
+static volatile uint32_t s_worst_vmax_cyc       = 0;  // single worst voice's render() cycles
+static volatile uint32_t s_worst_vmax_idx       = 0;  // its slot index
+static volatile uint32_t s_worst_drain_cyc      = 0;
+static volatile uint32_t s_worst_setup_cyc      = 0;
+static volatile uint32_t s_worst_master_cyc     = 0;
 #endif
 
 void synth_init(uint32_t sample_rate, size_t block_size) {
@@ -182,6 +198,11 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
 #ifdef SYNTH_PROFILE
     // CPU sub-timers: mark region boundaries; accumulate at the end of the block.
     uint64_t _cpu_t0 = platform_cycles_now(), _cpu_t1 = 0, _cpu_t2 = 0, _cpu_t3 = 0;
+    // Stage 8 diag: retired-instruction counter at the voices-region boundaries
+    // (IPC discriminator), plus per-voice max cost + active count (hot-voice vs
+    // uniform-slow discriminator). See worst-block statics above.
+    uint64_t _ir_t2 = 0, _ir_t3 = 0;
+    uint32_t _vmax_cyc = 0, _vmax_idx = 0, _active_n = 0;
 #endif
 
     // 1. Drain control-thread note commands. This is the only place the voice
@@ -461,15 +482,28 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     // 5. Sum all active voices into the mono bus.
 #ifdef SYNTH_PROFILE
     _cpu_t2 = platform_cycles_now();  // start of voice-sum
+    _ir_t2  = platform_instret_now();
 #endif
     memset(s_mono, 0, frames * sizeof(float));
     for (int v = 0; v < kNumVoices; v++) {
         if (slots[v].voice->is_active()) {
+#ifdef SYNTH_PROFILE
+            uint64_t _v0 = platform_cycles_now();
             slots[v].voice->render(s_mono, frames);
+            uint32_t _vd = (uint32_t)(platform_cycles_now() - _v0);
+            if (_vd > _vmax_cyc) {
+                _vmax_cyc = _vd;
+                _vmax_idx = (uint32_t)v;
+            }
+            _active_n++;
+#else
+            slots[v].voice->render(s_mono, frames);
+#endif
         }
     }
 #ifdef SYNTH_PROFILE
     _cpu_t3 = platform_cycles_now();  // end of voice-sum / start of master chain
+    _ir_t3  = platform_instret_now();
 #endif
 
     // 6. Mono bus → stereo chorus → master gain → peak limiter → soft-clip → output
@@ -539,6 +573,22 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     if (d_voices > s_cpu_voices_max) s_cpu_voices_max = d_voices;
     if (d_master > s_cpu_master_max) s_cpu_master_max = d_master;
     s_cpu_blocks++;
+
+    // Stage 8 diag: worst-block snapshot, keyed on the voices region (already
+    // localized as the culprit region). Freeze the full breakdown of the
+    // single worst block in this read-window so the mechanism (stall vs
+    // preemption vs compute vs hot-voice) can be read off in one device run.
+    uint32_t d_voices_instret = (uint32_t)(_ir_t3 - _ir_t2);
+    if (d_voices > s_worst_voices_cyc) {
+        s_worst_voices_cyc     = d_voices;
+        s_worst_voices_instret = d_voices_instret;
+        s_worst_active         = _active_n;
+        s_worst_vmax_cyc       = _vmax_cyc;
+        s_worst_vmax_idx       = _vmax_idx;
+        s_worst_drain_cyc      = d_drain;
+        s_worst_setup_cyc      = d_setup;
+        s_worst_master_cyc     = d_master;
+    }
 #endif
 }
 
@@ -734,8 +784,30 @@ void engine_profile_read_cpu(EngineCpuProfile* out) {
     s_cpu_voices_max = 0;
     s_cpu_master_max = 0;
     s_cpu_blocks     = 0;
+
+    // Stage 8 diag: hand back the worst-block snapshot, then reset the
+    // selection key so the NEXT read-window finds its own worst block.
+    out->worst_voices_cyc     = s_worst_voices_cyc;
+    out->worst_voices_instret = s_worst_voices_instret;
+    out->worst_active         = s_worst_active;
+    out->worst_vmax_cyc       = s_worst_vmax_cyc;
+    out->worst_vmax_idx       = s_worst_vmax_idx;
+    out->worst_drain_cyc      = s_worst_drain_cyc;
+    out->worst_setup_cyc      = s_worst_setup_cyc;
+    out->worst_master_cyc     = s_worst_master_cyc;
+    s_worst_voices_cyc        = 0;
+    s_worst_voices_instret    = 0;
+    s_worst_active            = 0;
+    s_worst_vmax_cyc          = 0;
+    s_worst_vmax_idx          = 0;
+    s_worst_drain_cyc         = 0;
+    s_worst_setup_cyc         = 0;
+    s_worst_master_cyc        = 0;
 #else
     out->drain_avg = out->setup_avg = out->voices_avg = out->master_avg = 0;
     out->drain_max = out->setup_max = out->voices_max = out->master_max = 0;
+    out->worst_voices_cyc = out->worst_voices_instret = out->worst_active = 0;
+    out->worst_vmax_cyc = out->worst_vmax_idx = 0;
+    out->worst_drain_cyc = out->worst_setup_cyc = out->worst_master_cyc = 0;
 #endif
 }

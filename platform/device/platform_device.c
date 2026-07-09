@@ -247,6 +247,19 @@ bool platform_init(void) {
     midi_usb_host_init();    // USB-A host   (5b): independent HS controller
 #endif
 
+#ifdef SYNTH_PROFILE
+    // Stage 8 diag: the RV32 HP-core cycle/instret counters can be gated by
+    // mcountinhibit (CSR 0x320): bit 0 = cycle, bit 2 = instret. Clear both
+    // once here so platform_instret_now() (and, defensively, mcycle) actually
+    // count. Diagnostic-only -- not present in shipping builds.
+    {
+        uint32_t inhibit;
+        __asm__ volatile("csrr %0, 0x320" : "=r"(inhibit));
+        inhibit &= ~((1u << 0) | (1u << 2));
+        __asm__ volatile("csrw 0x320, %0" ::"r"(inhibit));
+    }
+#endif
+
     return true;
 }
 
@@ -580,6 +593,16 @@ uint32_t platform_cycles_per_sec(void) {
     // (400 MHz by default). Using the compile-time constant avoids pulling in
     // private clock headers and is correct for our fixed-frequency use case.
     return (uint32_t)(CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ * 1000000UL);
+}
+
+uint64_t platform_instret_now(void) {
+    // Stage 8 diag: RISC-V minstret CSR (0xB02), low 32 bits, read via inline
+    // asm (esp_cpu.h has no wrapper for this counter). mcountinhibit bit 2 is
+    // cleared once in platform_init() so this actually increments. Wraps at
+    // 2^32 like mcycle -- callers must diff within a block.
+    uint32_t v;
+    __asm__ volatile("csrr %0, minstret" : "=r"(v));
+    return (uint64_t)v;
 }
 
 // ---------------------------------------------------------------------------

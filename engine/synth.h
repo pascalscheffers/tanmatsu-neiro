@@ -132,11 +132,30 @@ void engine_profile_read(float* pk_mono, float* pk_postgain, float* min_gr, floa
 // CPU cycles (divide by platform_cycles_per_sec()/1e6 for us). The four regions
 // tile the whole audio block; the MAX fields expose the smash-crackle spike (one
 // rare block/window) that an avg-only readout hides. Zeros when off.
+// Stage 8 diag: worst-block snapshot fields. avg/max hides the one rare bad
+// block's full shape; these freeze it (selection key: largest voices-region
+// cycle cost seen in the read-window). Read them together as the discriminator:
+//   ipc = worst_voices_instret / worst_voices_cyc, low + instret flat vs a
+//     normal block -> memory/cache stall; worst_vmax_cyc dominating
+//     worst_voices_cyc -> one cold voice (PSRAM/wavetable); vmax small vs
+//     voices -> spread/global stall (flash I-cache XIP).
+//   instret high with worst_active low -> preemption by another task.
+//   instret high scaling with worst_active, ipc normal -> genuine compute in
+//     voice render.
 typedef struct {
     uint32_t drain_avg, drain_max;    // steps 1..1b: note/clock/sched drain
     uint32_t setup_avg, setup_max;    // steps 2..4: param drain/push, arp, LFO, chorus
     uint32_t voices_avg, voices_max;  // step 5: voice-sum loop
     uint32_t master_avg, master_max;  // step 6: master chain loop
+
+    uint32_t worst_voices_cyc;      // the worst block's voices-region cycle cost (selection key)
+    uint32_t worst_voices_instret;  // retired instructions in that same block/region
+    uint32_t worst_active;          // active voice count in that block
+    uint32_t worst_vmax_cyc;        // single worst voice's render() cycle cost in that block
+    uint32_t worst_vmax_idx;        // that voice's slot index
+    uint32_t worst_drain_cyc;       // that block's drain-region cost (context)
+    uint32_t worst_setup_cyc;       // that block's setup-region cost (context)
+    uint32_t worst_master_cyc;      // that block's master-region cost (context)
 } EngineCpuProfile;
 void engine_profile_read_cpu(EngineCpuProfile* out);
 

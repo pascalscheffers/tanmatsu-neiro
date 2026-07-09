@@ -328,6 +328,19 @@ void app_run(void) {
                    (unsigned)(cp.drain_avg / div), (unsigned)(cp.drain_max / div), (unsigned)(cp.setup_avg / div),
                    (unsigned)(cp.setup_max / div), (unsigned)(cp.voices_avg / div), (unsigned)(cp.voices_max / div),
                    (unsigned)(cp.master_avg / div), (unsigned)(cp.master_max / div));
+            // Stage 8 diag: worst-block snapshot -- the mechanism discriminator.
+            // ipc (instret/cycles, x100 scaled) separates stall (low ipc, flat
+            // instret) from preemption (high instret, low active) from genuine
+            // compute (instret scales with active, normal ipc); vmax@v pins a
+            // single hot voice vs a uniform-slow spread. See specs/MEMORY.md.
+            uint32_t ipc_x100 = cp.worst_voices_cyc ? (cp.worst_voices_instret * 100u) / cp.worst_voices_cyc : 0u;
+            printf(
+                "[PROFILE] worst voices=%uus instret=%u ipc=%u.%02u active=%u vmax=%uus@v%u | drain=%uus "
+                "setup=%uus master=%uus\n",
+                (unsigned)(cp.worst_voices_cyc / div), (unsigned)cp.worst_voices_instret, (unsigned)(ipc_x100 / 100u),
+                (unsigned)(ipc_x100 % 100u), (unsigned)cp.worst_active, (unsigned)(cp.worst_vmax_cyc / div),
+                (unsigned)cp.worst_vmax_idx, (unsigned)(cp.worst_drain_cyc / div), (unsigned)(cp.worst_setup_cyc / div),
+                (unsigned)(cp.worst_master_cyc / div));
             next_prof = now + 1000u;
         }
 #endif

@@ -799,6 +799,49 @@ voices→per-voice render stall (likely DaisySP flash I-cache, vendor .cpp still
 synth.cpp header); setup→param/arp; none match / all-modest→preemption (needs mcycle-vs-minstret
 split next). That picks the real Phase-2 lever.
 
+## 2026-07-09 — Stage 8 diag: voices-region minstret + worst-block snapshot (COMPLETE)
+
+Region already localized: last device paste's per-region MAX (from 3b3af48) shows the `voices`
+region MAX ≈ whole-block `audio` MAX in every over>0 window (e.g. `voices=748/2390`,
+`audio max=2773`); setup/drain/master stay small. So step 5 (voice-sum) IS the spike region.
+Unknown = the **mechanism**. This job adds the discriminator so the next single device run
+settles stall-vs-preemption-vs-compute-vs-hot-voice without more guessing (Pascal: "stop
+guessing").
+
+- **`platform_instret_now()`** seam (`platform.h` + device + host): device reads RISC-V
+  `minstret` CSR (0xB02) low 32 bits via inline asm (esp_cpu.h has no wrapper); `platform_init`
+  clears `mcountinhibit` (CSR 0x320) bits 0+2 once under `#ifdef SYNTH_PROFILE` so cycle+instret
+  actually count. Host stub returns 0 (IPC is device-only). Diff-within-a-block convention like
+  `platform_cycles_now`.
+- **`synth.cpp`/`.h`**: read instret at the voices-region boundaries (t2/t3) → `d_voices_instret`;
+  per-voice cycle timing inside the loop tracks the single worst voice's `render()` cost + slot
+  index + active count (all `#ifdef SYNTH_PROFILE`; shipping loop byte-unchanged). New **worst-block
+  snapshot**: keyed on largest `d_voices` in the read-window, freezes {voices_cyc, voices_instret,
+  active, vmax_cyc, vmax_idx, drain/setup/master_cyc}. `EngineCpuProfile` extended;
+  `engine_profile_read_cpu` hands them back + resets the key each window.
+- **`app/app.c`**: new line `[PROFILE] worst voices=..us instret=.. ipc=X.YY active=.. vmax=..us@vN
+  | drain/setup/master`. ipc = instret/cycles ×100 (integer, no float).
+
+All new runtime code behind `#ifdef SYNTH_PROFILE` → shipping image unaffected. `make host` +
+`make test` (207 pass) ✅ `make build PROFILE=1` links (CSR asm compiles) ✅ `make build` ✅
+`make format` ✅ membrane clean. Shipping `application.bin` 0x112990 (46% free).
+
+**Pascal, on-device (the decisive run):** `make PROFILE=1 build install run` + `make sniff`,
+smash 5–8 keys on **Juno EP**, find an `over>0` window, read its `[PROFILE] worst` line. Decision
+tree:
+- **`ipc` low** (≪ a quiet-window block's ipc) with `instret` ~flat → **memory/cache stall**. Then:
+  `vmax@vN` ≈ `voices` (one voice = the whole region) → **one cold voice** (PSRAM wavetable /
+  cache miss on activation) → prefetch/warm the wavetable. `vmax` small vs `voices` (cost spread
+  across voices) → **global stall = flash I-cache XIP** (DaisySP/voice vendor .cpp still in flash)
+  → move hot voice/vendor code to IRAM.
+- **`instret` high with `active` low** (the silent `voices≈0 → 2257µs` block is exactly this test)
+  → **preemption** by another task (USB host / render / IDLE) → chase task priority + core-1
+  affinity of the audio task.
+- **`instret` high scaling with `active`, `ipc` normal** → **genuine compute** in voice render →
+  profile `JunoVoice::render` for a hot path (denormal SVF? branch?).
+
+Whichever fires picks the Phase-2 fix. Commit: (this change).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

@@ -118,6 +118,14 @@ uint64_t platform_millis(void);
 // device numbers are the budget).
 uint64_t platform_cycles_now(void);
 
+// Diagnostic (SYNTH_PROFILE seam, Stage 8): retired-instruction counter (RISC-V
+// minstret CSR), low 32 bits, returned as uint64_t for the same diff-within-a-
+// block convention as platform_cycles_now(). instret/cycles (IPC) is the master
+// discriminator between a memory/cache stall (cycles up, instret flat) and
+// genuine compute or preemption (cycles up, instret up too). On host, or if the
+// counter is unavailable, returns 0.
+uint64_t platform_instret_now(void);
+
 // Nominal CPU cycles per second. On device: the configured CPU clock frequency.
 // On host: 1 000 000 000 (the 1 GHz pseudo-clock used by platform_cycles_now).
 uint32_t platform_cycles_per_sec(void);

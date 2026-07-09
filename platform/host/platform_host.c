@@ -284,6 +284,13 @@ uint32_t platform_cycles_per_sec(void) {
     return 1000000000u;  // 1 GHz pseudo-clock matching the ns timebase above
 }
 
+uint64_t platform_instret_now(void) {
+    // Stage 8 diag: no retired-instruction counter on host; the discriminator
+    // (IPC = instret/cycles) is device-only. Returning 0 is documented and
+    // acceptable -- the readout will show ipc=0 rather than anything wrong.
+    return 0;
+}
+
 // ---------------------------------------------------------------------------
 // Storage (Stage 2d) — POSIX file-per-key under ./presets/
 // ---------------------------------------------------------------------------
