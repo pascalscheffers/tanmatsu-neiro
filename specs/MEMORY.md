@@ -842,6 +842,42 @@ tree:
 
 Whichever fires picks the Phase-2 fix. Commit: (this change).
 
+## 2026-07-09 — Stage 8: poly crackle ROOT CAUSE = flash-XIP I-cache stall → DSP to IRAM (FIX, device-verify pending)
+
+The worst-block profiler (above) settled the poly smash-crackle mechanism. Device readout while
+smashing 6–8 on Juno EP:
+- `worst voices=2307us instret=179173 ipc=0.21 active=8 vmax=407us@v0` (over>0 blocks)
+- vs post-release clean block `voices=619us instret=155624 ipc=0.69 active=7 vmax=93us@v5`
+
+**Same instret, 3.7× the cycles → ipc collapses 0.69→0.21 (~5 cyc/instr = pipeline stalled on
+memory fetch).** instret scales with `active` (~22k/voice) so it's real per-voice work, NOT
+preemption (which would show high instret at low active — never seen). Cost is **uniform across
+all voices** (`vmax` only ~1.4× the per-voice average, not one dominant cold voice) → an
+instruction-side stall, not a data/wavetable stall. Confirmed structurally: the per-sample hot
+calls — `dsp::Osc::process`→DaisySP `Oscillator::Process` (×2), `dsp::Filter`→`Svf::Process`,
+`dsp::Env`→`Adsr::Process` (×2) — all resolve to **out-of-line vendor .cpp in flash**.
+`JunoVoice::render` is `IRAM_ATTR` but that places only its OWN code; the DaisySP leaves it calls
+stayed in flash, executed via XIP I-cache which thrashes under 8-voice load. (Also explains why it
+survived FREEZE_DISPLAY — not core-0 contention.)
+
+This is an **incomplete implementation of ADR 0013** (which requires the whole render call chain,
+"the DSP under them", in IRAM — for flash-write survival too; the flash-resident callees were also
+a latent preset-save-during-play fault).
+
+**Fix (this commit):** new `main/linker_audio.lf` maps `oscillator`/`svf`/`adsr` objects to IRAM
+via the ESP-IDF `noflash` scheme (`.text→iram`, `.rodata→dram`); registered with `LDFRAGMENTS` in
+`main/CMakeLists.txt`. **No vendor-source edits.** Map confirms the functions now live at 0x4ff…
+(P4 internal RAM); flash `.text` for those objs is 0-size. Cost: **DIRAM +2448 B** (157878→160326,
+27.8%, 416 KB free) — ESP32-P4 unified DIRAM has ample room. `chorus.cpp` left in flash (master
+region is well under budget). `make build` links (no IRAM overflow), `make host`/`make test` (207)
+green, `make format` clean. Flash image 1,008,660 B.
+
+**Pascal, device-verify (self-confirming):** `make PROFILE=1 build install run` + `make sniff`,
+smash 5–8 on Juno EP. Expect the `[PROFILE] worst` **`ipc` to climb from ~0.21 toward ~0.6+** and
+`voices`/`audio max` to drop below the 1333µs budget with **`over`→~0**. If ipc recovers but `over`
+still spikes, next candidates: add `chorus.cpp` + `mtof`/`whitenoise` to the fragment, or the L2
+cache config. If ipc stays ~0.21, the stall is elsewhere (data-side) — re-open.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

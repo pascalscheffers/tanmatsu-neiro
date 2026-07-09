@@ -1,0 +1,23 @@
+# Audio-path DSP → IRAM (completes ADR 0013; Stage 8 crackle fix)
+#
+# ADR 0013 requires the whole audio render call chain to live in internal IRAM:
+# for flash-write survival (a preset save disables the flash cache), and — the
+# Stage 8 finding — because executing the per-sample DSP from flash XIP stalls
+# the RISC-V pipeline (measured ipc 0.21 vs 0.69, uniform across voices) and
+# blows the block deadline (the poly smash-crackle).
+#
+# JunoVoice::render is IRAM_ATTR, but IRAM_ATTR places only that function's own
+# code — its per-sample callees (the DaisySP Oscillator/Svf/Adsr leaves) stayed
+# in flash. This fragment maps those three vendor objects into IRAM (noflash =
+# .text→iram, .rodata→dram) with no vendor-source edits. ESP32-P4 DIRAM has
+# ample headroom (~418 KB free); these objects are a few KB of .text each.
+#
+# Scope is deliberately the per-voice hot path (the profiled culprit region).
+# chorus.cpp runs in the master region (well under budget) and is left in flash.
+
+[mapping:audio_dsp_iram]
+archive: libmain.a
+entries:
+    oscillator (noflash)
+    svf (noflash)
+    adsr (noflash)

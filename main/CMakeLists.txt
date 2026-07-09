@@ -90,6 +90,10 @@ idf_component_register(
 		"${DAISYSP}/Source"
 		# DaisySP .cpp files use flat #include "dsp.h" (without "Utility/" prefix).
 		"${DAISYSP}/Source/Utility"
+	# Stage 8: per-voice DSP (oscillator/svf/adsr) → IRAM (completes ADR 0013,
+	# kills the flash-XIP I-cache stall behind the poly smash-crackle).
+	LDFRAGMENTS
+		"linker_audio.lf"
 )
 
 idf_build_set_property(COMPILE_OPTIONS "-Wno-error=unused-variable" APPEND)
