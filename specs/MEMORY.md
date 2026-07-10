@@ -878,6 +878,46 @@ smash 5–8 on Juno EP. Expect the `[PROFILE] worst` **`ipc` to climb from ~0.21
 still spikes, next candidates: add `chorus.cpp` + `mtof`/`whitenoise` to the fragment, or the L2
 cache config. If ipc stays ~0.21, the stall is elsewhere (data-side) — re-open.
 
+## 2026-07-10 — Stage 8 (final): whole sound-gen path in IRAM (completes ADR 0013)
+
+The prior fix (01dd861) only IRAM'd the three per-voice DaisySP leaves. ELF map still showed
+`daisysp::Chorus::Process`/`ChorusEngine::Process` (master chain), `ModMatrix::eval` (block-rate),
+`voice_alloc.cpp` (block-rate drain) and every libm transcendental the audio path calls
+(`sinf cosf powf expf logf log2f sqrtf fmodf` + kernels/helpers — used by `Svf::SetFreq`, `mtof`,
+Chorus's LFO, `dsp/lfo.h`, `dsp/limiter.h`) still resolving to flash (`0x4002…`/`0x4009…`). Any of
+these executing flash-XIP can stall core 1 mid-block when a core-0 present/blit burst contends the
+shared MSPI — the mechanism behind the poly onset-crackle.
+
+**Fix:** extended `main/linker_audio.lf` — no CMakeLists change needed (LDFRAGMENTS already wired,
+libm.a resolves as a normal archive in the link):
+- `libmain.a` mapping (existing `oscillator`/`svf`/`adsr`) gained `chorus`, `mod_matrix`,
+  `voice_alloc` (whole-object `noflash`; no `IRAM_ATTR` added to the .cpp files — the mapping
+  already covers them, and also pulls their `.rodata` to DRAM).
+- New `libm.a` mapping: discovered by building once, grepping `application.map` for every
+  math symbol still at a `0x4009…` address, then reading its owning archive member (real prefix
+  is `libm_a-`, not the guessed `lib_a-`). Final set: `sf_sin sf_cos kf_sin kf_cos ef_rem_pio2
+  kf_rem_pio2 wf_pow ef_pow wf_exp ef_exp wf_log ef_log wf_log2 wf_sqrt ef_sqrt wf_fmod ef_fmod
+  sf_scalbn sf_finite`. Double-precision siblings (`pow`/`cos`/`sqrt`/… used by ui.cpp/pax-gfx/
+  badge-bsp) stayed in flash — not audio-path. `exp2f` isn't linked at all (unused). `fabsf` is a
+  hardware instruction (RV32F `fsgnjx`), no mapping needed.
+
+**Map proof:** `Chorus::Process`, `ChorusEngine::Process`, `ModMatrix::eval`, all of
+`voice_alloc.cpp`'s symbols, and every listed libm symbol (incl. `__ieee754_*`/`__kernel_*`
+helpers) now resolve to `0x4ff1….` (P4 internal SRAM). `ChorusEngine::ProcessLfo` has no standalone
+address — it's been inlined into `Process` (also IRAM). Grep for the flash ranges
+(`0x4002…`/`0x4009…`) against the target symbol list returns empty.
+
+**Cost:** DIRAM 160326 → 173936 B (+13,610 B; 27.8%→30.17%, 402,528 B / ~393 KB free — ample per
+Pascal's directive). `make build` links clean (no IRAM/DIRAM overflow). `make host` and `make test`
+(host target doesn't apply the fragment — device-only) both green. `make format` clean (fragment
+isn't a clang-format target; no other files touched).
+
+**Pascal, device-verify (self-confirming):** `make PROFILE=1 build install run` + `make sniff`,
+smash 6–8 notes on Juno EP. Expect `[PROFILE] worst` **`ipc` 0.22 → ~0.6+**, `voices`/`master`
+under the 1333 µs block budget, **`over` → ~0**. If `ipc` recovers but `over` still spikes, next
+suspects are `.rodata` const tables still in flash (data-side) or L2 cache config — re-open, don't
+patch blindly.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

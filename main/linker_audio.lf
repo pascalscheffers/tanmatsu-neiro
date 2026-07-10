@@ -12,8 +12,15 @@
 # .text→iram, .rodata→dram) with no vendor-source edits. ESP32-P4 DIRAM has
 # ample headroom (~418 KB free); these objects are a few KB of .text each.
 #
-# Scope is deliberately the per-voice hot path (the profiled culprit region).
-# chorus.cpp runs in the master region (well under budget) and is left in flash.
+# Stage 8 (final): the earlier per-voice fix wasn't the whole story — the
+# ELF map still showed Chorus::Process (master chain), ModMatrix::eval and
+# voice_alloc.cpp (block-rate drain) running from flash, plus every libm
+# transcendental (sinf/cosf/powf/expf/exp2f/logf/log2f/sqrtf/fmodf) the audio
+# path calls (Svf::SetFreq, mtof, Chorus's LFO, dsp/lfo.h, dsp/limiter.h).
+# Any of these executing from flash XIP can stall core 1 mid-block when a
+# core-0 present/blit burst contends the shared MSPI — the poly onset-crackle.
+# Whole-object noflash mapping also pulls each object's .rodata to DRAM, so
+# constant tables (sine/log tables etc.) stop being flash-XIP too.
 
 [mapping:audio_dsp_iram]
 archive: libmain.a
@@ -21,3 +28,39 @@ entries:
     oscillator (noflash)
     svf (noflash)
     adsr (noflash)
+    chorus (noflash)
+    mod_matrix (noflash)
+    voice_alloc (noflash)
+
+# libm leaves reached from the per-block/per-sample audio path. fabsf is a
+# hardware instruction (RV32F fsgnjx) — no relocation needed, not listed here.
+# Object list discovered by iterating build -> application.map -> add: grepped
+# application.map for every math symbol still resolving to a 0x4009... (flash)
+# address (sinf/cosf/powf/expf/logf/log2f/sqrtf/fmodf + kernels/helpers),
+# then read each symbol's owning archive member off the map (real prefix is
+# "libm_a-", not "lib_a-"; fragment entries use the object base name without
+# ".o"). Double-precision siblings (pow/cos/sqrt/... without the f/sf/wf/ef/kf
+# prefix) are pulled in only by ui.cpp/pax-gfx/badge-bsp, not the audio path,
+# so they're left in flash. exp2f is not linked at all (unused) — no entry.
+[mapping:audio_libm_iram]
+archive: libm.a
+entries:
+    libm_a-sf_sin (noflash)
+    libm_a-sf_cos (noflash)
+    libm_a-kf_sin (noflash)
+    libm_a-kf_cos (noflash)
+    libm_a-ef_rem_pio2 (noflash)
+    libm_a-kf_rem_pio2 (noflash)
+    libm_a-wf_pow (noflash)
+    libm_a-ef_pow (noflash)
+    libm_a-wf_exp (noflash)
+    libm_a-ef_exp (noflash)
+    libm_a-wf_log (noflash)
+    libm_a-ef_log (noflash)
+    libm_a-wf_log2 (noflash)
+    libm_a-wf_sqrt (noflash)
+    libm_a-ef_sqrt (noflash)
+    libm_a-wf_fmod (noflash)
+    libm_a-ef_fmod (noflash)
+    libm_a-sf_scalbn (noflash)
+    libm_a-sf_finite (noflash)
