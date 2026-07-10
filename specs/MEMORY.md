@@ -6,6 +6,57 @@ just above the "Open Opus gates" section** (which stays last). Lean — link to 
 restate. When this passes ~200 lines, rotate older entries into the archive.
 
 
+## 2026-07-10 — Stage 8: SYNTH_PROFILE audio RAM tap (crackle forensics ground truth)
+
+Added a one-shot RAM tap of the rendered stereo output, `SYNTH_PROFILE`-only, to settle whether
+the smash-crackle is amplitude clipping at render time or a DMA/codec-side fault — pure
+instrumentation per the "instrument, don't guess" rule (see memory note on RT-spike diagnosis).
+
+- **`engine/synth.cpp`**: `s_tap_ring[16384*2]` int16 (64 KiB, interleaved L,R, ~341 ms @ 48 kHz)
+  captures the exact post-`soft_clip` signal (both the stereo-chorus and mono step-6 paths) via
+  `tap_capture()` — branch-light (two clamp+scale conversions, one masked index increment, one
+  compare), no allocation/locks/calls. Trigger: peak fed to the limiter (`postgain`/`fabsf(m)`)
+  exceeds `kTapTriggerLevel = 1.2f` while unarmed → latch, capture 8192 more frames (half the
+  ring), freeze via `std::atomic<bool> s_tap_frozen` (release store). One-shot per boot; reboot
+  re-arms. `engine_tap_frozen()`/`engine_tap_data()` (new, `extern "C"`) are the reader API,
+  stubbed to false/zeros/NULL when `SYNTH_PROFILE` is off (mirrors `engine_profile_read`).
+- **`engine/synth.h`**: reader declarations + the dump-order contract, documented inline.
+  `engine_tap_data()` takes **three** out-params (`out_frames`, `out_trig_frame`,
+  `out_start_offset`), not the two in the original sketch — a strict oldest→newest single-pointer
+  read would need a second full-ring copy on the audio thread, which the RT rules forbid for a
+  diagnostic buffer this size. Instead the reader returns the raw physical ring plus
+  `out_start_offset` (physical index of the oldest frame) and `out_trig_frame` as a **logical**
+  index already relative to oldest; the caller walks two spans
+  (`[start_offset..frames-1]` then `[0..start_offset-1]`) to unroll — done at dump time in
+  `app.c`, off the audio thread, so it costs nothing in the RT path.
+- **`app/app.c`**: inside the existing 1 s `SYNTH_PROFILE` readout, once `engine_tap_frozen()`
+  first goes true, dumps once: `[TAP] hdr sr=48000 ch=2 fmt=s16le frames=16384 trig_frame=<N>`,
+  then `[TAP] d <base64-of-48-bytes>` lines (hand-rolled base64 + CRC-32, no ESP-IDF ROM calls —
+  app.c is shared host+device), `platform_sleep_ms(2)` every 32 lines (portable stand-in for the
+  work order's `vTaskDelay`), then `[TAP] end crc32=<hex>`. Guarded to print once per boot.
+- **`tools/tap2wav.py`** (new, stdlib-only): parses a `make sniff` capture for the `[TAP]` lines
+  anywhere in the stream, base64-decodes, CRC-verifies (warns, doesn't hard-fail — serial can drop
+  lines), writes a 48 kHz/stereo/16-bit WAV, prints the trigger frame + its ms offset.
+  `--selftest` round-trips a synthetic capture (mis-aligned chunk size on purpose) end to end.
+
+**Runbook:** `make PROFILE=1 build install run`, `make sniff`, smash keys (MASTER_GAIN ~0.5) until
+the crackle is audible, wait for `[TAP] end`, then `python3 tools/tap2wav.py sniff.log -o tap.wav`.
+**Interpretation:** flattened/saturated onsets in `tap.wav` → the crackle is amplitude clipping at
+render time (revisit the limiter/gain-staging fix per the crackle memory note); a clean tap despite
+an audibly crackling take → the fault is downstream of render (DMA/codec/I2S side), redirect the
+hunt there.
+
+**Verify:** `make host` ✅ `make test` 207/207 ✅ `make build` ✅ (174,006 B DIRAM, 30.19%, +70 B
+noise vs. prior 173,936 B baseline) `make PROFILE=1 build` ✅ (240,880 B DIRAM, 41.79%, ~335 KB
+free — no overflow) `make format` ✅. `tap2wav.py --selftest` ✅.
+
+**Decisions made that the work-order didn't spell out:** the 3-out-param reader signature (above,
+rationale documented in `synth.h`); `platform_sleep_ms` instead of raw `vTaskDelay` for host/device
+portability; hand-rolled CRC-32/base64 in `app.c` instead of ESP-IDF ROM functions (same
+portability reason). Scope stayed additive-only in `engine/synth.cpp` — the pre-existing
+uncommitted Stage 8 note-on refractory diag hunks in that file and in `engine/synth_config.h` were
+left untouched (staged separately, out of scope for this commit).
+
 ## 2026-07-07 — 6a.1: rotated-panel band-present fix implemented (COMPLETE, resolves the handoff below)
 
 Implemented the closed work-order from ADR 0023 (see the handoff entry directly below for the

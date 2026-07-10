@@ -5,6 +5,7 @@
 // owns the thread, the engine fills stereo float buffers in [-1, 1].
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -158,6 +159,47 @@ typedef struct {
     uint32_t worst_master_cyc;      // that block's master-region cost (context)
 } EngineCpuProfile;
 void engine_profile_read_cpu(EngineCpuProfile* out);
+
+// --- Audio RAM tap (SYNTH_PROFILE only; crackle forensics) -----------------
+// Captures the last ~341 ms of rendered stereo output (post soft_clip, the
+// exact signal handed to the DAC) into a RAM ring; freezes one-shot when a
+// loud transient (the peak fed to the master limiter exceeds 1.2) is seen,
+// half the ring before the trigger and half after. Ground truth for whether
+// the audible crackle is amplitude clipping at render time (flattened /
+// saturated onsets in the dumped tap) or DMA/codec-side (tap is clean but the
+// ear still hears crackle). See specs/MEMORY.md (2026-07-10) for the
+// device-verify runbook and tools/tap2wav.py for the decoder.
+//
+// One-shot per boot: once frozen, the writer never resumes (reboot re-arms;
+// no re-arm API this round). Zeroed/false/NULL in all outputs when
+// SYNTH_PROFILE is not defined (mirrors engine_profile_read's convention).
+//
+// Dump-order contract (pinned here; tools/tap2wav.py does not need to know
+// it -- app.c does the unrolling before printing). The ring is a plain
+// power-of-two circular buffer of frames (interleaved L,R, s16le). Once
+// frozen:
+//   *out_start_offset  = the physical index of the OLDEST valid frame (the
+//                         slot the writer would have overwritten next, had
+//                         it not frozen).
+//   *out_trig_frame    = the trigger's LOGICAL index, already relative to
+//                         the oldest frame (0 = oldest frame in the dump).
+// To read the ring oldest -> newest, walk two spans of the returned buffer:
+// [start_offset .. frames-1] then [0 .. start_offset-1]. (Note: this adds a
+// third out-param beyond the two-param sketch in the original tap work
+// order -- returning a single pointer in strict oldest->newest order would
+// otherwise require a second full-ring copy in the audio thread, which the
+// real-time rules here forbid for a one-shot diagnostic buffer this size.)
+
+// True once the tap has captured and frozen (one-shot per boot; always
+// false when SYNTH_PROFILE is off).
+bool engine_tap_frozen(void);
+
+// Returns a pointer to the raw physical ring (kTapFrames frames, interleaved
+// L,R int16, 48 kHz) plus the three values needed to unroll and interpret
+// it -- see the dump-order contract above. Returns NULL (and zeros all
+// outputs) when SYNTH_PROFILE is off; the returned pointer and offsets are
+// only meaningful after engine_tap_frozen() returns true.
+const int16_t* engine_tap_data(uint32_t* out_frames, uint32_t* out_trig_frame, uint32_t* out_start_offset);
 
 #ifdef __cplusplus
 }
