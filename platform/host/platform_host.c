@@ -119,6 +119,10 @@ pax_buf_t* platform_framebuffer(void) {
     return &s_fb;
 }
 
+void platform_display_stop(void) {
+    // Device-only diagnostic (SYNTH_QUIET_DISPLAY); nothing to tear down on host.
+}
+
 void platform_present(int y0, int y1) {
     if (y0 < 0) y0 = 0;
     if (y1 > WIN_H) y1 = WIN_H;

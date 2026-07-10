@@ -16,6 +16,7 @@
 #include "driver/i2s_std.h"
 #include "esp_cpu.h"
 #include "esp_heap_caps.h"
+#include "esp_lcd_panel_ops.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -265,6 +266,26 @@ bool platform_init(void) {
 
 pax_buf_t* platform_framebuffer(void) {
     return s_have_display ? &s_fb : NULL;
+}
+
+void platform_display_stop(void) {
+    // Diagnostic bus-quiet baseline (SYNTH_QUIET_DISPLAY). The Tanmatsu panel is
+    // MIPI-DSI DPI (video mode): the DSI bridge continuously DMA-streams the
+    // whole framebuffer out of PSRAM at the refresh rate, forever, independent
+    // of any CPU repaint. FREEZE_DISPLAY only skips the repaint/blit, so that
+    // scanout keeps loading the memory bus. Deleting the panel stops the DPI
+    // DMA outright — the only way to make the bus truly quiet without a BSP fork.
+    //
+    // Called once from the render task after the first frame is on screen; the
+    // pax framebuffer (s_fb) is a separate buffer and stays valid, so clearing
+    // s_have_display first makes platform_present()/framebuffer() no-op safely.
+    if (!s_have_display) return;
+    s_have_display               = false;
+    esp_lcd_panel_handle_t panel = NULL;
+    if (bsp_display_get_panel(&panel) == ESP_OK && panel != NULL) {
+        esp_lcd_panel_del(panel);
+        ESP_LOGW(TAG, "QUIET_DISPLAY: DPI panel torn down, scanout DMA stopped");
+    }
 }
 
 void platform_present(int y0, int y1) {

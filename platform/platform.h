@@ -89,6 +89,13 @@ pax_buf_t* platform_framebuffer(void);
 // dirty-region present seam — narrows the PSRAM/panel blit to what changed).
 void platform_present(int y0, int y1);
 
+// Diagnostic (SYNTH_QUIET_DISPLAY): permanently stop the display. On device this
+// tears down the MIPI-DSI DPI panel so its continuous framebuffer scanout DMA
+// stops hammering PSRAM — a true memory-bus-quiet baseline for isolating the
+// audio-crackle aggressor. Irreversible for this boot; platform_framebuffer()
+// returns NULL and platform_present() no-ops afterwards. No-op on host.
+void platform_display_stop(void);
+
 // Start the audio sink, which begins calling `render` on its own thread/context.
 // Returns false if audio could not be started.
 bool platform_audio_start(const platform_audio_config_t* cfg, platform_audio_render_fn render, void* user);

@@ -37,15 +37,22 @@ USBHOST_DEFINE :=
 endif
 # Device crackle diagnostics:
 #   PROFILE=1          — audio-block cycle profiler + 1 s console readout.
-#   FREEZE_DISPLAY=1   — freeze the display after the first frame (isolates
-#                        display-blit contention from audio compute).
-# Both flags are no-ops in the shipping image (all code is under #ifdef).
-# NOTE: unlike BENCH/USBHOST_DEBUG, these two share the default build/$(DEVICE)
+#   FREEZE_DISPLAY=1   — freeze the CPU repaint after the first frame. NOTE this
+#                        does NOT stop the MIPI-DSI DPI scanout: the DSI bridge
+#                        keeps DMA-streaming the framebuffer out of PSRAM ~60x/s,
+#                        so the memory bus is NOT quiet. Isolates only the blit.
+#   QUIET_DISPLAY=1    — tear down the DPI panel after the first frame, stopping
+#                        the scanout DMA entirely (true memory-bus-quiet
+#                        baseline). Screen goes dark; use to prove whether the
+#                        constant scanout floor is the audio-crackle aggressor.
+# All flags are no-ops in the shipping image (all code is under #ifdef).
+# NOTE: unlike BENCH/USBHOST_DEBUG, these share the default build/$(DEVICE)
 # dir with the shipping build, so they MUST be passed with an explicit 0/1 every
 # time — omitting the -D leaves the previous value stale in CMakeCache.txt and
 # the flag stays "on" until `make clean`. CMake's if(VAR) treats "0" as false.
 PROFILE_DEFINE      := -DPROFILE=$(if $(filter 1,$(PROFILE)),1,0)
 FREEZE_DEFINE       := -DFREEZE_DISPLAY=$(if $(filter 1,$(FREEZE_DISPLAY)),1,0)
+QUIET_DEFINE        := -DQUIET_DISPLAY=$(if $(filter 1,$(QUIET_DISPLAY)),1,0)
 FAT ?= 0
 SDKCONFIG_DEFAULTS ?= sdkconfigs/general;sdkconfigs/$(DEVICE)
 SDKCONFIG ?= sdkconfig_$(DEVICE)
@@ -73,7 +80,7 @@ $(warning "Unknown device, defaulting to ESP32 $(DEVICE)")
 IDF_TARGET ?= esp32
 endif
 
-IDF_PARAMS := -B $(BUILD) build -DDEVICE=$(DEVICE) -DSDKCONFIG_DEFAULTS="$(SDKCONFIG_DEFAULTS)" -DSDKCONFIG=$(SDKCONFIG) -DIDF_TARGET=$(IDF_TARGET) -DFAT=$(FAT) $(BENCH_DEFINE) $(USBHOST_DEFINE) $(PROFILE_DEFINE) $(FREEZE_DEFINE)
+IDF_PARAMS := -B $(BUILD) build -DDEVICE=$(DEVICE) -DSDKCONFIG_DEFAULTS="$(SDKCONFIG_DEFAULTS)" -DSDKCONFIG=$(SDKCONFIG) -DIDF_TARGET=$(IDF_TARGET) -DFAT=$(FAT) $(BENCH_DEFINE) $(USBHOST_DEFINE) $(PROFILE_DEFINE) $(FREEZE_DEFINE) $(QUIET_DEFINE)
 
 #####
 

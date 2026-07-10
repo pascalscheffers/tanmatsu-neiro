@@ -89,6 +89,18 @@ static void render_cb(void* arg) {
     UIState*   s  = (UIState*)arg;
     pax_buf_t* fb = platform_framebuffer();
     if (!fb) return;
+#ifdef SYNTH_QUIET_DISPLAY
+    // True bus-quiet baseline: paint frame 1, then on the NEXT tick tear down the
+    // DPI panel (stops the continuous PSRAM scanout DMA). The one-tick delay lets
+    // frame 1's blit DMA finish before the panel is deleted. Afterwards
+    // platform_framebuffer() returns NULL, so this returns at the check above.
+    static int s_quiet_frames = 0;
+    if (s_quiet_frames == 1) {
+        platform_display_stop();
+        s_quiet_frames = 2;
+        return;
+    }
+#endif
 #ifdef SYNTH_FREEZE_DISPLAY
     // Freeze: let the first frame paint normally, then never repaint again.
     // This removes display-blit / memory-bus pressure so an audio crackle test
@@ -157,6 +169,9 @@ static void render_cb(void* arg) {
     s_last_drawn_seq = seq;
 #ifdef SYNTH_FREEZE_DISPLAY
     painted_once = true;
+#endif
+#ifdef SYNTH_QUIET_DISPLAY
+    if (s_quiet_frames == 0) s_quiet_frames = 1;  // frame 1 shown; tear down next tick
 #endif
 }
 
