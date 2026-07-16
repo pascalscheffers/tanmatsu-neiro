@@ -34,6 +34,7 @@ idf_component_register(
 		"../app/app.c"
 		# Stage 1c: allocator + JunoModel + chorus; synth.cpp drives the pool.
 		"../engine/synth.cpp"
+		"../engine/record_ring.cpp"
 		"../engine/juno_voice.cpp"
 		"../engine/mod_matrix.cpp"
 		"../engine/juno_model.cpp"

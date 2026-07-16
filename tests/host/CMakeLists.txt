@@ -18,6 +18,7 @@ add_executable(tanmatsu-tests
     test_voice.cpp
     test_alloc.cpp
     test_command_queue.cpp
+    test_record_ring.cpp
     test_note_cap.cpp
     test_param_store.cpp
     test_saturate.cpp
@@ -54,6 +55,7 @@ add_executable(tanmatsu-tests
     "${REPO_ROOT}/engine/param_desc.cpp"
     "${REPO_ROOT}/engine/param_store.cpp"
     "${REPO_ROOT}/engine/preset.cpp"
+    "${REPO_ROOT}/engine/record_ring.cpp"
     "${REPO_ROOT}/control/midi_in.c"
 )
 

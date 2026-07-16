@@ -27,10 +27,9 @@
 #define HOST_FB_FORMAT PAX_BUF_24_888RGB
 
 // Largest chunk we hand to the engine per render call inside the audio callback.
-// miniaudio's frame count per callback is bounded by the period size we request
-// (the engine block size), but we chunk defensively to a fixed static buffer so
-// the callback never allocates.
-#define MAX_CHUNK 1024
+// A callback may exceed the requested period size. Split it without allocation
+// so the engine's one-publish-per-call recording block stays bounded (ADR 0024).
+#define MAX_CHUNK 64
 
 static SDL_Window*   s_window   = NULL;
 static SDL_Renderer* s_renderer = NULL;

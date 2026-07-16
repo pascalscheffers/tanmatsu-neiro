@@ -29,6 +29,7 @@
 #include "param_id.h"
 #include "param_store.h"
 #include "platform.h"  // platform_cycles_now() — SYNTH_PROFILE CPU sub-timers
+#include "record_ring.h"
 #include "scheduler.h"
 #include "synth.h"
 #include "synth_config.h"
@@ -685,6 +686,11 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
 #endif
         }
     }
+
+    // ADR 0024: publish the completed final master exactly once per render
+    // block, after both chorus branches converge. Disabled capture is one
+    // relaxed atomic load; oversized future-backend blocks fail closed.
+    (void)record_ring_publish(left, right, frames);
 
 #ifdef SYNTH_PROFILE
     // Accumulate this block's per-region cycle costs (avg via sum, plus max).

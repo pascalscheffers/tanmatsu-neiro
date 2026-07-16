@@ -9,7 +9,7 @@
 //   - Wait-free on both sides (no CAS, no spin).
 //   - Holds Cap-1 items (one slot stays empty to distinguish full from empty).
 //   - Cap must be a power of two >= 2.
-//   - T must be trivially copyable (plain word stores in push/pop).
+//   - T must be trivially copyable (no ownership or lifetime hooks).
 //   - Lives in DRAM/.bss so it is reachable during a flash write (ADR 0013).
 #pragma once
 
@@ -21,7 +21,7 @@ class SpscRing {
     static_assert(Cap >= 2 && (Cap & (Cap - 1)) == 0, "Cap must be a power of two >= 2");
 
 public:
-    // Producer (control thread). Returns false if full — command dropped.
+    // Single producer. Returns false if full — the item was not published.
     bool push(const T& item) {
         const size_t head = head_.load(std::memory_order_relaxed);
         const size_t next = (head + 1) & (Cap - 1);
@@ -33,7 +33,7 @@ public:
         return true;
     }
 
-    // Consumer (audio thread). Returns false if empty.
+    // Single consumer. Returns false if empty.
     bool pop(T& out) {
         const size_t tail = tail_.load(std::memory_order_relaxed);
         if (tail == head_.load(std::memory_order_acquire)) {
@@ -44,7 +44,7 @@ public:
         return true;
     }
 
-    // Consumer (audio thread). Non-destructive: copies the element the next
+    // Single consumer. Non-destructive: copies the element the next
     // pop() would return into out, without advancing tail_. Returns false if
     // empty. Safe to call from the same single consumer as pop() (no extra
     // synchronization needed — same thread, same ordering as pop()).

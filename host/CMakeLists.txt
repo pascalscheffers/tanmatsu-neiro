@@ -44,6 +44,7 @@ option(SYNTH_FREEZE_DISPLAY "Freeze display after first frame (display-blit isol
 set(HOST_SRCS
     # Stage 1c: allocator + JunoModel + chorus added; synth.cpp drives the pool.
     "${REPO_ROOT}/engine/synth.cpp"
+    "${REPO_ROOT}/engine/record_ring.cpp"
     "${REPO_ROOT}/engine/juno_voice.cpp"
     "${REPO_ROOT}/engine/mod_matrix.cpp"
     "${REPO_ROOT}/engine/juno_model.cpp"

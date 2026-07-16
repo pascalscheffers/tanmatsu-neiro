@@ -1236,6 +1236,21 @@ creates usable `./sd`. The mount sequence cites the installed esp-hosted-tanmats
 launch created `./sd`; no new platform headers crossed above the membrane. Size: app `0x11fa80`
 (44% partition free), DIRAM 174,394 B / 30.25%. **NEXT:** Stage 11b block ring and 11c Record row.
 
+## 2026-07-16 — Stage 11b: final-master record ring (COMPLETE)
+
+Added the ADR 0024 audio→control SPSC handoff: 255 queued `RecordBlock`s, each carrying 1–64
+stereo PCM16 frames. The audio thread publishes once after the completed master loop; disabled is
+one relaxed atomic read, and full/oversize publishes drop newest and increment the resettable error
+counter. Conversion exactly matches the device DAC's finite/clamp/truncate rule. Host miniaudio
+callbacks now split into allocation-free ≤64-frame engine calls; future oversized producers fail
+closed. Tests cover ordered variable blocks, conversion edges, disabled mode, capacity/overflow,
+oversize rejection, and counter reset.
+
+**Verify:** `make format` ✅, `make host` ✅, `make test` ✅, `make build` ✅; normal and
+`SYNTH_PROFILE` host/device links ✅; membrane clean. Size: app `0x11fc30` (44% partition free),
+DIRAM 240,854 B / 41.78% (66,460 B increase, principally the fixed ring). **NEXT:** Stage 11c
+non-preset Record row.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
