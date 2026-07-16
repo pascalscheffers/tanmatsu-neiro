@@ -34,12 +34,18 @@ import tempfile
 import wave
 
 HDR_RE = re.compile(r"\[TAP\] hdr sr=(\d+) ch=(\d+) fmt=(\S+) frames=(\d+) trig_frame=(\d+)")
-DATA_RE = re.compile(r"\[TAP\] d (\S+)")
+DATA_RE = re.compile(r"\[TAP\] d (\d+) (\S+)")
 END_RE = re.compile(r"\[TAP\] end crc32=([0-9a-fA-F]+)")
 
 
 def parse(path):
-    """Scan a text file for [TAP] lines. Returns (hdr_dict_or_None, [b64_str, ...], end_crc_or_None)."""
+    """Scan a text file for [TAP] lines. Returns (hdr_dict_or_None, [(off, b64), ...], end_crc_or_None).
+
+    Each data line carries its byte OFFSET into the logical buffer, so a
+    serial-dropped line leaves a hole at the correct position instead of
+    shifting every later sample earlier -- alignment is preserved for a
+    sample-accurate diff against a line-out recording.
+    """
     hdr = None
     chunks = []
     end_crc = None
@@ -58,7 +64,7 @@ def parse(path):
                     continue
             m = DATA_RE.search(line)
             if m:
-                chunks.append(m.group(1))
+                chunks.append((int(m.group(1)), m.group(2)))
                 continue
             m = END_RE.search(line)
             if m:
@@ -66,29 +72,66 @@ def parse(path):
     return hdr, chunks, end_crc
 
 
+def _fmt_gaps(gap_bytes, sr, ch):
+    """Collapse a sorted set of missing byte indices into frame ranges for reporting."""
+    if not gap_bytes:
+        return []
+    bytes_per_frame = ch * 2
+    frames = sorted({b // bytes_per_frame for b in gap_bytes})
+    ranges = []
+    start = prev = frames[0]
+    for fr in frames[1:]:
+        if fr == prev + 1:
+            prev = fr
+        else:
+            ranges.append((start, prev))
+            start = prev = fr
+    ranges.append((start, prev))
+    out = []
+    for a, b in ranges:
+        out.append(f"{a}-{b} ({a * 1000.0 / sr:.1f}-{(b + 1) * 1000.0 / sr:.1f} ms)")
+    return out
+
+
 def decode(hdr, chunks, end_crc):
-    """Decode chunks against hdr; returns (raw_bytes, warnings_list)."""
+    """Decode offset-stamped chunks into a fixed-size buffer; returns (raw_bytes, warnings_list).
+
+    Missing/corrupt lines leave zero-filled holes at their exact byte offset
+    (reported as frame ranges) rather than shifting the timeline. CRC is
+    computed over the reconstructed buffer -- it will mismatch when holes
+    exist, which is expected and only tells you a line dropped, not that the
+    alignment is wrong.
+    """
     warnings = []
-    raw = bytearray()
+    expected_bytes = hdr["frames"] * hdr["ch"] * 2
+    raw = bytearray(expected_bytes)
+    covered = bytearray(expected_bytes)  # 1 where a byte was written
     bad = 0
-    for c in chunks:
+    for off, c in chunks:
         try:
-            raw += base64.b64decode(c)
+            data = base64.b64decode(c)
         except (binascii.Error, ValueError):
             bad += 1
+            continue
+        end = min(off + len(data), expected_bytes)
+        raw[off:end] = data[: end - off]
+        for i in range(off, end):
+            covered[i] = 1
     if bad:
         warnings.append(f"{bad} data line(s) failed to decode (dropped)")
 
-    expected_bytes = hdr["frames"] * hdr["ch"] * 2
-    if len(raw) != expected_bytes:
+    gap_bytes = [i for i in range(expected_bytes) if not covered[i]]
+    if gap_bytes:
+        ranges = _fmt_gaps(gap_bytes, hdr["sr"], hdr["ch"])
+        shown = ", ".join(ranges[:12]) + (" ..." if len(ranges) > 12 else "")
         warnings.append(
-            f"got {len(raw)} bytes, expected {expected_bytes} "
-            f"({len(chunks)} data lines found) -- serial capture may have dropped lines"
+            f"{len(gap_bytes)} byte(s) missing across {len(ranges)} gap(s), zero-filled "
+            f"(alignment preserved) -- frame ranges: {shown}"
         )
 
     if end_crc is not None:
         actual_crc = binascii.crc32(bytes(raw)) & 0xFFFFFFFF
-        if actual_crc != end_crc:
+        if actual_crc != end_crc and not gap_bytes:
             warnings.append(f"crc32 mismatch (capture={end_crc:08x} computed={actual_crc:08x})")
     else:
         warnings.append("no [TAP] end line found; crc32 not verified")
@@ -149,9 +192,11 @@ def _selftest():
         f"[TAP] hdr sr={sr} ch={ch} fmt=s16le frames={frames} trig_frame={trig_frame}",
     ]
     chunk_size = 8  # deliberately not a multiple of the frame size, to exercise mid-frame line splits
+    data_lines = []
     for off in range(0, len(raw), chunk_size):
         chunk = raw[off : off + chunk_size]
-        lines.append("[TAP] d " + base64.b64encode(chunk).decode("ascii"))
+        data_lines.append(f"[TAP] d {off} " + base64.b64encode(chunk).decode("ascii"))
+    lines += data_lines
     lines.append(f"[TAP] end crc32={crc:08x}")
 
     fd, path = tempfile.mkstemp(suffix=".log")
@@ -181,6 +226,21 @@ def _selftest():
             assert w.getnchannels() == ch
             assert w.getframerate() == sr
             assert w.readframes(frames) == raw
+
+        # Drop a mid-stream data line: the offset stamp must keep every later
+        # sample at its correct position (only the dropped chunk zero-fills).
+        drop_idx = len(data_lines) // 2
+        dropped_off = int(data_lines[drop_idx].split()[2])
+        holed = [ln for i, ln in enumerate(lines) if not (ln.startswith("[TAP] d ") and int(ln.split()[2]) == dropped_off)]
+        with open(path, "w") as f:
+            f.write("\n".join(holed) + "\n")
+        hdr2, chunks2, end_crc2 = parse(path)
+        decoded2, warnings2 = decode(hdr2, chunks2, end_crc2)
+        assert len(decoded2) == len(raw), "hole changed buffer length (alignment lost)"
+        exp = bytearray(raw)
+        exp[dropped_off : dropped_off + chunk_size] = bytes(chunk_size)  # dropped chunk -> zeros
+        assert decoded2 == bytes(exp), "drop shifted the timeline instead of zero-filling in place"
+        assert any("zero-filled" in w for w in warnings2), "missing gap warning"
 
         print("selftest OK")
     finally:

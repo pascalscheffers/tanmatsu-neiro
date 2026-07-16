@@ -127,8 +127,15 @@ static void tap_base64_encode(const uint8_t* in, uint32_t n, char* out) {
 // site), as [TAP] hdr / d.../ end lines. Unrolls the two physical spans
 // (oldest->newest, per the header contract) via modular byte-offset math --
 // no second ring-sized buffer needed. 48 raw bytes per base64 line, a
-// platform_sleep_ms(2) every 32 lines so the dump does not starve other
-// control-thread work.
+// platform_sleep_ms(2) every 16 lines so the dump does not starve other
+// control-thread work (16, not 32: the USB-Serial-JTAG console was dropping
+// ~6% of lines at 32).
+//
+// Each data line is stamped with its byte OFFSET into the logical buffer
+// ([TAP] d <off> <b64>). tap2wav.py places each chunk at its offset, so a
+// serial-dropped line leaves a zero gap at the correct position instead of
+// shifting every later sample earlier -- alignment survives drops, which is
+// what a sample-accurate diff against a line-out recording requires.
 static void tap_dump(void) {
     uint32_t       frames, trig_frame, start_offset;
     const int16_t* ring = engine_tap_data(&frames, &trig_frame, &start_offset);
@@ -151,9 +158,9 @@ static void tap_dump(void) {
         }
         char b64[65];
         tap_base64_encode(chunk, n, b64);
-        printf("[TAP] d %s\n", b64);
+        printf("[TAP] d %u %s\n", (unsigned)off, b64);
         lines_out++;
-        if ((lines_out % 32u) == 0u) platform_sleep_ms(2u);
+        if ((lines_out % 16u) == 0u) platform_sleep_ms(2u);
     }
     crc ^= 0xFFFFFFFFu;
     printf("[TAP] end crc32=%08x\n", (unsigned)crc);
