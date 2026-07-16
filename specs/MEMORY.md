@@ -6,6 +6,37 @@ just above the "Open Opus gates" section** (which stays last). Lean — link to 
 restate. When this passes ~200 lines, rotate older entries into the archive.
 
 
+## 2026-07-16 — Manual tap freeze WORKS on device; drop-robust dump (crackle split, IN PROGRESS)
+
+Goal: the decisive crackle split — is the glitch in the **rendered buffer** (DSP) or only
+**after** it (codec/i2s/analog)? The auto step-trigger (`>0.6`) never fires, so the tap needed a
+human-in-the-loop freeze. Now shipped and confirmed firing on hardware.
+
+- **Manual freeze / re-arm** (`600d11a` feat, `1918a98` fix): SPACE (PROFILE builds only) freezes
+  the RAM tap; tiny post-trigger tail ⇒ the frozen ring is ~all **pre-keypress** history (682 ms,
+  ring doubled to 128 KiB). Auto re-arm after each dump = repeat captures, no reboot. **Bug found +
+  fixed:** device `scancode_to_key()` (`platform_device.c`) is a whitelist of musical/UI keys only —
+  SPACE fell through to 0 and the event became `NONE` before app.c; added `BSP_INPUT_SCANCODE_SPACE
+  → ' '`. Worker had checked keyboard.c/ui.cpp but not the device scancode layer.
+- **Starve counter ripped** (`a5ef58b`): underrun hypothesis dead (frozen-display run), counter was
+  a broken heuristic (const ~550 at idle). `platform_audio_profile_read` back to 4 out-params.
+- **Drop-robust dump** (`cb85741`): first real capture dropped ~6% of `[TAP]` serial lines; the old
+  decoder concatenated chunks in order so a **mid-stream drop shifted every later sample** and killed
+  alignment. Now each data line is **offset-stamped** (`[TAP] d <off> <b64>`); `tap2wav.py` places
+  each chunk at its byte offset and **zero-fills holes at the correct position** (reports gap
+  frame-ranges) — alignment survives drops. Dump now sleeps every 16 lines (was 32) to cut the rate.
+  `tap2wav --selftest` gains a mid-stream-drop alignment assertion. ✅
+
+**Verify:** `make PROFILE=1 build` ✅ (DIRAM ~306 KB/53%, ~264 KB free) `tap2wav --selftest` ✅.
+Freeze confirmed firing on device (Pascal got a `tap.wav`; that capture predates the offset fix so
+it's misaligned — recapture with `cb85741`).
+
+**NEXT (Pascal, decisive):** `make install run PROFILE=1` → `make sniff` → play till crackle →
+**tap SPACE** → wait `[TAP] end` → `python3 tools/tap2wav.py sniff.log -o tap.wav`, while recording
+line-out simultaneously. Diff rendered vs line-out: **rendered clean + line-out crackles ⇒
+codec/i2s/analog** (never audited); **rendered also crackles ⇒ DSP glitch at clean timing**, localize
+in code. See memory note [[crackle-voice-leak-open]].
+
 ## 2026-07-10 — Stage 8: SYNTH_PROFILE audio RAM tap (crackle forensics ground truth)
 
 Added a one-shot RAM tap of the rendered stereo output, `SYNTH_PROFILE`-only, to settle whether
