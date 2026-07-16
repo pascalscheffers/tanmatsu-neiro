@@ -1010,6 +1010,49 @@ links, DIRAM 240,904 B / 41.79% (dominated by the pre-existing 64 KiB tap ring).
 (style-only diff, verified rebuild byte-identical). Membrane clean: no new `esp_`/`bsp_` leakage,
 `platform/device/platform_device.c` stays C with no engine/dsp includes added.
 
+## 2026-07-16 — Crackle diag RESULT: display + timing/underrun RULED OUT (device run, FROZEN)
+
+Ran the a-vs-b instrument (entry above) on device, both live-display and `FREEZE_DISPLAY=1`.
+**Both hypotheses the run was built to test are eliminated. Display is ruled out — definitively,
+Nth time — and this time with the cleanest evidence yet.**
+
+**Live-display run:** on note-on/off *bursts* render blew budget — `max` 1871–2490 µs (budget
+1333), `over` 7–16/750/s, and `ipc` collapsed 0.72 → 0.23 → 0.08 at *constant* instret (~177 k),
+i.e. a memory STALL not extra compute. Overruns correlated with the `voices=N` transition lines
+(note events), not voice count (steady 8-voice = 759 µs, `over=0`). This *looked* like blit
+contention → underrun.
+
+**FROZEN-display run (`FREEZE_DISPLAY=1`) — the falsifier:** every overrun and IPC collapse
+**vanished**. All load levels: `over=0/750`, `max ≤ 769 µs`, `ipc` flat 0.71–0.72, 8-voice steady
+760 µs. **And Pascal confirms it STILL crackles with display frozen.** Therefore:
+- The live-run overruns / IPC-collapse **are** core-0 display-blit bus contention — REAL, but a
+  **red herring for the crackle**. (Worth a perf fix eventually — dirty-rect/Stage-2B — but NOT
+  the crackle.) Do not re-open display for the crackle. (Ruled out ~10×; stop.)
+- **(a) DMA underrun is DEAD:** frozen `over=0` ⇒ render never overran ⇒ DMA never starved ⇒ no
+  codec-repeat step. Crackle persists anyway.
+- Crackle occurs under **clean timing**: `over=0`, `max=769 µs`, `ipc=0.72`, `gr=1.00` (limiter
+  never engages), `out=0.73` (nowhere near ±1.0 — no clip), signal probe healthy (mono 3.1,
+  postg 0.81). Load-independent of the RT deadline.
+
+**The tap never froze** (step-discontinuity trigger `> 0.6f`) in either run — so either the
+rendered buffer has no single-sample step ≥ 0.6, or the threshold is too high, or the tap path
+itself is suspect. Note the tension with the earlier `gain50.wav` line capture that *did* show
+12.5×-RMS steps: that capture is downstream of render (codec/analog), so a clean rendered tap +
+crackling line-out would localise the fault to the **codec/i2s/DAC hardware path**, not DSP.
+
+**Also: the i2s starve counter (commit `c6e96ca`) is BROKEN** — reads `starve≈550` constant at
+idle (0 voices, silence, `over=0`). The "write returns fast ⇒ starve" heuristic false-positives
+because a healthy DMA ring with depth legitimately returns most writes fast. The `starve` field
+is meaningless; ignore it. Rip out or replace with an inter-write wall-clock gap detector.
+
+**NEXT (not display, not timing):** get the RENDERED-buffer signal during a frozen-display
+crackle and diff it against a simultaneous line-out recording. Make the tap capturable on demand
+(manual/keypress freeze, or free-run + dump) since the step trigger doesn't fire. If
+tap.wav (render) is clean while the line-out crackles ⇒ fault is post-render: **codec / i2s config
+(bit depth, MCLK ratio, sample-rate slip) / analog** — a path never seriously audited. If tap.wav
+*also* crackles ⇒ it IS in DSP at clean timing (aliasing / quantization / a small periodic
+discontinuity below 0.6), localise in code. See memory note [[crackle-voice-leak-open]].
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
