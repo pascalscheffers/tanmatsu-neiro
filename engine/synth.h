@@ -201,6 +201,29 @@ bool engine_tap_frozen(void);
 // only meaningful after engine_tap_frozen() returns true.
 const int16_t* engine_tap_data(uint32_t* out_frames, uint32_t* out_trig_frame, uint32_t* out_start_offset);
 
+// 2026-07-16: manual on-demand freeze + re-arm (human-in-the-loop capture).
+// The auto step-discontinuity trigger (see synth.cpp) is proven not to fire
+// for the crackle under investigation, so the tap never freezes on its own.
+// These let the control thread (a key press) request a freeze immediately,
+// and re-arm the tap after a dump so Pascal can capture again without a
+// reboot. Both are single-flag requests (std::atomic<bool>); all mutation of
+// the ring/position statics stays on the audio thread (single-writer
+// contract preserved) -- the control thread only sets the flag.
+// No-ops when SYNTH_PROFILE is off.
+
+// Request an immediate freeze. Latches on the NEXT audio block with only a
+// small post-trigger tail (~1.3 ms), so the frozen ring is almost entirely
+// pre-keypress history -- exactly what a human reacting to an audible glitch
+// needs. Ignored if the tap already has a trigger latched (auto or manual)
+// and hasn't been re-armed since.
+void engine_tap_freeze_now(void);
+
+// Re-arm the tap after a dump so the next engine_tap_freeze_now() (or an
+// auto step-discontinuity trigger) can capture again, with no reboot
+// required. Reset happens on the audio thread on the next block; frozen
+// reads in flight when this is called remain valid until the reset lands.
+void engine_tap_rearm(void);
+
 #ifdef __cplusplus
 }
 #endif

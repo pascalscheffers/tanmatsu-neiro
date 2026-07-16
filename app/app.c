@@ -318,6 +318,17 @@ void app_run(void) {
         platform_event_t ev;
         while (platform_poll_event(&ev)) {
             if (ev.type == PLATFORM_EV_QUIT) running = false;
+#ifdef SYNTH_PROFILE
+            // Manual on-demand tap freeze (crackle forensics, 2026-07-16): SPACE
+            // is unused by musical typing (control/keyboard.c) and the UI, so it's
+            // free to repurpose here. Diagnostic-only -- intercepted before
+            // keyboard/UI dispatch so it never also triggers musical/UI behavior.
+            if (ev.type == PLATFORM_EV_KEY && ev.pressed && ev.key == 32 /* SPACE */) {
+                engine_tap_freeze_now();
+                printf("[TAP] freeze requested\n");
+                continue;
+            }
+#endif
             keyboard_handle_event(&ev);
             int  prev_page     = ui_state.page;
             bool prev_keyguide = ui_state.show_keyguide;
@@ -407,13 +418,13 @@ void app_run(void) {
 #ifdef SYNTH_PROFILE
         // Audio-block cycle readout + signal-magnitude probe — ~1 s cadence.
         if (now >= next_prof) {
-            uint32_t avg_cyc, max_cyc, over, count, starve;
-            platform_audio_profile_read(&avg_cyc, &max_cyc, &over, &count, &starve);
+            uint32_t avg_cyc, max_cyc, over, count;
+            platform_audio_profile_read(&avg_cyc, &max_cyc, &over, &count);
             uint32_t hz  = platform_cycles_per_sec();
             uint32_t div = hz / 1000000u;
             if (div == 0) div = 1;
-            printf("[PROFILE] audio avg=%u max=%u over=%u/%u us-budget=1333 starve=%u\n", (unsigned)(avg_cyc / div),
-                   (unsigned)(max_cyc / div), (unsigned)over, (unsigned)count, (unsigned)starve);
+            printf("[PROFILE] audio avg=%u max=%u over=%u/%u us-budget=1333\n", (unsigned)(avg_cyc / div),
+                   (unsigned)(max_cyc / div), (unsigned)over, (unsigned)count);
             float pk_mono, pk_postgain, min_gr, pk_out;
             engine_profile_read(&pk_mono, &pk_postgain, &min_gr, &pk_out);
             printf("[PROFILE] sig  mono=%.2f postg=%.2f gr=%.2f out=%.2f\n", (double)pk_mono, (double)pk_postgain,
@@ -441,14 +452,19 @@ void app_run(void) {
                 (unsigned)(cp.worst_master_cyc / div));
             next_prof = now + 1000u;
 
-            // Audio RAM tap (crackle forensics): dump once, the first time
-            // it freezes. make PROFILE=1 build install run; make sniff;
-            // smash keys until crackle; wait for "[TAP] end"; then
-            // python3 tools/tap2wav.py sniff.log -o tap.wav.
+            // Audio RAM tap (crackle forensics): dump once per freeze. make
+            // PROFILE=1 build install run; make sniff; play until the crackle
+            // is audible; tap SPACE (manual freeze -- mostly pre-keypress
+            // history); wait for "[TAP] end"; then python3 tools/tap2wav.py
+            // sniff.log -o tap.wav.
             static bool s_tap_dumped = false;
             if (!s_tap_dumped && engine_tap_frozen()) {
                 s_tap_dumped = true;
                 tap_dump();
+                // Re-arm loop: reset the tap so the next SPACE press captures
+                // again with no reboot required.
+                engine_tap_rearm();
+                s_tap_dumped = false;
             }
         }
 #endif
