@@ -1211,6 +1211,19 @@ again for another capture, no reboot. Interpretation: diff `tap.wav` (rendered) 
 simultaneous line-out recording — **rendered clean + line-out crackles → codec/i2s/analog fault;
 rendered also crackles → DSP-domain glitch at clean timing.**
 
+## 2026-07-16 — SD WAV recording architecture + work-orders (PLANNED)
+
+Completed the spec pass requested after serial tap captures proved lossy. ADR 0024 now pins a
+boot-time `/sd` mount seam, block-granular RT handoff, recoverable PCM16 WAV policy, and a
+table-driven Record toggle excluded from presets. Corrected the draft's ring math: 32,768 stereo
+PCM16 frames / 128 KiB is ~683 ms; the plan uses 255×64-frame blocks, ~64 KiB / 340 ms, with one
+SPSC publish per block rather than per-sample atomics. Overflow/write/card errors stop and
+finalize the valid prefix; one-second header checkpoints bound power-loss damage.
+
+Implementation is split into five closed jobs in `stages/stage-11-sd-recording.md`: 11a mount,
+11b audio block ring, 11c non-preset UI row, 11d WAV writer, 11e app/status/device verification.
+No runtime code changed and no build was needed. **NEXT:** dispatch 11a, then 11b/11c, 11d, 11e.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
