@@ -20,6 +20,7 @@
 #include "arp_clock.h"
 #include "clock.h"
 #include "command_queue.h"
+#include "dsp/dcblock.h"
 #include "dsp/lfo.h"
 #include "dsp/limiter.h"
 #include "dsp/saturate.h"
@@ -51,6 +52,12 @@ static JunoModel          s_juno_model;
 static VoiceAlloc         s_alloc;
 static daisysp::Chorus    s_chorus;
 static dsp::LimiterStereo s_limiter;
+// Master-bus DC blockers (one per output channel). The rendered wave is
+// bottom-heavy (DC bias, envelope-proportional — see specs/MEMORY.md crackle
+// forensics); block it before the limiter/soft_clip so peak-detect and clipping
+// see a symmetric signal and no headroom is wasted on the offset.
+static dsp::DcBlock       s_dc_l;
+static dsp::DcBlock       s_dc_r;
 static ParamStore         s_params;
 static float              s_sample_rate = 48000.0f;
 
@@ -269,6 +276,8 @@ void synth_init(uint32_t sample_rate, size_t block_size) {
 
     s_chorus.Init((float)sample_rate);
     s_limiter.init((float)sample_rate);  // ADR 0021: master-bus peak limiter
+    s_dc_l.init((float)sample_rate);     // master-bus DC blocker (per channel)
+    s_dc_r.init((float)sample_rate);
 
     // ParamStore initialised with the Juno table. Smoothing coefficients are
     // block-rate (block_size / sample_rate per block). All params start at
@@ -638,8 +647,8 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     for (size_t i = 0; i < frames; i++) {
         if (chorus_mode > 0) {
             s_chorus.Process(s_mono[i]);
-            float lg = s_chorus.GetLeft() * gain;
-            float rg = s_chorus.GetRight() * gain;
+            float lg = s_dc_l.process(s_chorus.GetLeft() * gain);
+            float rg = s_dc_r.process(s_chorus.GetRight() * gain);
             float gr = s_limiter.process(fmaxf(fabsf(lg), fabsf(rg)));
             left[i]  = soft_clip(lg * gr);
             right[i] = soft_clip(rg * gr);
@@ -657,7 +666,8 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
 #endif
         } else {
             // Chorus off: output mono signal to both channels (no stereo spread).
-            float m  = s_mono[i] * gain;
+            // Single DC blocker (s_dc_l) drives both channels.
+            float m  = s_dc_l.process(s_mono[i] * gain);
             float gr = s_limiter.process(fabsf(m));
             float v  = soft_clip(m * gr);
             left[i]  = v;

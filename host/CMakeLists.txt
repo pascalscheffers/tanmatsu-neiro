@@ -58,6 +58,7 @@ set(HOST_SRCS
     "${DAISYSP}/Source/Filters/svf.cpp"
     "${DAISYSP}/Source/Control/adsr.cpp"
     "${DAISYSP}/Source/Effects/chorus.cpp"
+    "${DAISYSP}/Source/Utility/dcblock.cpp"
     # Stage 1d: musical-typing input.
     "${REPO_ROOT}/control/keyboard.c"
     "${REPO_ROOT}/ui/ui.cpp"

@@ -21,6 +21,7 @@ add_executable(tanmatsu-tests
     test_note_cap.cpp
     test_param_store.cpp
     test_saturate.cpp
+    test_dcblock.cpp
     test_limiter.cpp
     test_preset.cpp
     test_mod_sources.cpp
@@ -45,6 +46,7 @@ add_executable(tanmatsu-tests
     "${DAISYSP}/Source/Filters/svf.cpp"
     "${DAISYSP}/Source/Control/adsr.cpp"
     "${DAISYSP}/Source/Effects/chorus.cpp"
+    "${DAISYSP}/Source/Utility/dcblock.cpp"
     "${REPO_ROOT}/engine/juno_voice.cpp"
     "${REPO_ROOT}/engine/mod_matrix.cpp"
     "${REPO_ROOT}/engine/juno_model.cpp"
