@@ -969,6 +969,47 @@ under the 1333 µs block budget, **`over` → ~0**. If `ipc` recovers but `over`
 suspects are `.rodata` const tables still in flash (data-side) or L2 cache config — re-open, don't
 patch blindly.
 
+## 2026-07-16 — Crackle diag: split hypothesis (a) DMA underrun vs (b) DSP-glitch (COMPLETE)
+
+Amplitude/clipping theory is FALSIFIED (direct-line recording: single-sample step
+discontinuities up to 12.5× RMS slew, zero int16 clamp hits, zero flat-tops — physically not
+clipping). Two live hypotheses remain; this stage builds one device run that discriminates them
+(commit `c6e96ca`).
+
+- **`engine/synth.cpp`**: the audio RAM tap's trigger predicate changed from "postgain peak >
+  `kTapTriggerLevel` (1.2)" to "sample-to-sample step `fmaxf(fabsf(l-prev_l), fabsf(r-prev_r))` >
+  `kTapStepThreshold` (0.6f)". New audio-thread-only statics `s_tap_prev_l`/`s_tap_prev_r`.
+  `kTapTriggerLevel` removed (dead). Ring/freeze/reader API/app.c dump/`tap2wav.py` unchanged.
+  Still fully `SYNTH_PROFILE`-gated.
+- **`platform/device/platform_device.c`**: new i2s write-timing starve counter. The main
+  blocking `i2s_channel_write` at steady state waits ~one block period for the DMA queue
+  (back-pressure = the RT deadline); if a prior render overran, the queue drained and the write
+  returns almost instantly. `s_i2s_starve` increments when the wrapped write completes in under
+  `kStarveThresholdCyc` (`kAudioBlockBudgetCyc / 2`). Only the main write is wrapped, not the
+  silence-flush write. `platform_audio_profile_read()` gained a trailing `uint32_t* out_starve`
+  out-param (device: real count; host stub: always 0) — `platform.h` and `app.c`'s 1 s readout
+  updated to match (`starve=%u` appended to the `[PROFILE] audio` line).
+
+**Runbook to discriminate a vs b:** `make PROFILE=1 build install run`, `make sniff`, smash keys
+(~MASTER_GAIN 0.5) until crackle is audible, wait for `[TAP] end`, then
+`python3 tools/tap2wav.py sniff.log -o tap.wav`. Read the `starve=` field on the `[PROFILE] audio`
+line and whether the tap froze (a nonzero small `starve` count right at boot/t≈0 is expected
+warm-up noise, not a signal).
+
+- Tap froze on a step **and** `starve==0` ⇒ **(b) DSP-domain glitch** (voice-steal / unsmoothed
+  param jump / envelope snap) — look at voice allocator steal path and mod-matrix param
+  smoothing next.
+- `starve>0` (mid-session, not just at boot) **and** tap never froze ⇒ **(a) DMA underrun** —
+  look at render budget overruns / block-time spikes next.
+- Both ⇒ compound (an overrun triggers both effects).
+
+**Verify:** `make host` ✅, `make test` ✅ (207 assertions, 0 fail), `make build` ✅ — shipping
+DIRAM 173,936 B / 30.17% (baseline 174,006 B / 30.19%, effectively unchanged — both new
+instruments are fully `SYNTH_PROFILE`-gated, no shipping-image growth), `make PROFILE=1 build` ✅
+links, DIRAM 240,904 B / 41.79% (dominated by the pre-existing 64 KiB tap ring). `make format` ✅
+(style-only diff, verified rebuild byte-identical). Membrane clean: no new `esp_`/`bsp_` leakage,
+`platform/device/platform_device.c` stays C with no engine/dsp includes added.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
