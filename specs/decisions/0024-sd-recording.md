@@ -60,8 +60,12 @@ The handoff is split by layer:
   the control thread calls it.
 
 Reuse `engine/spsc_ring.h`; clarify its comments so producer/consumer roles are generic.
-Do not add per-sample atomics. A ring item holds up to the configured 64 stereo frames as
-interleaved signed 16-bit PCM. A 256-item ring holds 255 blocks, about 16,320 frames / 340 ms
+Do not add per-sample atomics. A ring item carries a frame count and holds up to the configured
+64 stereo frames as interleaved signed 16-bit PCM. The device backend already renders the
+configured 64-frame block directly; the host backend must split a larger miniaudio callback
+into chunks of at most 64 before calling the engine. A future backend that submits more than
+64 frames to the recorder fails closed as a dropped block rather than truncating or growing
+the real-time allocation. A 256-item ring holds 255 full blocks, about 16,320 frames / 340 ms
 and roughly 64 KiB of internal DRAM. (The earlier 32,768-frame/128-KiB sketch was about
 683 ms, not 341 ms.) The audio path performs one relaxed enabled check per block, converts
 with the same finite/clamp/truncate rule as the device DAC, then makes one SPSC publish.

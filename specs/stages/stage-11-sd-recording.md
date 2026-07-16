@@ -46,9 +46,9 @@ owns slot 0. Stop and return an architecture/hardware gate with the exact confli
 
 ## 11b — Publish final master audio by block
 
-**Touch list (8):** `engine/record_ring.h`, `engine/record_ring.cpp`, `engine/spsc_ring.h`,
-`engine/synth.cpp`, `host/CMakeLists.txt`, `main/CMakeLists.txt`,
-`tests/host/CMakeLists.txt`, `tests/host/test_record_ring.cpp`.
+**Touch list (9):** `engine/record_ring.h`, `engine/record_ring.cpp`, `engine/spsc_ring.h`,
+`engine/synth.cpp`, `platform/host/platform_host.c`, `host/CMakeLists.txt`,
+`main/CMakeLists.txt`, `tests/host/CMakeLists.txt`, `tests/host/test_record_ring.cpp`.
 
 **Read list (5):** ADR 0024 §2; `engine/spsc_ring.h:SpscRing`; `engine/synth.cpp:master
 output loop`; `platform/device/platform_device.c:to_i16`; `engine/synth_config.h`.
@@ -57,18 +57,20 @@ output loop`; `platform/device/platform_device.c:to_i16`; `engine/synth_config.h
 
 **Don't read:** FATFS/SD sources, UI, preset code, miniaudio header, DaisySP vendor code.
 
-**Implementation:** a 256-item SPSC ring of fixed 64-frame stereo PCM blocks, one enabled
-atomic, and a dropped-block counter. Audio API accepts the completed left/right block and
-publishes once; control API enables/disables, drains, and reads/reset errors. Call capture once
-after `synth_render`'s master loop, outside its chorus branch. Keep all producer operations
-bounded and IRAM/cache-safe per ADR 0013.
+**Implementation:** a 256-item SPSC ring of stereo PCM blocks carrying a frame count and up to
+64 frames, one enabled atomic, and a dropped-block counter. Audio API accepts the completed
+left/right block and publishes once; an input over 64 frames fails closed and increments the
+counter. Control API enables/disables, drains, and reads/reset errors. Call capture once after
+`synth_render`'s master loop, outside its chorus branch. Cap host render calls at 64 frames when
+splitting a larger miniaudio callback; the device's configured path is already exactly 64. Keep
+all producer operations bounded and IRAM/cache-safe per ADR 0013.
 
 **Acceptance:** ordered round-trip, exact conversion edge cases (NaN/Inf/clamps/truncation),
 disabled no-op, capacity/drop-newest, and counter reset tests; `make host`, `make test`,
 `make build` green; membrane clean. `SYNTH_PROFILE` and normal builds both link.
 
-**Split-if:** `synth_render` can legally receive a block larger than 64 frames in any shipping
-backend. Stop and revise the item shape without allocating or looping over multiple publishes.
+**Split-if:** a shipping backend cannot be made to call the engine in chunks of at most 64
+frames without buffering or allocating on its audio path. Stop and return the exact conflict.
 
 ## 11c — Add the non-preset Record row
 
