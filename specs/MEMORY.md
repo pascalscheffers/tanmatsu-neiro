@@ -1053,6 +1053,52 @@ tap.wav (render) is clean while the line-out crackles ⇒ fault is post-render: 
 *also* crackles ⇒ it IS in DSP at clean timing (aliasing / quantization / a small periodic
 discontinuity below 0.6), localise in code. See memory note [[crackle-voice-leak-open]].
 
+## 2026-07-16 — Tap gets manual freeze + re-arm; starve counter ripped out
+
+Follow-on to the RESULT entry above: the tap only ever froze on the auto step-discontinuity
+trigger (`> 0.6f`), which is proven not to fire for this glitch, so the rendered-buffer capture
+needed to close out the codec-vs-DSP split was unreachable. Fixed.
+
+**Manual freeze design:** two new reader-side controls in `engine/synth.h`/`.cpp`,
+`engine_tap_freeze_now()` and `engine_tap_rearm()` (both no-op off `SYNTH_PROFILE`). Cross-thread
+signalling is two `std::atomic<bool>` request flags (`s_tap_freeze_req`, `s_tap_rearm_req`) —
+the control thread only sets a flag, all ring/position mutation stays on the audio thread
+(single-writer contract intact). A manual freeze latches a short `kTapManualPostFrames = 64`
+(~1.3 ms) post-trigger tail instead of the auto path's half-ring tail, so the frozen ring is
+almost entirely *pre*-keypress history — what a human reacting to an audible glitch needs.
+Re-arm resets `s_tap_write_pos`/`s_tap_trig_pos`/`s_tap_post_remaining`/`s_tap_prev_l`/`s_tap_prev_r`
+then clears `s_tap_frozen` last (release), so the tap can be captured again with no reboot.
+Ring doubled `kTapFrames` 16384 → 32768 (128 KiB, ~683 ms @ 48 kHz) to buy more pre-trigger
+context now that freeze is keypress-timed rather than glitch-timed; `kTapPostTrigFrames` stays
+half-ring for the (still-intact) auto path.
+
+`app/app.c`: under `SYNTH_PROFILE` only, SPACE (ASCII 32) key-down in the input-drain loop calls
+`engine_tap_freeze_now()` and prints `[TAP] freeze requested`, intercepted with `continue;` before
+keyboard/UI dispatch. Confirmed SPACE is unused by musical typing (`control/keyboard.c` only maps
+`a,w,s,e,d,f,t,g,y,h,u,j,k,o,l,p,;`) and unused by `ui/ui.cpp` (only F1/F2/F5, nav keys, `[`/`]`).
+The existing tap-dump site now calls `engine_tap_rearm()` after `tap_dump()` — no reboot needed
+between captures.
+
+**Starve counter ripped out** (flagged BROKEN in the entry above — false-positived at idle):
+`kStarveThresholdCyc`, `s_i2s_starve`, the `wr_cyc_start`/`wr_dc` timing block, and the rationale
+comment are gone from `platform/device/platform_device.c`; `platform_audio_profile_read` is back
+to 4 out-params (`platform/platform.h`, `platform/host/platform_host.c`, `app/app.c` all updated
+to match).
+
+**Verify:** `make host` ✅, `make test` ✅ (207/207, 0 fail, unchanged), `make build` ✅ (shipping
+DIRAM unaffected — new code is `SYNTH_PROFILE`-gated), `make PROFILE=1 build` ✅ links, DIRAM
+306,050 B / 53.09% (baseline 240,880 B / 41.79%, +65,170 B ≈ the expected +64 KiB ring-doubling,
+~264 KB still free — no overflow), `make format` ✅ (cosmetic realignment only), membrane clean
+(no new `esp_`/`bsp_` leakage above the HAL). `python3 tools/tap2wav.py --selftest` ✅ — the
+`[TAP]` dump format contract is untouched.
+
+**Runbook (for Pascal):** `make PROFILE=1 build install run`, `make sniff`, play until the
+crackle is audible, **immediately tap SPACE**, wait for `[TAP] end`, then
+`python3 tools/tap2wav.py sniff.log -o tap.wav`. Re-arm is automatic after each dump — tap SPACE
+again for another capture, no reboot. Interpretation: diff `tap.wav` (rendered) against a
+simultaneous line-out recording — **rendered clean + line-out crackles → codec/i2s/analog fault;
+rendered also crackles → DSP-domain glitch at clean timing.**
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

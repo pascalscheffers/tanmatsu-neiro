@@ -113,20 +113,6 @@ static volatile uint64_t s_ab_sum             = 0;
 static volatile uint32_t s_ab_count           = 0;
 static volatile uint32_t s_ab_max             = 0;
 static volatile uint32_t s_ab_over            = 0;
-
-// i2s DMA-write starve counter (crackle forensics; hypothesis a). At healthy
-// steady state the blocking i2s_channel_write below waits ~one block period
-// for the DMA to free a buffer -- that back-pressure IS the real-time
-// deadline mechanism. If a prior render overran budget, the DMA queue
-// drained during that render and the next write returns almost instantly
-// (space already free): an instant return is the direct signature of a
-// starve/underrun. Threshold is half a block period -- a healthy write
-// blocks near a full block period, so anything well under half is a strong
-// signal, not a scheduling-jitter false positive. Note a harmless warm-up
-// caveat: the first few writes after start fill an empty ring and return
-// instantly too -- a small nonzero count at t≈0 is expected and benign.
-static const uint32_t    kStarveThresholdCyc = kAudioBlockBudgetCyc / 2;
-static volatile uint32_t s_i2s_starve        = 0;
 #endif
 
 // ---------------------------------------------------------------------------
@@ -174,14 +160,7 @@ static void audio_task(void* arg) {
         }
         size_t written = 0;
         // Blocking write on the DMA queue is the real-time deadline mechanism.
-#ifdef SYNTH_PROFILE
-        uint32_t wr_cyc_start = esp_cpu_get_cycle_count();
-#endif
         i2s_channel_write(s_i2s, s_interleaved, n * 2 * sizeof(int16_t), &written, portMAX_DELAY);
-#ifdef SYNTH_PROFILE
-        uint32_t wr_dc = esp_cpu_get_cycle_count() - wr_cyc_start;
-        if (wr_dc < kStarveThresholdCyc) s_i2s_starve++;
-#endif
     }
     // Flush one block of silence so the DMA's last buffer isn't a stale tone the
     // codec would replay until the channel is disabled (platform_audio_stop does
@@ -710,31 +689,27 @@ void platform_render_task_stop(void) {
 // ---------------------------------------------------------------------------
 // Audio-block cycle profiler read + reset
 // ---------------------------------------------------------------------------
-void platform_audio_profile_read(uint32_t* out_avg_cyc, uint32_t* out_max_cyc, uint32_t* out_over, uint32_t* out_count,
-                                 uint32_t* out_starve) {
+void platform_audio_profile_read(uint32_t* out_avg_cyc, uint32_t* out_max_cyc, uint32_t* out_over,
+                                 uint32_t* out_count) {
 #ifdef SYNTH_PROFILE
     // Snapshot (benign cross-core race — diagnostic only).
-    uint64_t sum    = s_ab_sum;
-    uint32_t count  = s_ab_count;
-    uint32_t max    = s_ab_max;
-    uint32_t over   = s_ab_over;
-    uint32_t starve = s_i2s_starve;
+    uint64_t sum   = s_ab_sum;
+    uint32_t count = s_ab_count;
+    uint32_t max   = s_ab_max;
+    uint32_t over  = s_ab_over;
     // Reset for the next window.
-    s_ab_sum        = 0;
-    s_ab_count      = 0;
-    s_ab_max        = 0;
-    s_ab_over       = 0;
-    s_i2s_starve    = 0;
-    *out_avg_cyc    = count ? (uint32_t)(sum / count) : 0u;
-    *out_max_cyc    = max;
-    *out_over       = over;
-    *out_count      = count;
-    *out_starve     = starve;
+    s_ab_sum       = 0;
+    s_ab_count     = 0;
+    s_ab_max       = 0;
+    s_ab_over      = 0;
+    *out_avg_cyc   = count ? (uint32_t)(sum / count) : 0u;
+    *out_max_cyc   = max;
+    *out_over      = over;
+    *out_count     = count;
 #else
     *out_avg_cyc = 0;
     *out_max_cyc = 0;
     *out_over    = 0;
     *out_count   = 0;
-    *out_starve  = 0;
 #endif
 }

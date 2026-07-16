@@ -152,14 +152,7 @@ void platform_sleep_ms(uint32_t ms);
 //   out_max_cyc  — peak render cycles per block (since last call)
 //   out_over     — number of blocks that exceeded the 480k-cycle budget
 //   out_count    — total blocks counted (the denominator for the average)
-//   out_starve   — number of i2s DMA writes that returned in under half a
-//                  block period (crackle forensics, hypothesis a: DMA
-//                  underrun -- an instant-return write means the DMA queue
-//                  had already drained). A small count at t≈0 (startup
-//                  warm-up) is expected and benign; nonzero mid-session is
-//                  the signal. Device-only; always 0 on host.
-void platform_audio_profile_read(uint32_t* out_avg_cyc, uint32_t* out_max_cyc, uint32_t* out_over, uint32_t* out_count,
-                                 uint32_t* out_starve);
+void platform_audio_profile_read(uint32_t* out_avg_cyc, uint32_t* out_max_cyc, uint32_t* out_over, uint32_t* out_count);
 
 // ---------------------------------------------------------------------------
 // Storage (Stage 2d) — key/blob store
