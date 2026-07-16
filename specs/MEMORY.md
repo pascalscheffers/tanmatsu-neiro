@@ -1224,6 +1224,18 @@ Implementation is split into five closed jobs in `stages/stage-11-sd-recording.m
 11b audio block ring, 11c non-preset UI row, 11d WAV writer, 11e app/status/device verification.
 No runtime code changed and no build was needed. **NEXT:** dispatch 11a, then 11b/11c, 11d, 11e.
 
+## 2026-07-16 — Stage 11a: SD mount membrane (COMPLETE)
+
+Added `platform_sd_available()` / `platform_sd_root()`. Device boot now best-effort mounts slot 0
+at `/sd` with the BSP 4-bit pins, internal pull-ups, on-chip LDO 4, and no auto-format; card and
+power handles live for the app lifetime, and a missing card only logs a warning. Host validates or
+creates usable `./sd`. The mount sequence cites the installed esp-hosted-tanmatsu 2.12.3 example;
+`esp_driver_sdmmc` is now an explicit device dependency. MAP updated.
+
+**Verify:** `make format` ✅, `make host` ✅, `make test` ✅ (207/207), `make build` ✅; host
+launch created `./sd`; no new platform headers crossed above the membrane. Size: app `0x11fa80`
+(44% partition free), DIRAM 174,394 B / 30.25%. **NEXT:** Stage 11b block ring and 11c Record row.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

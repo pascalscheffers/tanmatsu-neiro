@@ -66,7 +66,7 @@ Paths are relative to repo root. Dependencies live in `managed_components/` (ESP
   intent, wired as stages reach them (preset storage = Stage 2d).
 - `platform/device/` — ESP-IDF + badge-bsp impl. `platform/host/` — SDL2 + miniaudio impl
   (host pays any P4↔host conversion, ADR 0011).
-- `platform/platform.h` SD seam (planned) — `platform_sd_available` + `platform_sd_root`;
+- `platform/platform.h` SD seam — `platform_sd_available` + `platform_sd_root`;
   boot-time `/sd` mount on device / `./sd` on host. Architecture: ADR 0024; closed work-orders:
   `specs/stages/stage-11-sd-recording.md`.
 

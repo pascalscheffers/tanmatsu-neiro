@@ -169,6 +169,16 @@ int platform_storage_save(const char* key, const void* data, size_t len);
 int platform_storage_load(const char* key, void* buf, size_t max_len);
 
 // ---------------------------------------------------------------------------
+// SD card (Stage 11a) — mounted filesystem root
+// ---------------------------------------------------------------------------
+// The platform attempts one best-effort mount/create during platform_init().
+// Portable code may use libc file operations below this root, but must never
+// call these or perform file I/O from the audio thread. Card insertion or
+// replacement requires an app restart in this first boot-time-only version.
+bool        platform_sd_available(void);
+const char* platform_sd_root(void);
+
+// ---------------------------------------------------------------------------
 // MIDI input (Stage 5a) — in-only raw byte stream
 // ---------------------------------------------------------------------------
 // Non-blocking MIDI input. Copies up to max_len raw MIDI bytes into buf and

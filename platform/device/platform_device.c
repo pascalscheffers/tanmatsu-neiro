@@ -14,23 +14,76 @@
 #include "bsp/power.h"
 #include "driver/gpio.h"
 #include "driver/i2s_std.h"
+#include "driver/sdmmc_host.h"
 #include "esp_cpu.h"
 #include "esp_heap_caps.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_vfs_fat.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
 #include "platform.h"
+#include "sd_pwr_ctrl_by_on_chip_ldo.h"
 #include "sdkconfig.h"
+#include "sdmmc_cmd.h"
+#include "targets/tanmatsu/tanmatsu_hardware.h"
 // Stage 5d: USB-C MIDI device (PHY swap + TinyUSB); owns platform_midi_read.
 // Stage 5b: USB-A host MIDI (both builds; host-only in SYNTH_USB_HOST_DEBUG).
 #include "midi_usb_device.h"
 #include "midi_usb_host.h"
 
 static const char TAG[] = "platform";
+
+// ---------------------------------------------------------------------------
+// SD card
+// ---------------------------------------------------------------------------
+static const char*          s_sd_root      = "/sd";
+static bool                 s_sd_available = false;
+static sdmmc_card_t*        s_sd_card      = NULL;
+static sd_pwr_ctrl_handle_t s_sd_power     = NULL;
+
+static void mount_sd_card(void) {
+    // Mount sequence follows the installed esp-hosted-tanmatsu 2.12.3 example:
+    // examples/host_sdcard_with_hosted/main/sd_card_functions.c::sd_card_mount.
+    esp_vfs_fat_sdmmc_mount_config_t mount_config = {
+        .format_if_mount_failed = false,
+        .max_files              = 5,
+        .allocation_unit_size   = 16 * 1024,
+    };
+    sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+    host.slot         = SDMMC_HOST_SLOT_0;
+
+    sd_pwr_ctrl_ldo_config_t ldo_config = {
+        .ldo_chan_id = 4,
+    };
+    esp_err_t res = sd_pwr_ctrl_new_on_chip_ldo(&ldo_config, &s_sd_power);
+    if (res != ESP_OK) {
+        ESP_LOGW(TAG, "SD power init failed: %s", esp_err_to_name(res));
+        return;
+    }
+    host.pwr_ctrl_handle = s_sd_power;
+
+    sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
+    slot_config.width               = BSP_SDCARD_WIDTH;
+    slot_config.clk                 = BSP_SDCARD_CLK;
+    slot_config.cmd                 = BSP_SDCARD_CMD;
+    slot_config.d0                  = BSP_SDCARD_D0;
+    slot_config.d1                  = BSP_SDCARD_D1;
+    slot_config.d2                  = BSP_SDCARD_D2;
+    slot_config.d3                  = BSP_SDCARD_D3;
+    slot_config.flags              |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
+
+    res = esp_vfs_fat_sdmmc_mount(s_sd_root, &host, &slot_config, &mount_config, &s_sd_card);
+    if (res != ESP_OK) {
+        ESP_LOGW(TAG, "SD mount failed (continuing without card): %s", esp_err_to_name(res));
+        return;
+    }
+    s_sd_available = true;
+    ESP_LOGI(TAG, "SD mounted at %s", s_sd_root);
+}
 
 // Largest audio block we will be asked to render; sized once, used by the audio
 // task's preallocated buffers so the real-time path never allocates.
@@ -195,6 +248,8 @@ bool platform_init(void) {
         ESP_LOGE(TAG, "BSP init failed");
         return false;
     }
+
+    mount_sd_card();
 
     bsp_display_color_format_t color_format;
     bsp_display_endianness_t   endian;
@@ -599,6 +654,14 @@ int platform_storage_load(const char* key, void* buf, size_t max_len) {
     esp_err_t err = nvs_get_blob(h, safe, buf, &len);
     nvs_close(h);
     return (err == ESP_OK) ? (int)len : -1;
+}
+
+bool platform_sd_available(void) {
+    return s_sd_available;
+}
+
+const char* platform_sd_root(void) {
+    return s_sd_root;
 }
 
 // ---------------------------------------------------------------------------

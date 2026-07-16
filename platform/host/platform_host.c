@@ -5,8 +5,13 @@
 // Nothing above the membrane sees either library — they live only here.
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
+#include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 #include "miniaudio.h"
 #include "pax_internal.h"  // pax_get_index_conv: native-format pixel -> ARGB
 #include "platform.h"
@@ -38,6 +43,27 @@ static platform_audio_render_fn s_render        = NULL;
 static void*                    s_render_user   = NULL;
 
 static uint64_t s_start_ms = 0;
+
+static const char* s_sd_root      = "./sd";
+static bool        s_sd_available = false;
+
+static void ensure_sd_root(void) {
+    struct stat st;
+    if (stat(s_sd_root, &st) != 0) {
+        if (errno != ENOENT || mkdir(s_sd_root, 0755) != 0) {
+            SDL_Log("SD root unavailable at %s: %s", s_sd_root, strerror(errno));
+            return;
+        }
+    } else if (!S_ISDIR(st.st_mode)) {
+        SDL_Log("SD root is not a directory: %s", s_sd_root);
+        return;
+    }
+    if (access(s_sd_root, R_OK | W_OK | X_OK) != 0) {
+        SDL_Log("SD root is not usable at %s: %s", s_sd_root, strerror(errno));
+        return;
+    }
+    s_sd_available = true;
+}
 
 // Staging buffer: the panel-native framebuffer converted to the ARGB8888 the SDL
 // texture wants. Filled every present(); host-only, so a static buffer is fine.
@@ -111,6 +137,7 @@ bool platform_init(void) {
     // SDL texture format, so the sim shows the same color depth as the panel.
     pax_buf_init(&s_fb, NULL, WIN_W, WIN_H, HOST_FB_FORMAT);
 
+    ensure_sd_root();
     s_start_ms = SDL_GetTicks64();
     return true;
 }
@@ -298,10 +325,6 @@ uint64_t platform_instret_now(void) {
 // ---------------------------------------------------------------------------
 // Storage (Stage 2d) — POSIX file-per-key under ./presets/
 // ---------------------------------------------------------------------------
-#include <stdio.h>
-#include <string.h>
-#include <sys/stat.h>
-
 static const char* s_preset_dir = "presets";
 
 static void ensure_preset_dir(void) {
@@ -330,6 +353,14 @@ int platform_storage_load(const char* key, void* buf, size_t max_len) {
     size_t n = fread(buf, 1, max_len, f);
     fclose(f);
     return (int)n;
+}
+
+bool platform_sd_available(void) {
+    return s_sd_available;
+}
+
+const char* platform_sd_root(void) {
+    return s_sd_root;
 }
 
 // ---------------------------------------------------------------------------

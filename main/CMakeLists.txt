@@ -70,6 +70,7 @@ idf_component_register(
 	PRIV_REQUIRES
 		esp_lcd
 		esp_driver_i2s
+		esp_driver_sdmmc
 		esp_timer
 		fatfs
 		nvs_flash
