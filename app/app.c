@@ -407,13 +407,13 @@ void app_run(void) {
 #ifdef SYNTH_PROFILE
         // Audio-block cycle readout + signal-magnitude probe — ~1 s cadence.
         if (now >= next_prof) {
-            uint32_t avg_cyc, max_cyc, over, count;
-            platform_audio_profile_read(&avg_cyc, &max_cyc, &over, &count);
+            uint32_t avg_cyc, max_cyc, over, count, starve;
+            platform_audio_profile_read(&avg_cyc, &max_cyc, &over, &count, &starve);
             uint32_t hz  = platform_cycles_per_sec();
             uint32_t div = hz / 1000000u;
             if (div == 0) div = 1;
-            printf("[PROFILE] audio avg=%u max=%u over=%u/%u us-budget=1333\n", (unsigned)(avg_cyc / div),
-                   (unsigned)(max_cyc / div), (unsigned)over, (unsigned)count);
+            printf("[PROFILE] audio avg=%u max=%u over=%u/%u us-budget=1333 starve=%u\n", (unsigned)(avg_cyc / div),
+                   (unsigned)(max_cyc / div), (unsigned)over, (unsigned)count, (unsigned)starve);
             float pk_mono, pk_postgain, min_gr, pk_out;
             engine_profile_read(&pk_mono, &pk_postgain, &min_gr, &pk_out);
             printf("[PROFILE] sig  mono=%.2f postg=%.2f gr=%.2f out=%.2f\n", (double)pk_mono, (double)pk_postgain,

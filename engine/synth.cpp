@@ -111,10 +111,17 @@ static volatile float s_pk_out      = 0.0f;
 // --- Audio RAM tap (crackle forensics; diagnostic only) ---------------------
 // Captures the last ~341 ms of rendered stereo output (post soft_clip, the
 // exact signal handed to the DAC) into a RAM ring; freezes one-shot when a
-// loud transient (peak fed to the limiter > kTapTriggerLevel) is seen, half
-// the ring before the trigger and half after. Ground truth for whether the
-// audible crackle is amplitude clipping at render time (flattened/saturated
-// onsets in the tap) or DMA/codec-side (tap clean, ear still hears crackle).
+// trigger fires, half the ring before the trigger and half after.
+//
+// 2026-07-16: amplitude theory FALSIFIED by a direct-line recording (step
+// discontinuities, zero clamp hits, zero flat-tops -- see MEMORY.md). The
+// trigger below no longer looks at post-gain peak; it looks at sample-to-
+// sample STEP SIZE in the final output. This tap now answers "does the
+// RENDERED buffer contain a step discontinuity" (hypothesis b: DSP-domain
+// glitch -- voice-steal / unsmoothed param jump / envelope snap), not "is it
+// clipping." A companion i2s write-timing starve counter (platform layer)
+// answers hypothesis a (DMA underrun) in the same run; see specs/MEMORY.md
+// 2026-07-16 for the discriminate-a-vs-b runbook.
 // See specs/MEMORY.md 2026-07-10 and synth.h for the reader-side contract.
 //
 // One-shot per boot: once s_tap_frozen latches, tap_capture() below is a
@@ -125,13 +132,17 @@ static volatile float s_pk_out      = 0.0f;
 static constexpr uint32_t kTapFrames         = 16384;           // 256 blocks * 64 frames, ~341 ms @ 48 kHz
 static constexpr uint32_t kTapFramesMask     = kTapFrames - 1;  // power of two -> mask, not %
 static constexpr uint32_t kTapPostTrigFrames = 8192;            // 128 blocks * 64 frames, half the ring
-static constexpr float    kTapTriggerLevel   = 1.2f;
+// Legit band-limited audio slews well under this; the observed glitch steps
+// were ~1.0 full-scale sample-to-sample. Tunable.
+static constexpr float    kTapStepThreshold  = 0.6f;
 
 static int16_t           s_tap_ring[kTapFrames * 2];  // interleaved L,R, 64 KiB
 static uint32_t          s_tap_write_pos      = 0;    // next slot to write == oldest valid frame once frozen
 static int32_t           s_tap_trig_pos       = -1;   // physical frame index of the trigger, -1 = not yet armed-fired
 static uint32_t          s_tap_post_remaining = 0;    // frames left to capture after trigger
 static std::atomic<bool> s_tap_frozen{false};
+static float             s_tap_prev_l = 0.0f;  // audio-thread-only, plain (matches ring convention)
+static float             s_tap_prev_r = 0.0f;
 
 // Convert one output frame to s16 and store it in the ring; latch the
 // trigger and, kTapPostTrigFrames later, freeze. Inlined into the step-6 hot
@@ -139,10 +150,17 @@ static std::atomic<bool> s_tap_frozen{false};
 // clamp+scale conversions, one index increment/mask, one compare. No
 // allocation, no locks, no calls beyond this TU (matches unison_gain()'s
 // static-inline convention above; the compiler inlines it at -O2).
+// `pk` (post-gain peak) is no longer used for triggering -- see the
+// discontinuity comment above -- kept in the signature for call-site
+// stability.
 static inline void tap_capture(float l, float r, float pk) {
+    (void)pk;
     if (s_tap_frozen.load(std::memory_order_relaxed)) return;
-    int32_t li = (int32_t)(l * 32767.0f);
-    int32_t ri = (int32_t)(r * 32767.0f);
+    float step   = fmaxf(fabsf(l - s_tap_prev_l), fabsf(r - s_tap_prev_r));
+    s_tap_prev_l = l;
+    s_tap_prev_r = r;
+    int32_t li   = (int32_t)(l * 32767.0f);
+    int32_t ri   = (int32_t)(r * 32767.0f);
     if (li > 32767)
         li = 32767;
     else if (li < -32768)
@@ -156,7 +174,7 @@ static inline void tap_capture(float l, float r, float pk) {
     s_tap_ring[pos * 2 + 1] = (int16_t)ri;
     s_tap_write_pos         = (pos + 1) & kTapFramesMask;
     if (s_tap_trig_pos < 0) {
-        if (pk > kTapTriggerLevel) {
+        if (step > kTapStepThreshold) {
             s_tap_trig_pos       = (int32_t)pos;
             s_tap_post_remaining = kTapPostTrigFrames;
         }
