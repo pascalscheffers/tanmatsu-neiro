@@ -459,6 +459,8 @@ static int scancode_to_key(bsp_input_scancode_t sc) {
             return ']';
         case BSP_INPUT_SCANCODE_EQUAL:
             return '=';
+        case BSP_INPUT_SCANCODE_SPACE:
+            return ' ';  // manual tap-freeze key under SYNTH_PROFILE (crackle forensics)
         default:
             return 0;
     }
