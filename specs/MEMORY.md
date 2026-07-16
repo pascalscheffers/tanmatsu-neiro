@@ -5,6 +5,32 @@ The **live** log: recent entries + open gates. Older history is in
 just above the "Open Opus gates" section** (which stays last). Lean — link to specs, don't
 restate. When this passes ~200 lines, rotate older entries into the archive.
 
+## 2026-07-16 — Render DC root cause: variable-duty pulse (RESOLVED)
+
+The master blocker follow-up is closed: the negative bias is expected from DaisySP's
+variable-duty PolyBLEP pulse, not a faulty saw, sub oscillator, SVF, or VCA.
+
+- Long-run host measurements: saw at 440 Hz and sub saw at 220 Hz both mean ~0; pulse at
+  PW=0.30 means -0.2828; pulse at PW=0.50 means ~0. DaisySP's pulse mean is
+  `0.707 * (2*PW - 1)`; its BLEP corrections integrate to zero.
+- Juno EP uses PW=0.30, OSC_LEVEL=0.85, SUB_LEVEL=0.10, noise=0. Its predicted pre-filter
+  mixer mean is `0.85 * -0.2828 = -0.24038`, closely matching the captured -0.224. The LP
+  SVF passes DC; the VCA multiplies it by velocity/envelope, exactly explaining why the
+  captured bias tracked the envelope. Existing waveform tests explicitly expect PW-dependent
+  DC, so this was established waveform behavior rather than an oscillator defect.
+- The new post-blocker `tap.wav` measures mean +0.0273 over non-zero samples (peak 0.650),
+  versus -0.224 before. It still contains 6.19% serial-drop zero fills, so playback clicks in
+  that file remain capture artifacts and cannot assess residual line-out crackle.
+
+**Decision:** keep the master `DcBlock`. A ~1.6 Hz output high-pass is valid analog-style AC
+coupling as well as a final guard, and it protects limiter/soft-clip headroom. Do not edit the
+vendored oscillator or subtract pulse mean at the source without evidence that pre-chorus
+headroom remains a problem; that would be a separate sonic/placement decision.
+
+**Verify:** `make test` ✅. **Still open (Pascal):** line-out listen/recording after `ef5233d` —
+confirm the hardware crackle reduction and bass retention. If residual line-out crackle remains,
+capture it directly; the serial tap's zero holes are not trustworthy crackle evidence.
+
 
 ## 2026-07-16 — Master-bus DC blocker (waveform-asymmetry fix, COMPLETE)
 
