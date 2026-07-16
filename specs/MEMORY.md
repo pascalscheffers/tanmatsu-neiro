@@ -6,6 +6,61 @@ just above the "Open Opus gates" section** (which stays last). Lean — link to 
 restate. When this passes ~200 lines, rotate older entries into the archive.
 
 
+## 2026-07-16 — Master-bus DC blocker (waveform-asymmetry fix, COMPLETE)
+
+Acted on the "add output DC-blocker" lead from the tap.wav forensics below (rendered wave
+bottom-heavy, mean DC −0.224, envelope-proportional). Commit `ef5233d`.
+
+- **`dsp/dcblock.h`** (new): thin wrap of `daisysp::DcBlock` (reuse, Prime Directive 1) —
+  leaky-differentiator HPF, corner ~1.6 Hz (`gain = 1 − 10/Fs`). Adds `+1e-20f` denormal
+  guard on input (ADR 0012: P4 has no FTZ; one-pole feedback decays toward denormal on
+  silence). Bias is itself removed by the blocker, never reaches output.
+- **`engine/synth.cpp`**: two per-channel statics `s_dc_l/s_dc_r`, `init` in `synth_init`,
+  `process` **post-gain, pre-limiter** in both chorus branches. Order is deliberate — block
+  *before* limiter peak-detect + `soft_clip` so both see a symmetric wave (recovers headroom,
+  kills asymmetric clip). Chorus-off path uses `s_dc_l` for both channels.
+- **`tests/host/test_dcblock.cpp`** (new, 4 cases): DC offset → mean→0; 1 kHz passband unity;
+  −0.224-offset 500 Hz sine re-centred (settle ~10τ before measuring); silence stays finite.
+- Added `dcblock.cpp` to all three builds (main/host/tests CMake).
+
+`make test` ✅ (+4 cases) `make host` ✅ `make build` ✅ `make format` ✅.
+Flash 0x112ba0 (46% free), DIRAM 174 KB.
+
+**NEXT:** (1) on-device / line-out listen — confirm DC-block reduces crackle + no bass loss;
+(2) still open: chase *why* render is DC-biased (osc waveshape / sub / filter) — blocker is a
+guard, not the root cause. See [[crackle-voice-leak-open]].
+
+## 2026-07-16 — tap.wav analyzed: crackle-in-tap is CAPTURE ARTIFACT; waveform ASYMMETRY is the real lead
+
+Analyzed `tap.wav` (on-device SPACE-freeze dump) vs line recordings (`gain50.wav`,
+`untitled.wav`) + `sniff.log`. Two separate signatures — do not conflate.
+
+- **tap.wav "crackle" = dropped `[TAP]` serial lines zero-filled** (the `cb85741` design,
+  working as intended). Fingerprint: signal snaps to **exact 0.0** in ~8-sample runs,
+  **periodic ~145 samples**, ~212 events in 0.68 s, full-amplitude on both sides of each
+  hole (`+0.000 → −0.779`). No fades, no rail flat-tops. tap.wav playback DOES crackle
+  (Pascal confirmed) but those clicks are the **zero-holes**, not the DAC path. sniff.log
+  shows the same USB-serial-JTAG link mangling PROFILE lines mid-word, so ~% of `[TAP]`
+  lines still drop. **⇒ tap.wav cannot be used for the render-vs-line-out diff while drops
+  persist.** To get a trustworthy on-device tap: **binary dump to SD**, or CRC/len-check
+  each serial line (reject, don't zero-fill). Recapture-over-serial won't fix it.
+- **Waveform ASYMMETRY is REAL** (lives in the non-zero = genuine render samples). tap.wav
+  is bottom-heavy: mean **DC −0.224**, envelope-proportional (loud win −0.43 @ peak 0.80,
+  quiet win −0.06 @ peak 0.25), swings ≈ ±0.57 around a *moving* negative center. Hardware
+  designer flags the asymmetry as **probably not good**. No DC-blocker on the output path.
+  **New lead** — investigate why the rendered wave is asymmetric (osc shape? unipolar env/
+  mod? missing bipolar centering?) and add an **output DC-blocker**; asymmetry may itself be
+  the signal-domain defect (biased wave hits one rail first under gain).
+- **Line recordings = the honest crackle evidence**, distinct signature: positive **full-
+  scale clip +0.99997**, non-periodic (gain50 79 steps, untitled 346; gain24 clean, peak
+  0.21). Matches earlier step-discontinuity finding.
+- **sniff.log profiler CLEAN** during capture: `audio avg=89–95µs budget=1333 over=0/750`,
+  voices=1, no overruns in 3054 lines. No CPU starvation.
+
+**NEXT:** (1) trustworthy tap = binary-to-SD or line-checksummed serial; (2) chase waveform
+asymmetry + add output DC-blocker; (3) keep line-out clip (+FS) as the crackle ground truth.
+Do NOT re-apply instant-attack limiter. See [[crackle-voice-leak-open]].
+
 ## 2026-07-16 — Manual tap freeze WORKS on device; drop-robust dump (crackle split, IN PROGRESS)
 
 Goal: the decisive crackle split — is the glitch in the **rendered buffer** (DSP) or only
