@@ -33,6 +33,13 @@ static float apply_curve_local(const ParamDesc& d, float norm) {
     return d.min + norm * (d.max - d.min);
 }
 
+static const ParamDesc* find_param_desc(uint16_t id) {
+    for (int i = 0; i < kJunoParamCount; i++) {
+        if (JUNO_PARAM_TABLE[i].id == id) return &JUNO_PARAM_TABLE[i];
+    }
+    return nullptr;
+}
+
 // ---------------------------------------------------------------------------
 // Factory bank — hardcoded physical values, no storage required
 // ---------------------------------------------------------------------------
@@ -603,10 +610,13 @@ static float rd_f32(const uint8_t** p) {
 // ---------------------------------------------------------------------------
 int preset_serialize(void* buf, size_t buf_max, const char* name, const float* norms, int norms_len,
                      const Routing* routings, int routings_len) {
-    const size_t param_count = (size_t)kJunoParamCount;
-    const int    r_count     = (routings && routings_len > 0) ? routings_len : 0;
+    size_t param_count = 0;
+    for (int i = 0; i < kJunoParamCount; i++) {
+        if ((JUNO_PARAM_TABLE[i].flags & FLAG_NO_PRESET) == 0) param_count++;
+    }
+    const int    r_count = (routings && routings_len > 0) ? routings_len : 0;
     // header(42) + params(6 each) + routing_count(2) + routings(8 each)
-    const size_t need        = 42u + param_count * 6u + 2u + (size_t)r_count * 8u;
+    const size_t need    = 42u + param_count * 6u + 2u + (size_t)r_count * 8u;
     if (buf_max < need) return -1;
 
     uint8_t* p = (uint8_t*)buf;
@@ -629,9 +639,10 @@ int preset_serialize(void* buf, size_t buf_max, const char* name, const float* n
 
     // Param entries: norm → physical via the table's curve
     for (int i = 0; i < kJunoParamCount; i++) {
-        const ParamDesc& d    = JUNO_PARAM_TABLE[i];
-        float            norm = (d.id < (uint16_t)norms_len) ? norms[d.id] : 0.0f;
-        float            phys = apply_curve_local(d, norm);
+        const ParamDesc& d = JUNO_PARAM_TABLE[i];
+        if ((d.flags & FLAG_NO_PRESET) != 0) continue;
+        float norm = (d.id < (uint16_t)norms_len) ? norms[d.id] : 0.0f;
+        float phys = apply_curve_local(d, norm);
         wr_u16(&p, d.id);
         wr_f32(&p, phys);
     }
@@ -684,9 +695,12 @@ int preset_parse(const void* buf, size_t len, char* name_out, int name_max, uint
 
     int n = 0;
     for (uint16_t i = 0; i < count; i++) {
-        uint16_t id  = rd_u16(&p);
-        float    val = rd_f32(&p);
-        if (n < max_count) {
+        uint16_t         id  = rd_u16(&p);
+        float            val = rd_f32(&p);
+        const ParamDesc* d   = find_param_desc(id);
+        // Unknown IDs are forward-compatible, while known session-only rows must never
+        // be restored even if a crafted or future blob contains them.
+        if (d && (d->flags & FLAG_NO_PRESET) == 0 && n < max_count) {
             ids_out[n]  = id;
             vals_out[n] = val;
             n++;

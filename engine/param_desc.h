@@ -48,6 +48,7 @@ enum ParamFlags : uint16_t {
     FLAG_AUDIO_RATE = 1 << 0,  // changes must be block-smoothed
     FLAG_PER_VOICE  = 1 << 1,  // delivered to each active voice
     FLAG_MOD_DEST   = 1 << 2,  // can be a modulation destination
+    FLAG_NO_PRESET  = 1 << 3,  // session state; never serialized or restored
 };
 
 // One row in the parameter table (spec 05).

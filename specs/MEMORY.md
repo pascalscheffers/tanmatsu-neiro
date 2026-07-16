@@ -1251,6 +1251,19 @@ oversize rejection, and counter reset.
 DIRAM 240,854 B / 41.78% (66,460 B increase, principally the fixed ring). **NEXT:** Stage 11c
 non-preset Record row.
 
+## 2026-07-16 — Stage 11c: session-only Record row (COMPLETE)
+
+Added stable `ParamId::RECORD` (`0x02`) and an Off-by-default stepped `Record` row in
+`GROUP_GLOBAL`, so the existing table-driven PERFORM page collects it. `FLAG_NO_PRESET` now
+excludes session state from preset wire counts/data and filters it on parse; the shared descriptor
+lookup also enforces the documented unknown-ID forward-compatibility behavior. Preset v2 is
+unchanged and factory presets still return the same 49 eligible rows.
+
+**Verify:** `make format` ✅, `make test` ✅, `make host` ✅, `make build` ✅, `make size` ✅.
+Tests cover PERFORM collection, serialization omission, crafted-v2 filtering, unknown IDs, and
+v1/v2 round trips. Size: app `0x11fcc0` (44% partition free), DIRAM 240,854 B / 41.78%.
+**NEXT:** Stage 11d WAV writer.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

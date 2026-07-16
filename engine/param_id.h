@@ -16,6 +16,7 @@ namespace ParamId {
 // CLOCK group (0x00-0x0F) — master musical clock (Stage 4a)
 // 0x00 reserved (invalid/sentinel).
 static constexpr uint16_t CLOCK_BPM = 0x01;  // tempo in BPM [20..300]; UI/preset home for tempo
+static constexpr uint16_t RECORD    = 0x02;  // session-only WAV recording toggle; never stored in presets
 
 // ARP group (0x08–0x0F) — arpeggiator control (Stage 4b-ii)
 // ARP_RATE stepped index 0..5 → divisions {1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32} at 96 PPQN;

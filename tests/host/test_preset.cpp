@@ -8,6 +8,7 @@
 #include "engine/param_id.h"
 #include "engine/preset.h"
 #include "runner.h"
+#include "ui/ui_page_table.h"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -22,6 +23,14 @@ static int serialize_no_routings(void* buf, size_t max, const char* name, const 
 static int parse_params_only(const void* buf, size_t len, char* name, int name_max, uint16_t* ids, float* vals,
                              int max) {
     return preset_parse(buf, len, name, name_max, ids, vals, max, nullptr, 0, nullptr);
+}
+
+static int preset_eligible_param_count(void) {
+    int count = 0;
+    for (int i = 0; i < kJunoParamCount; i++) {
+        if ((JUNO_PARAM_TABLE[i].flags & FLAG_NO_PRESET) == 0) count++;
+    }
+    return count;
 }
 
 // ---------------------------------------------------------------------------
@@ -43,12 +52,12 @@ static void test_factory_init_name(void) {
 }
 
 static void test_factory_params_count(void) {
-    test_begin("factory_params returns kJunoParamCount entries");
+    test_begin("factory_params returns all preset-eligible entries");
     /* Buffer must be at least kJunoParamCount large; use 64 to future-proof. */
     uint16_t ids[64];
     float    vals[64];
     int      n = preset_factory_params(0, ids, vals, 64);
-    TEST_ASSERT(n == kJunoParamCount, "factory INIT should have all params");
+    TEST_ASSERT(n == preset_eligible_param_count(), "factory INIT should have all preset-eligible params");
     test_pass();
 }
 
@@ -83,7 +92,7 @@ static void test_serialize_parse_roundtrip(void) {
     uint16_t ids[64];
     float    vals[64];
     int      count = parse_params_only(blob, (size_t)len, name, sizeof(name), ids, vals, 64);
-    TEST_ASSERT(count == kJunoParamCount, "parsed count should equal table count");
+    TEST_ASSERT(count == preset_eligible_param_count(), "parsed count should equal preset-eligible table count");
     TEST_ASSERT(strcmp(name, "RoundTrip") == 0, "preset name mismatch after parse");
 
     for (int i = 0; i < count; i++) {
@@ -141,7 +150,7 @@ static void test_factory_init_values_match_defaults(void) {
     uint16_t ids[64];
     float    vals[64];
     int      n = preset_factory_params(0, ids, vals, 64);
-    TEST_ASSERT(n == kJunoParamCount, "INIT should have all params");
+    TEST_ASSERT(n == preset_eligible_param_count(), "INIT should have all preset-eligible params");
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < kJunoParamCount; j++) {
             if (JUNO_PARAM_TABLE[j].id == ids[i]) {
@@ -198,7 +207,7 @@ static void test_routing_roundtrip(void) {
     int      r_count = 0;
     int      count =
         preset_parse(blob, (size_t)len, name, sizeof(name), ids, vals, 64, r_out, PRESET_MAX_ROUTINGS, &r_count);
-    TEST_ASSERT(count == kJunoParamCount, "param count wrong after routing round-trip");
+    TEST_ASSERT(count == preset_eligible_param_count(), "param count wrong after routing round-trip");
     TEST_ASSERT(r_count == 2, "routing count should be 2");
     TEST_ASSERT(r_out[0].source == (uint8_t)ModSource::ENV2, "r[0] source mismatch");
     TEST_ASSERT(r_out[0].dest_param_id == (uint16_t)ParamId::FILTER_CUTOFF, "r[0] dest mismatch");
@@ -291,8 +300,83 @@ static void test_serialize_parse_with_zero_routings(void) {
     uint16_t ids[64];
     float    vals[64];
     int count = preset_parse(blob, (size_t)len, name, sizeof(name), ids, vals, 64, r, PRESET_MAX_ROUTINGS, &r_count);
-    TEST_ASSERT(count == kJunoParamCount, "param count wrong for zero-routings blob");
+    TEST_ASSERT(count == preset_eligible_param_count(), "param count wrong for zero-routings blob");
     TEST_ASSERT(r_count == 0, "r_count should be 0 for zero-routings blob");
+    test_pass();
+}
+
+static void test_record_row_is_session_only_and_on_perform_page(void) {
+    test_begin("Record row is session-only and collected on PERFORM page");
+
+    const ParamDesc* record = nullptr;
+    for (int i = 0; i < kJunoParamCount; i++) {
+        if (JUNO_PARAM_TABLE[i].id == ParamId::RECORD) record = &JUNO_PARAM_TABLE[i];
+    }
+    TEST_ASSERT(record != nullptr, "Record descriptor missing");
+    TEST_ASSERT(record->group == GROUP_GLOBAL, "Record must be in GROUP_GLOBAL");
+    TEST_ASSERT(record->curve == CURVE_STEPPED, "Record must be stepped");
+    TEST_ASSERT(record->min == 0.0f && record->max == 1.0f && record->def == 0.0f,
+                "Record must be an Off-by-default toggle");
+    TEST_ASSERT((record->flags & FLAG_NO_PRESET) != 0, "Record must be excluded from presets");
+
+    const ParamDesc* rows[24];
+    int              count = page_rows(1, rows, 24);  // PAGE_TABLE index 1 is PERFORM.
+    bool             found = false;
+    for (int i = 0; i < count; i++) {
+        if (rows[i]->id == ParamId::RECORD) found = true;
+    }
+    TEST_ASSERT(found, "Record must be collected on the table-driven PERFORM page");
+    test_pass();
+}
+
+static void test_record_is_omitted_from_serialization(void) {
+    test_begin("serialization omits Record from count and data");
+
+    float norms[128]       = {};
+    norms[ParamId::RECORD] = 1.0f;
+    uint8_t blob[PRESET_BLOB_MAX];
+    int     len = serialize_no_routings(blob, sizeof(blob), "NoRecord", norms, 128);
+    TEST_ASSERT(len > 0, "serialization failed");
+
+    uint16_t wire_count = 0;
+    memcpy(&wire_count, blob + 40, sizeof(wire_count));
+    TEST_ASSERT(wire_count == (uint16_t)preset_eligible_param_count(), "wire count includes Record");
+
+    char     name[PRESET_NAME_LEN + 1];
+    uint16_t ids[PRESET_MAX_PARAMS];
+    float    vals[PRESET_MAX_PARAMS];
+    int      count = parse_params_only(blob, (size_t)len, name, sizeof(name), ids, vals, PRESET_MAX_PARAMS);
+    TEST_ASSERT(count == preset_eligible_param_count(), "parsed serialized count mismatch");
+    for (int i = 0; i < count; i++) {
+        TEST_ASSERT(ids[i] != ParamId::RECORD, "serialized data contains Record");
+    }
+    test_pass();
+}
+
+static void test_parse_filters_record_and_unknown_ids(void) {
+    test_begin("v2 parse filters Record and unknown IDs");
+
+    // Minimal v2: two param records followed by a zero routing count.
+    uint8_t blob[56] = {};
+    memcpy(blob, "TNMT", 4);
+    blob[4]              = PRESET_FORMAT_VERSION;
+    blob[5]              = PRESET_MODEL_JUNO;
+    const uint16_t count = 2;
+    memcpy(blob + 40, &count, sizeof(count));
+    const uint16_t record_id  = ParamId::RECORD;
+    const uint16_t unknown_id = 0xF000u;
+    const float    on         = 1.0f;
+    memcpy(blob + 42, &record_id, sizeof(record_id));
+    memcpy(blob + 44, &on, sizeof(on));
+    memcpy(blob + 48, &unknown_id, sizeof(unknown_id));
+    memcpy(blob + 50, &on, sizeof(on));
+    // bytes 54-55 are the already-zero routing count.
+
+    char     name[PRESET_NAME_LEN + 1];
+    uint16_t ids[2];
+    float    vals[2];
+    int      parsed = parse_params_only(blob, sizeof(blob), name, sizeof(name), ids, vals, 2);
+    TEST_ASSERT(parsed == 0, "session-only and unknown IDs must be filtered");
     test_pass();
 }
 
@@ -317,4 +401,7 @@ void test_preset_suite(void) {
     test_factory_init_has_clean_106_routings();
     test_factory_routings_oob_returns_minus1();
     test_serialize_parse_with_zero_routings();
+    test_record_row_is_session_only_and_on_perform_page();
+    test_record_is_omitted_from_serialization();
+    test_parse_filters_record_and_unknown_ids();
 }

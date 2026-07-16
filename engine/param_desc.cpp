@@ -18,6 +18,8 @@ const ParamDesc JUNO_PARAM_TABLE[] = {
     // mod dest, not audio-rate.
     {ParamId::CLOCK_BPM, GROUP_GLOBAL, "Tempo", "BPM", 20.0f, 300.0f, 120.0f, CURVE_LIN, UNIT_NONE, "%.0f", 0xFF, 0.0f,
      0},
+    {ParamId::RECORD, GROUP_GLOBAL, "Record", "REC", 0.0f, 1.0f, 0.0f, CURVE_STEPPED, UNIT_NONE, "%.0f", 0xFF, 0.0f,
+     FLAG_NO_PRESET},
 
     // --- OSC ---
     // id                       grp          name                  short     min     max       def    curve         unit

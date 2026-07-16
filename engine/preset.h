@@ -17,7 +17,8 @@
 //                          (8 bytes each, field-by-field — no struct memcpy)
 //
 // Back-compat: v1 blobs (no routings block) still parse — zero routings returned.
-// Forward-compat: unknown param IDs and unknown source/curve ids are silently skipped.
+// Forward-compat: unknown param IDs, session-only params, and unknown source/curve ids are
+// silently skipped.
 #pragma once
 
 #include <cstddef>
@@ -25,7 +26,8 @@
 #include "mod_matrix.h"
 
 static constexpr int     PRESET_NAME_LEN       = 32;
-// v2 max: 42 (header) + 49*6 (params) + 2 (routing count) + 16*8 (16 routing slots) = 466
+// v2 max: 42 (header) + 49*6 (preset-eligible params) + 2 (routing count) +
+// 16*8 (16 routing slots) = 466
 // 512 gives headroom for future params without a format-version bump.
 static constexpr size_t  PRESET_BLOB_MAX       = 512;
 static constexpr uint8_t PRESET_FORMAT_VERSION = 2;
@@ -37,7 +39,7 @@ static constexpr int PRESET_MAX_ROUTINGS = kMaxRoutes;
 // Maximum number of params a preset can carry — buffers passed to
 // preset_factory_params()/preset_parse() must hold at least this many, or trailing
 // params (PLAY_MODE, UNISON, CHORUS_MODE, ARP_*, …) are silently dropped and the
-// patch loads at table defaults. Must be >= kJunoParamCount (currently 49); the
+// patch loads at table defaults. Must cover all preset-eligible rows (currently 49); the
 // 512-byte blob format tops out near 78 params, so 96 is safe with headroom.
 static constexpr int PRESET_MAX_PARAMS = 96;
 
@@ -80,7 +82,7 @@ int preset_serialize(void* buf, size_t buf_max, const char* name, const float* n
 // `ids_out`/`vals_out` receive physical param values (max_count entries max).
 // `routings_out` receives modulation routings (max_routings entries max); may be NULL.
 // `routings_count_out` receives the number of routings parsed; may be NULL.
-// Unknown param IDs and unknown source/curve ids are silently skipped.
+// Unknown param IDs, known FLAG_NO_PRESET params, and unknown source/curve ids are silently skipped.
 // v1 blobs (no routings block): succeeds, *routings_count_out = 0.
 // Returns param count parsed (≥ 0), or -1 on bad/unsupported format.
 int preset_parse(const void* buf, size_t len, char* name_out, int name_max, uint16_t* ids_out, float* vals_out,
