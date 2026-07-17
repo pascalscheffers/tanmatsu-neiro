@@ -1336,6 +1336,18 @@ checkpoint, overflow, card-loss, and write-failure coverage remains green.
 `make size`: image 1,183,288 B; app partition 44% free; DIRAM 273,674/576,464 B (47.47%), including
 143,300 B `.bss`. **NEXT:** on device, record for >10 s, stop, and inspect the finalized WAV.
 
+## 2026-07-17 — Profile-build recorder event tracing (COMPLETE)
+
+Added `SYNTH_PROFILE`-only `[PROFILE] record ...` events at every recorder boundary: worker
+startup/failure, UI request transitions, SD/root/path selection, start success/failure with named
+errors, one-second recoverability checkpoints, and stop/error finalization with byte/staging/drop
+counts. This closes the observability gap found during the first device acceptance attempt; shipping
+build behavior and logging remain unchanged.
+
+**Verify:** `make format` ✅, `make test` ✅, `make PROFILE=1 USBHOST_DEBUG=1 build` ✅.
+**NEXT:** repeat the device toggle under `make sniff`; the first missing/failed event now identifies
+whether the break is input/UI, SD setup, file creation, or the running writer.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

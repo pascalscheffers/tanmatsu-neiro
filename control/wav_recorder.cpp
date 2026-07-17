@@ -31,6 +31,33 @@ std::atomic<wav_recorder_state_t> s_state{WAV_RECORDER_IDLE};
 std::atomic<wav_recorder_error_t> s_error{WAV_RECORDER_ERROR_NONE};
 uint8_t                           s_pcm_staging[kPcmStagingBytes];
 
+#ifdef SYNTH_PROFILE
+const char* error_name(wav_recorder_error_t error) {
+    switch (error) {
+        case WAV_RECORDER_ERROR_NONE:
+            return "none";
+        case WAV_RECORDER_ERROR_SD_UNAVAILABLE:
+            return "sd-unavailable";
+        case WAV_RECORDER_ERROR_DIRECTORY:
+            return "directory";
+        case WAV_RECORDER_ERROR_NO_FILENAME:
+            return "no-filename";
+        case WAV_RECORDER_ERROR_OPEN:
+            return "open";
+        case WAV_RECORDER_ERROR_WRITE:
+            return "write";
+        case WAV_RECORDER_ERROR_RING_OVERFLOW:
+            return "ring-overflow";
+        case WAV_RECORDER_ERROR_SIZE_LIMIT:
+            return "size-limit";
+        case WAV_RECORDER_ERROR_WORKER_START:
+            return "worker-start";
+        default:
+            return "unknown";
+    }
+}
+#endif
+
 void put_le16(uint8_t* out, uint16_t value) {
     out[0] = (uint8_t)value;
     out[1] = (uint8_t)(value >> 8);
@@ -120,6 +147,10 @@ bool drain_ring_batch(wav_recorder_error_t& error, bool& caught_up) {
 }
 
 void finish(wav_recorder_error_t error, bool drain) {
+#ifdef SYNTH_PROFILE
+    printf("[PROFILE] record finish begin reason=%s drain=%u bytes=%u staged=%u dropped=%u\n", error_name(error),
+           drain ? 1u : 0u, (unsigned)s_data_bytes, (unsigned)s_staged_bytes, (unsigned)record_ring_dropped_blocks());
+#endif
     record_ring_set_enabled(false);
     if (s_file != nullptr) {
         if (drain) {
@@ -149,6 +180,10 @@ void finish(wav_recorder_error_t error, bool drain) {
     }
     s_error.store(error, std::memory_order_release);
     s_state.store(error == WAV_RECORDER_ERROR_NONE ? WAV_RECORDER_IDLE : WAV_RECORDER_ERROR, std::memory_order_release);
+#ifdef SYNTH_PROFILE
+    printf("[PROFILE] record finish end state=%s error=%s bytes=%u\n",
+           error == WAV_RECORDER_ERROR_NONE ? "idle" : "error", error_name(error), (unsigned)s_data_bytes);
+#endif
 }
 
 bool make_recording_path(char (&path)[kPathCapacity], wav_recorder_error_t& error) {
@@ -204,21 +239,37 @@ bool make_recording_path(char (&path)[kPathCapacity], wav_recorder_error_t& erro
 void start() {
     s_staged_bytes             = 0;
     wav_recorder_error_t error = WAV_RECORDER_ERROR_NONE;
+#ifdef SYNTH_PROFILE
+    printf("[PROFILE] record start requested sd=%u root=%s\n", platform_sd_available() ? 1u : 0u,
+           platform_sd_root() != nullptr ? platform_sd_root() : "(null)");
+#endif
     if (!platform_sd_available()) {
         s_error.store(WAV_RECORDER_ERROR_SD_UNAVAILABLE, std::memory_order_release);
         s_state.store(WAV_RECORDER_ERROR, std::memory_order_release);
+#ifdef SYNTH_PROFILE
+        printf("[PROFILE] record start failed error=%s\n", error_name(WAV_RECORDER_ERROR_SD_UNAVAILABLE));
+#endif
         return;
     }
     char path[kPathCapacity];
     if (!make_recording_path(path, error)) {
         s_error.store(error, std::memory_order_release);
         s_state.store(WAV_RECORDER_ERROR, std::memory_order_release);
+#ifdef SYNTH_PROFILE
+        printf("[PROFILE] record start failed error=%s\n", error_name(error));
+#endif
         return;
     }
+#ifdef SYNTH_PROFILE
+    printf("[PROFILE] record path=%s\n", path);
+#endif
     s_file = fopen(path, "wb");
     if (s_file == nullptr) {
         s_error.store(WAV_RECORDER_ERROR_OPEN, std::memory_order_release);
         s_state.store(WAV_RECORDER_ERROR, std::memory_order_release);
+#ifdef SYNTH_PROFILE
+        printf("[PROFILE] record start failed error=%s errno=%d\n", error_name(WAV_RECORDER_ERROR_OPEN), errno);
+#endif
         return;
     }
     uint8_t header[44];
@@ -235,6 +286,9 @@ void start() {
     record_ring_clear();
     record_ring_reset_dropped_blocks();
     record_ring_set_enabled(true);
+#ifdef SYNTH_PROFILE
+    printf("[PROFILE] record started path=%s\n", path);
+#endif
 }
 
 void storage_worker(void*) {
@@ -267,6 +321,9 @@ void storage_worker(void*) {
                         finish(WAV_RECORDER_ERROR_WRITE, false);
                     } else {
                         s_checkpoint_millis = now;
+#ifdef SYNTH_PROFILE
+                        printf("[PROFILE] record checkpoint bytes=%u\n", (unsigned)s_data_bytes);
+#endif
                     }
                 }
             }
@@ -295,10 +352,16 @@ extern "C" bool wav_recorder_init(void) {
     s_state.store(WAV_RECORDER_IDLE, std::memory_order_relaxed);
     if (platform_storage_worker_start(storage_worker, nullptr)) {
         s_worker_started.store(true, std::memory_order_release);
+#ifdef SYNTH_PROFILE
+        printf("[PROFILE] record worker started\n");
+#endif
         return true;
     }
     s_error.store(WAV_RECORDER_ERROR_WORKER_START, std::memory_order_release);
     s_state.store(WAV_RECORDER_ERROR, std::memory_order_release);
+#ifdef SYNTH_PROFILE
+    printf("[PROFILE] record worker failed error=%s\n", error_name(WAV_RECORDER_ERROR_WORKER_START));
+#endif
     return false;
 }
 
@@ -312,7 +375,14 @@ extern "C" bool wav_recorder_shutdown(void) {
 }
 
 extern "C" void wav_recorder_service(bool want_record) {
-    s_want_record.store(want_record, std::memory_order_release);
+    const bool previous = s_want_record.exchange(want_record, std::memory_order_acq_rel);
+#ifdef SYNTH_PROFILE
+    if (previous != want_record) {
+        printf("[PROFILE] record request=%s\n", want_record ? "on" : "off");
+    }
+#else
+    (void)previous;
+#endif
 }
 
 extern "C" wav_recorder_state_t wav_recorder_state(void) {
