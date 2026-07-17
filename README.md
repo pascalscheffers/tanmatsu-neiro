@@ -26,6 +26,7 @@ Reuse-first and dedup-first by design: vetted MIT DSP (DaisySP), and a single pa
 - **Controller follow** — 8 hardware pots (CC 21–28) map to key parameters; turning a knob jumps the screen to that parameter's page and tracks the value live.
 - **Presets** — factory bank + save-your-own.
 - **Musical typing** — make sound standalone with nothing plugged in.
+- **SD recording** — capture the stereo master as 48 kHz/16-bit PCM WAV without blocking audio.
 
 Delay, reverb, a step sequencer, and an SMF player are designed-for and on the roadmap — see [`specs/06-feature-scope-and-roadmap.md`](specs/06-feature-scope-and-roadmap.md).
 
@@ -68,6 +69,11 @@ Note input comes from a USB MIDI keyboard, a DAW over USB-C, or the badge's own 
 | `=` | Save current sound as your user preset (same as ◇) |
 | `Esc` | Quit (back to the launcher) |
 
+To record, open the **PERFORM** page, select **Record**, and nudge it to `1` with △.
+Nudge it back to `0` with ✕ to finish the file. Recordings are saved without overwriting existing
+files as `recordings/rec0001.wav`, `rec0002.wav`, and so on on the SD card. The status strip shows
+`REC` while recording and a short `REC:` error if the card or writer cannot continue.
+
 ### MIDI control (USB)
 
 Connect a USB MIDI controller to the badge's USB-A port. The following CCs are mapped out of the box:
@@ -99,7 +105,7 @@ A few standard General-MIDI CCs are also recognised — handy if your controller
 
 **Preset page (home, page 1):** scroll the list with ↑/↓ to audition patches live — the sound changes as you browse. Press ○ or Enter to commit the highlighted preset. Press □ or navigate away without confirming to revert to the sound you had before browsing.
 
-**Parameter pages (pages 2–9):** nine fixed pages in order — PRESET · PERFORM · OSC · FILTER · AMP ENV · MOD ENV · LFO · FX · AMP. Multi-group pages (PERFORM = Clock + Arp; FILTER = VCF + HPF) show a section sub-header before each group. The status strip at the bottom shows active voices, the current octave, and the loaded preset name.
+**Parameter pages (pages 2–9):** nine fixed pages in order — PRESET · PERFORM · OSC · FILTER · AMP ENV · MOD ENV · LFO · FX · AMP. Multi-group pages (PERFORM = Clock + Arp; FILTER = VCF + HPF) show a section sub-header before each group. The status strip at the bottom shows active voices, the current octave, recording state/errors, and the loaded preset name.
 
 ## Known issues
 

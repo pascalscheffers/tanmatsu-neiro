@@ -11,6 +11,7 @@
 #include "app.h"
 #include "control/keyboard.h"
 #include "control/midi_router.h"
+#include "control/wav_recorder.h"
 #include "platform.h"
 #include "synth.h"
 #include "ui.h"
@@ -369,6 +370,41 @@ void app_run(void) {
             }
         }
 
+        // Session-only Record request: the table-driven UI shadow is the
+        // control-thread source of truth. The recorder owns actual state and
+        // may reject/stop the request without involving the audio thread.
+        bool want_record = ui_record_requested(&ui_state);
+        wav_recorder_service(want_record);
+        wav_recorder_state_t recorder_state = wav_recorder_state();
+        wav_recorder_error_t recorder_error = wav_recorder_error();
+        if (recorder_state == WAV_RECORDER_ERROR) {
+            // Make failure visible and force the requested parameter Off. Keep
+            // the UI error latched after service(false) clears recorder state.
+            ui_record_force_off(&ui_state);
+            int a, b;
+            ui_band_content(&a, &b);
+            ui_invalidate(a, b);
+        }
+        uint8_t next_ui_state = ui_state.recorder_state;
+        uint8_t next_ui_error = ui_state.recorder_error;
+        if (recorder_state == WAV_RECORDER_RECORDING) {
+            next_ui_state = WAV_RECORDER_RECORDING;
+            next_ui_error = WAV_RECORDER_ERROR_NONE;
+        } else if (recorder_state == WAV_RECORDER_ERROR) {
+            next_ui_state = WAV_RECORDER_ERROR;
+            next_ui_error = recorder_error;
+        } else if (ui_state.recorder_error == WAV_RECORDER_ERROR_NONE) {
+            next_ui_state = WAV_RECORDER_IDLE;
+        }
+        if (next_ui_state != ui_state.recorder_state || next_ui_error != ui_state.recorder_error) {
+            ui_state.recorder_state = next_ui_state;
+            ui_state.recorder_error = next_ui_error;
+            ui_state.change_seq++;
+            int a, b;
+            ui_band_status(&a, &b);
+            ui_invalidate(a, b);
+        }
+
         // --- Control tick + inline render (when no render task) ---
         uint64_t now = platform_millis();
         if (now >= next_ctrl) {
@@ -478,6 +514,9 @@ void app_run(void) {
         platform_sleep_ms(POLL_MS);
     }
 
+    // Finalize an active WAV before the audio source is stopped or the app
+    // returns to the launcher.
+    wav_recorder_service(false);
     platform_render_task_stop();
     platform_audio_stop();
     // ESC / window-close ends the loop; hand control back to the launcher (on

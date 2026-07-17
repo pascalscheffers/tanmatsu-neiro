@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <climits>
+#include "control/wav_recorder.h"
 #include "engine/mod_matrix.h"
 #include "engine/param_desc.h"
 #include "engine/param_id.h"
@@ -739,6 +740,41 @@ static void draw_status(pax_buf_t* fb, const UIState* s) {
     snprintf(buf, sizeof(buf), "Oct %d", s->octave);
     pax_draw_text(fb, COL_DIM, pax_font_sky_mono, FONT_SM, 140.0f, text_y, buf);
 
+    // Recorder feedback. Errors remain latched in the UI after the failed
+    // request is forced Off, so a control-loop-speed failure is still visible.
+    if (s->recorder_error != WAV_RECORDER_ERROR_NONE) {
+        const char* reason = "ERR";
+        switch (s->recorder_error) {
+            case WAV_RECORDER_ERROR_SD_UNAVAILABLE:
+                reason = "NO SD";
+                break;
+            case WAV_RECORDER_ERROR_DIRECTORY:
+                reason = "DIR";
+                break;
+            case WAV_RECORDER_ERROR_NO_FILENAME:
+                reason = "FULL";
+                break;
+            case WAV_RECORDER_ERROR_OPEN:
+                reason = "OPEN";
+                break;
+            case WAV_RECORDER_ERROR_WRITE:
+                reason = "WRITE";
+                break;
+            case WAV_RECORDER_ERROR_RING_OVERFLOW:
+                reason = "DROP";
+                break;
+            case WAV_RECORDER_ERROR_SIZE_LIMIT:
+                reason = "4GB";
+                break;
+            default:
+                break;
+        }
+        snprintf(buf, sizeof(buf), "REC:%s", reason);
+        pax_draw_text(fb, COL_ACCENT2, pax_font_sky_mono, FONT_SM, 200.0f, text_y, buf);
+    } else if (s->recorder_state == WAV_RECORDER_RECORDING) {
+        pax_draw_text(fb, COL_ACCENT2, pax_font_sky_mono, FONT_SM, 210.0f, text_y, "REC");
+    }
+
     // Preset name.
     pax_draw_text(fb, COL_TEXT, pax_font_sky_mono, FONT_SM, 280.0f, text_y, s->preset_name);
 
@@ -812,4 +848,13 @@ extern "C" void ui_band_status(int* y0, int* y1) {
 extern "C" void ui_band_content(int* y0, int* y1) {
     *y0 = (int)CONTENT_Y;
     *y1 = (int)(SCREEN_H - STATUS_H);
+}
+
+extern "C" bool ui_record_requested(const UIState* s) {
+    return s->norms[ParamId::RECORD] >= 0.5f;
+}
+
+extern "C" void ui_record_force_off(UIState* s) {
+    s->norms[ParamId::RECORD] = 0.0f;
+    engine_set_param_norm(ParamId::RECORD, 0.0f);
 }

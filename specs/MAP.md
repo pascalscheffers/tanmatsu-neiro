@@ -32,6 +32,8 @@ Paths are relative to repo root. Dependencies live in `managed_components/` (ESP
 - `engine/param_store.{h,cpp}` — **`ParamStore`**: `param_set[_norm](id,value,source)` applies
   curve+range and pushes a `ParamUpdate` into an `SpscRing`; audio thread `drain()`s and
   smooths. The single write path into the audio thread (no mutex, no alloc).
+- `engine/record_ring.{h,cpp}` — fixed 256-block audio→control SPSC capture ring; `record_ring_publish`
+  converts the rendered stereo block to PCM16 only while enabled, and the control writer drains it.
 - `engine/preset.{h,cpp}` — preset serialize/parse **by param id** (`preset_serialize`,
   `preset_parse`) + INIT and the factory bank (`preset_factory_count/name/params`). Spec 05 format.
 - `engine/synth_config.h` — named constants (sample rate, block, `kNumVoices`, table sizes).
@@ -72,8 +74,12 @@ Paths are relative to repo root. Dependencies live in `managed_components/` (ESP
 
 ## control/ , ui/ , app/ — the brain (soft-real-time, normal tasks)
 - `control/keyboard.{c,h}` — musical-typing / key input → note + param events.
+- `control/wav_recorder.{h,cpp}` — **`wav_recorder_service(want_record)`** control-thread WAV
+  writer/state seam. Creates non-overwriting `recordings/recNNNN.wav`, checkpoints/finalizes the
+  PCM16 header, and exposes compact state/error enums; called on every app control-loop iteration.
 - `ui/ui.{cpp,h}` — PAX param pages rendered **from the table** (no model knowledge, ADR 0008).
-- `app/app.{c,h}` — app-level wiring (init order, the main loop).
+- `app/app.{c,h}` — app-level wiring (init order, the main loop); Record requests come only from
+  `UIState.norms[ParamId::RECORD]`, with writer failures forcing the UI/engine shadow Off.
 
 ## Where decisions and state live
 - `specs/decisions/` — ADRs (the *why*); `specs/00-08` — specs (the *what*);

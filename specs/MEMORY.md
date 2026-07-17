@@ -1279,6 +1279,26 @@ checkpoint recovery, overflow prefix finalization, card loss, and real filesyste
 Size: app `0x11fcc0` (44% partition free), DIRAM 240,854 B / 41.78% (unchanged from 11c).
 **NEXT:** Stage 11e app/UI integration and on-device recording validation.
 
+## 2026-07-17 — Stage 11e: Record app/UI integration (COMPLETE; device acceptance pending)
+
+Wired the table-driven session toggle through the normal control loop: every iteration services the
+WAV writer from the `UIState.norms[ParamId::RECORD]` shadow, while a writer failure forces the
+requested UI/engine value Off and invalidates the PERFORM content band. The status strip redraws
+only on recorder feedback transitions, shows `REC` while active, and latches compact SD/directory/
+open/write/drop/size feedback long enough to be useful. App exit finalizes an active file. README,
+MAP, and the measured architecture budget now describe the shipped seam.
+
+**Verify:** `make format` ✅, `make test` ✅, host app compile ✅, `make build` ✅, `make size` ✅;
+membrane clean. Normal size: app `0x120830` (44% partition free), mapped flash 1,051,150 B,
+DIRAM 240,878 B / 41.79% (335,586 B free). Automated WAV tests cover stereo PCM16/48 kHz exact
+header/payload, duration/finalization, no-overwrite naming, checkpoints, and failure stops. A full
+interactive host toggle was not run because the SDL app has no non-GUI event injection seam.
+
+**PENDING (Pascal/device):** card boot; record 30 s while holding 8 voices and navigating; confirm
+`recordings/recNNNN.wav` stereo 48 kHz PCM16 with correct duration/no tail; capture PROFILE
+avg/max/over before vs during and delta; verify absent-card error is visible, Record returns Off,
+and audio continues; record flash/DIRAM/PROFILE delta against the pre-recording device build.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

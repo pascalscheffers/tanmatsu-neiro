@@ -22,13 +22,15 @@ extern "C" {
 // Pages are defined by the static PAGE_TABLE in ui.cpp (explicit order,
 // multi-group pages supported). kNumPages is the compile-time page count.
 typedef struct {
-    int   page;                       // selected page index (0..kNumPages-1)
-    int   row;                        // selected row within the page
-    int   active_voices;              // set by app each frame
-    int   octave;                     // set by app each frame
-    char  preset_name[33];            // displayed in the status strip
-    int   preset_idx;                 // factory index (0-based) or -1 for user preset
-    float norms[UI_NORM_TABLE_SIZE];  // normalised [0,1] shadow per param ID
+    int     page;                       // selected page index (0..kNumPages-1)
+    int     row;                        // selected row within the page
+    int     active_voices;              // set by app each frame
+    int     octave;                     // set by app each frame
+    uint8_t recorder_state;             // WAV_RECORDER_* state shown in status strip
+    uint8_t recorder_error;             // latched WAV_RECORDER_ERROR_* feedback
+    char    preset_name[33];            // displayed in the status strip
+    int     preset_idx;                 // factory index (0-based) or -1 for user preset
+    float   norms[UI_NORM_TABLE_SIZE];  // normalised [0,1] shadow per param ID
 
     // Audition-with-revert state (WO-3, preset browser page).
     // Snapshot is captured when entering page 0; restored on back/navigate-away
@@ -80,6 +82,11 @@ void ui_draw(pax_buf_t* fb, uint64_t millis, const UIState* s);
 // Returns true if the param is shown on some page (caller bumps change_seq).
 // If the PRESET page is currently auditioning, the audition is cleared first.
 bool ui_focus_param(UIState* s, uint16_t param_id, float norm);
+
+// Session-only Record shadow helpers. These keep app.c on the C side of the
+// ParamId namespace while still using the canonical table ID in ui.cpp.
+bool ui_record_requested(const UIState* s);
+void ui_record_force_off(UIState* s);
 
 // Chrome-band accessors (ADR 0022): the scanline range [*y0, *y1) of the
 // bottom status strip / the page content area, in framebuffer rows. Lets
