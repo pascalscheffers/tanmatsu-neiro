@@ -19,6 +19,10 @@
 
 namespace {
 
+constexpr size_t kDataOffset       = 4096;
+constexpr size_t kDataHeaderOffset = 4088;
+constexpr size_t kDataSizeOffset   = 4092;
+
 std::string           s_root;
 std::atomic<bool>     s_available;
 std::atomic<uint64_t> s_millis;
@@ -131,9 +135,9 @@ void publish(size_t frames, float base = 0.1f) {
 }
 
 void assert_header(const std::vector<uint8_t>& bytes, uint32_t data_bytes) {
-    TEST_ASSERT(bytes.size() == 44u + data_bytes, "file length");
+    TEST_ASSERT(bytes.size() == kDataOffset + data_bytes, "file length");
     TEST_ASSERT(memcmp(bytes.data(), "RIFF", 4) == 0, "RIFF id");
-    TEST_ASSERT(le32(bytes, 4) == 36u + data_bytes, "RIFF size");
+    TEST_ASSERT(le32(bytes, 4) == kDataOffset - 8u + data_bytes, "RIFF size");
     TEST_ASSERT(memcmp(bytes.data() + 8, "WAVEfmt ", 8) == 0, "WAVE/fmt ids");
     TEST_ASSERT(le32(bytes, 16) == 16, "PCM fmt size");
     TEST_ASSERT(bytes[20] == 1 && bytes[21] == 0, "PCM format");
@@ -142,8 +146,13 @@ void assert_header(const std::vector<uint8_t>& bytes, uint32_t data_bytes) {
     TEST_ASSERT(le32(bytes, 28) == 192000, "byte rate");
     TEST_ASSERT(bytes[32] == 4 && bytes[33] == 0, "block align");
     TEST_ASSERT(bytes[34] == 16 && bytes[35] == 0, "sample bits");
-    TEST_ASSERT(memcmp(bytes.data() + 36, "data", 4) == 0, "data id");
-    TEST_ASSERT(le32(bytes, 40) == data_bytes, "data size");
+    TEST_ASSERT(memcmp(bytes.data() + 36, "JUNK", 4) == 0, "JUNK id");
+    TEST_ASSERT(le32(bytes, 40) == 4044, "JUNK size");
+    for (size_t offset = 44; offset < kDataHeaderOffset; ++offset) {
+        TEST_ASSERT(bytes[offset] == 0, "JUNK padding is zero");
+    }
+    TEST_ASSERT(memcmp(bytes.data() + kDataHeaderOffset, "data", 4) == 0, "data id");
+    TEST_ASSERT(le32(bytes, kDataSizeOffset) == data_bytes, "data size");
 }
 
 }  // namespace
@@ -311,7 +320,7 @@ void test_wav_recorder_suite() {
         TEST_ASSERT(!record_ring_enabled(), "stalled preallocation keeps capture disabled");
         s_stall_preallocate = false;
         wait_for_state(WAV_RECORDER_RECORDING, "released preallocation starts recording");
-        TEST_ASSERT(s_preallocated_size.load() == 11520044u, "one-minute logical extent exists before recording");
+        TEST_ASSERT(s_preallocated_size.load() == 11524096u, "one-minute logical extent exists before recording");
         stop_recording();
         assert_header(read_file(s_root + "/recordings/rec0001.wav"), 0);
         finish_test();
@@ -346,7 +355,7 @@ void test_wav_recorder_suite() {
         fclose(old);
 
         start_recording();
-        TEST_ASSERT(s_preallocated_size.load() == 11520044u, "successful start preallocates one minute");
+        TEST_ASSERT(s_preallocated_size.load() == 11524096u, "successful start preallocates one minute");
         s_stall_sd = true;
         wait_until([]() { return s_sd_call_stalled.load(); }, "worker stalled before packed batch");
         for (size_t block = 0; block < 15; ++block) {
@@ -367,7 +376,7 @@ void test_wav_recorder_suite() {
             const float  base        = block < 15 ? 0.01f + (float)block / 100.0f : 0.25f;
             const auto   left        = (int16_t)((base + (float)block_frame / 1000.0f) * 32767.0f);
             const auto   right       = (int16_t)(-(base + (float)block_frame / 1000.0f) * 32767.0f);
-            const size_t offset      = 44 + frame * 4;
+            const size_t offset      = kDataOffset + frame * 4;
             TEST_ASSERT(bytes[offset] == (uint8_t)left && bytes[offset + 1] == (uint8_t)((uint16_t)left >> 8),
                         "packed left PCM is ordered and exact");
             TEST_ASSERT(bytes[offset + 2] == (uint8_t)right && bytes[offset + 3] == (uint8_t)((uint16_t)right >> 8),
@@ -391,7 +400,7 @@ void test_wav_recorder_suite() {
         wait_until(
             []() {
                 FILE* file = fopen((s_root + "/recordings/rec0001.wav").c_str(), "rb");
-                if (file == nullptr || fseek(file, 44, SEEK_SET) != 0) {
+                if (file == nullptr || fseek(file, kDataOffset, SEEK_SET) != 0) {
                     if (file != nullptr) fclose(file);
                     return false;
                 }
@@ -418,13 +427,16 @@ void test_wav_recorder_suite() {
         wait_until(
             []() {
                 const auto bytes = read_file(s_root + "/recordings/rec0001.wav");
-                return bytes.size() == 11520044u && le32(bytes, 40) == 16;
+                return bytes.size() == 11524096u && le32(bytes, kDataSizeOffset) == 16;
             },
             "checkpoint patches sizes");
         const std::vector<uint8_t> bytes = read_file(s_root + "/recordings/rec0001.wav");
-        TEST_ASSERT(le32(bytes, 4) == 52 && le32(bytes, 40) == 16, "checkpoint header sizes");
+        TEST_ASSERT(le32(bytes, 4) == 4104 && le32(bytes, kDataSizeOffset) == 16, "checkpoint header sizes");
+        publish(2, 0.2f);
         stop_recording();
-        assert_header(read_file(s_root + "/recordings/rec0001.wav"), 16);
+        const auto finalized = read_file(s_root + "/recordings/rec0001.wav");
+        assert_header(finalized, 24);
+        TEST_ASSERT(finalized[kDataOffset + 16] != 0, "checkpoint restores cursor after committed PCM");
         finish_test();
         test_pass();
     }
@@ -478,7 +490,7 @@ void test_wav_recorder_suite() {
         struct rlimit old_limit;
         TEST_ASSERT(getrlimit(RLIMIT_FSIZE, &old_limit) == 0, "read file-size limit");
         struct rlimit limit     = old_limit;
-        limit.rlim_cur          = 44;
+        limit.rlim_cur          = kDataOffset;
         void (*old_signal)(int) = signal(SIGXFSZ, SIG_IGN);
         TEST_ASSERT(setrlimit(RLIMIT_FSIZE, &limit) == 0, "set file-size limit");
         s_millis   = 1000;

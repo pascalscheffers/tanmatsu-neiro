@@ -85,7 +85,7 @@ it atomically publishes the desired state and snapshots worker-owned state/error
 worker performs the following transitions:
 
 - rising edge: require mounted SD, create `<sd-root>/recordings`, discard stale ring data,
-  choose the next unused `rec0001.wav` … `rec9999.wav`, write a 44-byte PCM header, then
+  choose the next unused `rec0001.wav` … `rec9999.wav`, write a standard padded PCM header, then
   enable the audio producer;
 - steady state: pop and `fwrite` all queued blocks;
 - falling edge: disable the producer first, drain the committed remainder, patch RIFF/data
@@ -100,6 +100,15 @@ the producer and filesystem happen to run at similar rates.
 Format is little-endian RIFF/WAVE, 48 kHz, stereo, signed 16-bit PCM: 192,000 bytes/second.
 Files live in a dedicated directory so future samples/presets do not mix with recordings.
 No existing file is overwritten; exhausting `rec9999.wav` fails visibly.
+
+PCM begins at byte 4096, not immediately after the 44-byte minimal header. A legal RIFF `JUNK`
+chunk fills the gap: the `data` chunk header is at byte 4088 and its payload is sector-aligned at
+4096. Device measurement showed the distinction is required on the tested card: fresh 128 KiB
+traffic at offset 44 sustained 103 KiB/s and even overwrite traffic only 129 KiB/s, while fresh
+traffic at offset 4096 sustained 681 KiB/s (required: 187.5 KiB/s). RIFF size, data size,
+checkpoint cursor restoration, preallocation, and final truncation all use the padded data
+offset. The file remains an ordinary standards-compliant PCM WAV; readers skip the unknown
+`JUNK` chunk.
 
 Once per second while recording, after draining, the storage worker checkpoints the header
 sizes and calls `fflush`. A clean stop patches them again. Sudden power loss can therefore

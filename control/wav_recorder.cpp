@@ -15,7 +15,13 @@ namespace {
 constexpr uint32_t kSampleRate        = 48000;
 constexpr uint32_t kBytesPerFrame     = 4;
 constexpr uint32_t kMaxDataBytes      = 60u * kSampleRate * kBytesPerFrame;
-constexpr uint64_t kPreallocatedBytes = 44u + (uint64_t)kMaxDataBytes;
+constexpr uint32_t kRiffSizeOffset    = 4;
+constexpr uint32_t kJunkHeaderOffset  = 36;
+constexpr uint32_t kJunkPayloadBytes  = 4044;
+constexpr uint32_t kDataHeaderOffset  = 4088;
+constexpr uint32_t kDataSizeOffset    = 4092;
+constexpr uint32_t kDataOffset        = 4096;
+constexpr uint64_t kPreallocatedBytes = kDataOffset + (uint64_t)kMaxDataBytes;
 constexpr uint64_t kCheckpointMillis  = 1000;
 constexpr size_t   kPathCapacity      = 512;
 constexpr size_t   kPcmStagingBlocks  = 128;
@@ -73,10 +79,10 @@ void put_le32(uint8_t* out, uint32_t value) {
     out[3] = (uint8_t)(value >> 24);
 }
 
-void make_header(uint8_t (&header)[44], uint32_t data_bytes) {
-    memset(header, 0, sizeof(header));
+void make_header(uint8_t* header, uint32_t data_bytes) {
+    memset(header, 0, kDataOffset);
     memcpy(header + 0, "RIFF", 4);
-    put_le32(header + 4, 36u + data_bytes);
+    put_le32(header + kRiffSizeOffset, kDataOffset - 8u + data_bytes);
     memcpy(header + 8, "WAVEfmt ", 8);
     put_le32(header + 16, 16);
     put_le16(header + 20, 1);
@@ -85,21 +91,23 @@ void make_header(uint8_t (&header)[44], uint32_t data_bytes) {
     put_le32(header + 28, kSampleRate * kBytesPerFrame);
     put_le16(header + 32, kBytesPerFrame);
     put_le16(header + 34, 16);
-    memcpy(header + 36, "data", 4);
-    put_le32(header + 40, data_bytes);
+    memcpy(header + kJunkHeaderOffset, "JUNK", 4);
+    put_le32(header + kJunkHeaderOffset + 4, kJunkPayloadBytes);
+    memcpy(header + kDataHeaderOffset, "data", 4);
+    put_le32(header + kDataSizeOffset, data_bytes);
 }
 
 bool patch_header() {
     uint8_t field[4];
-    put_le32(field, 36u + s_data_bytes);
-    if (fseek(s_file, 4, SEEK_SET) != 0 || fwrite(field, 1, sizeof(field), s_file) != sizeof(field)) {
+    put_le32(field, kDataOffset - 8u + s_data_bytes);
+    if (fseek(s_file, kRiffSizeOffset, SEEK_SET) != 0 || fwrite(field, 1, sizeof(field), s_file) != sizeof(field)) {
         return false;
     }
     put_le32(field, s_data_bytes);
-    if (fseek(s_file, 40, SEEK_SET) != 0 || fwrite(field, 1, sizeof(field), s_file) != sizeof(field)) {
+    if (fseek(s_file, kDataSizeOffset, SEEK_SET) != 0 || fwrite(field, 1, sizeof(field), s_file) != sizeof(field)) {
         return false;
     }
-    return fseek(s_file, 44u + s_data_bytes, SEEK_SET) == 0;
+    return fseek(s_file, kDataOffset + s_data_bytes, SEEK_SET) == 0;
 }
 
 bool flush_staging() {
@@ -186,10 +194,12 @@ void finish(wav_recorder_error_t error, bool drain) {
         if (!finalized && error == WAV_RECORDER_ERROR_NONE) {
             error = WAV_RECORDER_ERROR_WRITE;
         }
-        if (!close_file() && error == WAV_RECORDER_ERROR_NONE) {
+        const bool closed = close_file();
+        if (!closed && error == WAV_RECORDER_ERROR_NONE) {
             error = WAV_RECORDER_ERROR_WRITE;
         }
-        if (truncate(s_path, (off_t)(44u + s_data_bytes)) != 0 && error == WAV_RECORDER_ERROR_NONE) {
+        const bool truncated = truncate(s_path, (off_t)(kDataOffset + s_data_bytes)) == 0;
+        if (!truncated && error == WAV_RECORDER_ERROR_NONE) {
             error = WAV_RECORDER_ERROR_WRITE;
         }
     }
@@ -308,7 +318,7 @@ void start() {
 #ifdef SYNTH_PROFILE
     const uint64_t prime_started = platform_millis();
 #endif
-    if (fseek(s_file, 44, SEEK_SET) != 0) {
+    if (fseek(s_file, kDataOffset, SEEK_SET) != 0) {
         finish(WAV_RECORDER_ERROR_WRITE, false);
         return;
     }
@@ -324,10 +334,9 @@ void start() {
         return;
     }
     s_staged_bytes = 0;
-    uint8_t header[44];
-    make_header(header, 0);
-    if (fwrite(header, 1, sizeof(header), s_file) != sizeof(header) || fflush(s_file) != 0 ||
-        fseek(s_file, sizeof(header), SEEK_SET) != 0) {
+    make_header(s_pcm_staging, 0);
+    if (fwrite(s_pcm_staging, 1, kDataOffset, s_file) != kDataOffset || fflush(s_file) != 0 ||
+        fseek(s_file, kDataOffset, SEEK_SET) != 0) {
         finish(WAV_RECORDER_ERROR_WRITE, false);
         return;
     }

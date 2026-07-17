@@ -1481,3 +1481,8 @@ Opus clears the entry when the gate is resolved.
 - Replaced the reused-sector SD matrix with distinct retained 128 KiB payload extents at offsets 44 and 4096; each now logs fresh then overwrite throughput using four 32 KiB DMA-source writes plus flush.
 - 11n's core-starvation root-cause claim is falsified: moving storage to core 1 did not restore recorder throughput, and the earlier 5.5 MiB/s result measured overwrite rather than fresh allocation.
 - Next: hardware-capture all four `sdbench` cases plus one recorder attempt; choose padded RIFF only if fresh 4096 clears 187.5 KiB/s while fresh 44 does not, otherwise decide physical take initialization versus visible card rejection.
+
+### 2026-07-17 — Stage 11p: sector-align WAV PCM
+- PCM now begins at byte 4096 behind a standards-compliant `JUNK` chunk; RIFF/data patching, checkpoint cursor restoration, one-minute preallocation, and all final truncation use the padded offset. The complete header reuses the existing 32 KiB DMA staging buffer.
+- Host tests cover the exact chunk layout, zero padding, payload order, checkpoint continuation, clean/error lengths, and a write failure beyond the header. `ffprobe` accepts the generated artifact as 48 kHz stereo PCM16 WAV. `make format`, `make test`, `make host`, normal/PROFILE builds, and `make size` pass. Normal: image 1,184,972 B, mapped flash 1,054,762 B, DIRAM 241,426/576,464 B (41.88%). PROFILE: image 1,193,154 B.
+- Next: record for >10 s on device and capture prime/write/checkpoint/finish plus audio/I2S PROFILE lines; every steady 32 KiB write must be <170.7 ms with zero drops, overruns, I2S errors, or short writes, then confirm the finalized duration in a standard player.

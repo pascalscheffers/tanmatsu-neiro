@@ -26,6 +26,61 @@
 | 11m | use DMA-capable recorder staging | high | 11l device benchmark |
 | 11n | isolate storage worker from core-0 starvation | medium | 11m device retest |
 | 11o | separate fresh-media and WAV-alignment cost | medium | 11n device retest |
+| 11p | align WAV PCM with RIFF padding | high | 11o device benchmark |
+
+## 11p — Align WAV PCM with RIFF padding
+
+**Status:** implemented; hardware retest pending.
+
+**Repro:** the corrected 11o 2×2 benchmark measured fresh 128 KiB writes at offset 44 at
+103 KiB/s and overwrite traffic there at 129 KiB/s, both below the recorder's required
+187.5 KiB/s. The identical fresh workload at offset 4096 reached 681 KiB/s and its overwrite
+reached 3,385 KiB/s. The recorder still starts PCM at byte 44, takes 238–260 ms per 32 KiB,
+and overflows after three writes.
+
+**Root cause:** the minimal 44-byte WAV layout permanently misaligns every bulk PCM write on
+this FatFs/SD path. Fresh-media cost is not the blocker when the payload is sector-aligned.
+ADR 0024 now ratifies a legal RIFF `JUNK` chunk that places the `data` payload at byte 4096.
+
+**Touch list (6):** `control/wav_recorder.cpp`, `tests/host/test_wav_recorder.cpp`,
+`specs/decisions/0024-sd-recording.md`, `specs/stages/stage-11-sd-recording.md`,
+`specs/02-synth-architecture.md`, `specs/MEMORY.md`.
+
+**Read list (5):** this 11p work-order; ADR 0024 §3; `control/wav_recorder.cpp:constants/
+make_header/patch_header/finish/start`; `tests/host/test_wav_recorder.cpp:assert_header and WAV
+suite`; `specs/02-synth-architecture.md:device memory/flash budget table`.
+
+**Reuse:** the existing 32 KiB DMA-capable staging buffer, RIFF little-endian helpers, prime,
+checkpoint/finalization paths, and all recorder tests. RIFF layout is fixed: 12-byte RIFF/WAVE,
+24-byte `fmt ` chunk, `JUNK` header at byte 36 with 4,044 payload bytes, `data` header at byte
+4088, and PCM at byte 4096. No new allocation, buffer, seam, codec, or sample-format change.
+
+**Don't read:** DSP/voice sources, platform backends, SD profiler implementation, managed
+components, unrelated tests, other stage docs, or `MEMORY-archive.md`.
+
+**Implementation:** introduce named constants for the 4096-byte data offset and header field
+locations; remove recorder magic offsets 44/40/36. Build the complete padded header in the
+existing staging buffer after its pre-capture 32 KiB zero prime, then write exactly 4096 header
+bytes. Set RIFF size to `file_size - 8`, emit `JUNK`/4044 and `data`/data-size at the ratified
+offsets. Prime and every live PCM write begin at byte 4096. Preallocate exactly
+`4096 + 60 * 192000` bytes; checkpoint seeks back to `4096 + committed`; every finalization
+truncates there. Update host assertions to prove the JUNK and data chunk positions, zero padding,
+exact payload ordering at 4096, corrected checkpoint fields/cursor, preallocated size, clean/error
+final lengths, and a write failure beyond the padded header. Do not alter capture format,
+staging/ring sizes, drop policy, task scheduling, or the 60-second limit. Retain the 11o
+PROFILE benchmark until the hardware acceptance run is complete.
+
+**Acceptance:** `make format`, `make test`, `make host`, `make build`, `make size`, and
+`make PROFILE=1 build` pass; membrane grep and `git diff --check` are clean. Update the budget
+table and append a tight MEMORY entry. Commit one atomic fix. Required hardware retest: record
+for more than 10 seconds, stop cleanly, and capture prime/write/checkpoint/finish plus audio/I2S
+PROFILE lines. Every steady 32 KiB write must stay below 170.7 ms, dropped blocks must remain
+zero, audio overruns and I2S errors/short writes must remain zero, and the finalized WAV must
+open with the correct duration in a standard player.
+
+**Split-if:** the existing staging buffer cannot safely host the 4096-byte header, a standard WAV
+reader rejects the JUNK-padded host artifact, or any recorder path still requires a non-aligned
+PCM write. Stop without changing the sample format or enlarging the ring.
 
 ## 11o — Separate fresh-media and WAV-alignment cost
 
