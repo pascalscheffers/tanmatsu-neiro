@@ -1517,6 +1517,24 @@ work-orders in [`stages/stage-12-output-path-audit.md`](stages/stage-12-output-p
 **NEXT:** dispatch WO-12a (Philips slot patch via `upstream-patches/`, decisive A/B),
 then 12b register audit; 12c/12d/12e per the stage doc's decision tree.
 
+## 2026-07-17 — WO-12a device-verified: crackle RESOLVED, root cause was I2S framing skew
+
+Pascal flashed `7868588` and A/B'd on device: **clean up to master gain 2.0 — the
+parameter maximum. No higher gain exists; the onset crackle is gone across the entire
+gain range.** H1 confirmed as the root cause of the residual crackle: the transmitter's
+MSB/left-justified slot format against the ES8156's Philips framing read every sample
+doubled with sign-bit wrap ≥0.5 FS. The long-suspected "never audited" codec/i2s path
+was indeed where the fault lived; all upstream DSP suspicions (underrun, display, SD,
+note-on stagger, DC) stand ruled out as documented.
+
+- Stage-12 remaining work-orders: 12c not needed (12a succeeded). 12b (register audit)
+  still worthwhile cheap hygiene. 12d (limiter onset overshoot into soft_clip flat-tops)
+  now a *quality* item, not a crackle item — re-judge by ear at high gain before
+  spending effort. 12e (underrun observability) optional hygiene.
+- Patch is upstream-PR-ready for badge-bsp
+  ([`upstream-patches/badge-bsp/0001-tanmatsu-audio-philips-i2s-framing.patch`](../upstream-patches/badge-bsp/0001-tanmatsu-audio-philips-i2s-framing.patch)) —
+  every Tanmatsu app playing audio ≥0.5 FS hits this.
+
 ## 2026-07-17 — WO-12a: Philips-framed I2S slot config for ES8156 (build green, A/B pending)
 
 Changed `badge_bsp_audio.c:32` from `I2S_STD_MSB_SLOT_DEFAULT_CONFIG` to

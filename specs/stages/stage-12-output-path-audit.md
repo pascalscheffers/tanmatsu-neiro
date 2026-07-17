@@ -1,6 +1,12 @@
 # Stage 12 — Output-path audit: residual onset crackle
 
-**Status: implementation-ready diagnostic plan.** Analysis by Opus 2026-07-17 from
+**Status: RESOLVED 2026-07-17.** WO-12a device-verified: clean up to master gain 2.0
+(the parameter maximum) after the Philips slot-format patch. H1 confirmed as root
+cause. Remaining WOs re-scoped: 12c unnecessary; 12b cheap hygiene; 12d now a
+quality (not crackle) item — re-judge by ear first; 12e optional hygiene.
+See the 2026-07-17 resolution entry in [`../MEMORY.md`](../MEMORY.md).
+
+**Original status: implementation-ready diagnostic plan.** Analysis by Opus 2026-07-17 from
 `sniff.log` (build `236a984-dirty`), the 2026-07-16 line recordings, and a full
 code audit of the render→codec chain. Execute the work-orders **in order** as
 fresh worker jobs; each commits only on green and appends a tight MEMORY entry.
