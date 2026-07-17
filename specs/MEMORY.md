@@ -1494,6 +1494,29 @@ remain unchanged; the host regression now expects exact 12-block spacing.
 **NEXT (Pascal):** install the PROFILE build and repeat the same onset test. Compare audible
 crackle and transition `over` counts; this remains a diagnostic, not final play-feel tuning.
 
+## 2026-07-17 — Output-path audit: I2S slot-format mismatch is the prime suspect (STAGE 12 PLANNED)
+
+Full analysis of the residual onset crackle from `sniff.log` (236a984-dirty), the 07-16
+line recordings, and a code audit of the render→codec chain. Findings and diagnostic
+work-orders in [`stages/stage-12-output-path-audit.md`](stages/stage-12-output-path-audit.md).
+
+- **H1 (prime):** P4 transmits left-justified 16-bit
+  (`I2S_STD_MSB_SLOT_DEFAULT_CONFIG`, `badge_bsp_audio.c:32`) while `es8156_configure`
+  sets the codec to standard I2S/Philips (`sp_protocal=0`, `es8156.c:1329`). One-bit
+  framing skew → codec reads samples ×2 with sign-bit wrap for any |x| ≥ 0.5 FS.
+  Explains onset-only (attack peaks 0.62 FS cross 0.5, sustain doesn't), strong gain
+  sensitivity, both outputs, clean-sounding SD capture at the same gain (tap is the
+  floats, wrap happens inside the codec), and `edcb5fc`'s clean-timing crackle at 0.73.
+- **H2 (real, secondary):** limiter (THRESH 0.92, 1 ms attack) passes onset overshoot
+  (postg 1.8 at gain 0.5); `soft_clip` clamps to exactly ±1.0 → the +0.99997 flat-tops
+  visible in gain50.wav and SD captures. Mild alone (captures sound fine) but every
+  clamped sample is wrap fuel for H1.
+- Stagger diagnostic closed: 16 ms spacing still crackles → onset CPU spikes are not
+  the cause. Underrun/SD/display/DSP remain ruled out (this run had **no card mounted**).
+
+**NEXT:** dispatch WO-12a (Philips slot patch via `upstream-patches/`, decisive A/B),
+then 12b register audit; 12c/12d/12e per the stage doc's decision tree.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
