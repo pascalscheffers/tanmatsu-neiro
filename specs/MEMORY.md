@@ -1474,6 +1474,16 @@ fresh notes in one block; it was not sufficient for this onset-only case.
 and compare audible onset crackle plus `over` counts. Crackle gone confirms start staggering;
 crackle remaining with `over=0` keeps the fault downstream/transition-sensitive rather than CPU.
 
+## 2026-07-17 — Direct note-start interval doubled to 6 blocks (DEVICE A/B PENDING)
+
+The 3-block / 4 ms onset spacing still crackled on device. Doubled
+`kNoteOnStartIntervalBlocks` to 6: starts are now 8 ms apart at 64 frames / 48 kHz, and an
+eight-note chord spans 56 ms first-to-last. Queue ordering, note-off behavior, and ARP routing
+are unchanged; the host regression now expects exact 6-block spacing.
+
+**NEXT (Pascal):** install the PROFILE build and repeat the same onset test. Compare audible
+crackle and transition `over` counts; this is still a diagnostic, not final play-feel tuning.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
