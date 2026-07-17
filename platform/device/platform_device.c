@@ -54,6 +54,7 @@ static void mount_sd_card(void) {
         .allocation_unit_size   = 16 * 1024,
     };
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+    host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
     host.slot         = SDMMC_HOST_SLOT_0;
 
     sd_pwr_ctrl_ldo_config_t ldo_config = {
@@ -88,8 +89,9 @@ static void mount_sd_card(void) {
     }
     ESP_LOGI(TAG, "SD setup: filesystem mounted");
     s_sd_available = true;
-    ESP_LOGI(TAG, "SD setup: card discovered: name=%s, capacity=%llu MiB", s_sd_card->cid.name,
-             (unsigned long long)s_sd_card->csd.capacity * s_sd_card->csd.sector_size / (1024u * 1024u));
+    ESP_LOGI(TAG, "SD setup: card discovered: name=%s, capacity=%llu MiB, max_freq=%d kHz", s_sd_card->cid.name,
+             (unsigned long long)s_sd_card->csd.capacity * s_sd_card->csd.sector_size / (1024u * 1024u),
+             s_sd_card->max_freq_khz);
 }
 
 // Largest audio block we will be asked to render; sized once, used by the audio

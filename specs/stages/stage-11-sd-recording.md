@@ -21,6 +21,44 @@
 | 11h | retain PCM until a true bulk write | high | 11g device repro |
 | 11i | preallocate a one-minute contiguous take | high | 11h device repro |
 | 11j | measure and prime the first bulk SD write | medium | 11i device repro |
+| 11k | run SDMMC at high-speed clock | medium | 11j throughput measurement |
+
+## 11k — Run SDMMC at high-speed clock
+
+**Repro:** after 11j, every full 32 KiB write takes 236–237 ms, including after the priming
+write. That is about 138 KiB/s sustained versus 187.5 KiB/s required by 48 kHz stereo PCM16;
+the second live write reports 36 dropped blocks. Audio remains below budget. The mounted host
+uses `SDMMC_HOST_DEFAULT()`, whose ESP-IDF 5.5.1 definition selects the 20 MHz default clock.
+
+**Root cause:** recording failure is now a sustained SD throughput deficit, not a cold-write,
+allocation, buffer-capacity, or audio-CPU problem. ESP-IDF's own SD-card FATFS performance setup
+selects `SDMMC_FREQ_HIGHSPEED` (40 MHz). Test that single bus-speed variable before changing task
+priority or buffering architecture.
+
+**Touch list (3):** `platform/device/platform_device.c`, `specs/MEMORY.md`, this file.
+
+**Read list (3):** this 11k work-order; `platform/device/platform_device.c:mount_sd_card`;
+`esp-idf/components/esp_driver_sdmmc/include/driver/sdmmc_default_configs.h:SDMMC_HOST_DEFAULT`.
+
+**Reuse:** `SDMMC_FREQ_HIGHSPEED`, the existing mount sequence, and the existing successful-card
+log. No new seam, task, buffer, or dependency.
+
+**Don't read:** recorder implementation, DSP/voice sources, other platform code, managed
+components, other stage docs, tests, or `MEMORY-archive.md`.
+
+**Implementation:** set `host.max_freq_khz = SDMMC_FREQ_HIGHSPEED` before mount. Extend the
+successful card-discovery log with the card's negotiated `max_freq_khz` so the sniff log proves
+whether high-speed mode was accepted. Do not change bus width, allocation unit, storage priority,
+staging size, ring size, or recorder policy.
+
+**Acceptance:** `make format`, `make test`, `make host`, and `make PROFILE=1 build` pass;
+membrane grep is clean. Commit one atomic fix and append a tight `MEMORY.md` entry. Required
+hardware retest: confirm the boot log reports 40000 kHz, record for >10 s, and capture all
+`record write`, checkpoint, and finish events. Full-write latency must average below 170.7 ms
+to sustain the 187.5 KiB/s stream; retain the setting only if there are no mount/write errors.
+
+**Split-if:** the installed ESP-IDF lacks `SDMMC_FREQ_HIGHSPEED` or the mounted card structure
+does not expose negotiated `max_freq_khz`. Stop without adding a private-IDF dependency.
 
 ## 11j — Measure and prime the first bulk SD write
 

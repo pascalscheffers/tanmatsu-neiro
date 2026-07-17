@@ -1392,6 +1392,18 @@ including 143,812 B `.bss`. **NEXT:** on device, record until >10 s or failure a
 `record prime`, `record write`, checkpoint, and finish events; retain priming only if later writes
 sustain the stream.
 
+## 2026-07-17 — Stage 11k: request 40 MHz SDMMC
+
+Set the existing SDMMC host to `SDMMC_FREQ_HIGHSPEED` before mount and extended the successful
+card log with negotiated `max_freq_khz`; no bus-width, buffering, priority, or recorder policy
+changed.
+
+**Verify:** `make format` ✅, `make test` ✅, `make host` ✅, `make PROFILE=1 build` ✅, membrane
+clean. `make size`: image 1,184,672 B; app partition 43% free; DIRAM 274,186/576,464 B (47.56%),
+including 143,812 B `.bss`. **NEXT:** confirm boot reports 40000 kHz, record >10 s, and capture
+all `record write`, checkpoint, and finish events; full-write latency must average <170.7 ms and
+the setting stays only if mount/write remain error-free.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
