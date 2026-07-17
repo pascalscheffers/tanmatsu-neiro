@@ -376,6 +376,14 @@ bool platform_sd_preallocate(const char* path, uint64_t size) {
     return ok;
 }
 
+void* platform_sd_alloc_io_buffer(size_t size) {
+    return malloc(size);
+}
+
+void platform_sd_free_io_buffer(void* ptr) {
+    free(ptr);
+}
+
 // ---------------------------------------------------------------------------
 // Audio-block cycle profiler read — host stub
 // ---------------------------------------------------------------------------

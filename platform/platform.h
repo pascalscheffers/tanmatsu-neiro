@@ -200,6 +200,12 @@ const char* platform_sd_root(void);
 // a sparse file. On failure, callers remove any partial file.
 bool platform_sd_preallocate(const char* path, uint64_t size);
 
+// Allocate storage-worker I/O memory. Device buffers are internal and
+// DMA-capable; host buffers use the ordinary heap. Never call from the audio
+// thread. Free only after every worker that could reference the buffer stops.
+void* platform_sd_alloc_io_buffer(size_t size);
+void  platform_sd_free_io_buffer(void* ptr);
+
 // Run storage_cb(ctx) on a dedicated background worker. The callback owns its
 // shutdown request/state; stop waits a bounded time for it to return rather
 // than blocking the caller indefinitely on stuck filesystem I/O. Start and

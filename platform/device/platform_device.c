@@ -707,6 +707,14 @@ bool platform_sd_preallocate(const char* path, uint64_t size) {
     return esp_vfs_fat_create_contiguous_file(s_sd_root, path, size, true) == ESP_OK;
 }
 
+void* platform_sd_alloc_io_buffer(size_t size) {
+    return heap_caps_malloc(size, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+}
+
+void platform_sd_free_io_buffer(void* ptr) {
+    heap_caps_free(ptr);
+}
+
 // ---------------------------------------------------------------------------
 // Cycle counter (0.5a)
 // ---------------------------------------------------------------------------

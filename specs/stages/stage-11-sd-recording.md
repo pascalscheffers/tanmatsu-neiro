@@ -23,6 +23,59 @@
 | 11j | measure and prime the first bulk SD write | medium | 11i device repro |
 | 11k | run SDMMC at high-speed clock | medium | 11j throughput measurement |
 | 11l | profile SD write ceiling and DMA stdio cache | high | 11k |
+| 11m | use DMA-capable recorder staging | high | 11l device benchmark |
+
+## 11m — Use DMA-capable recorder staging
+
+**Repro:** the 11l device benchmark negotiated four-bit SDMMC at 40 MHz and wrote a contiguous
+128 KiB test extent at 5,463 KiB/s with 32 KiB transfers from an explicitly DMA-capable source.
+The live recorder still takes 234–246 ms per 32 KiB (about 136–139 KiB/s), over 39 times slower
+than the unloaded ceiling and below the required 187.5 KiB/s. Audio remains below budget. The
+benchmark source comes from `heap_caps_malloc(MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL)`; the recorder
+source is a static `.bss` array whose SDMMC DMA capability is not explicit.
+
+**Root cause:** the filesystem, card, bus width, and clock can comfortably sustain the stream.
+The remaining controlled difference is the live write source buffer. Make recorder staging
+explicitly suitable for device SD DMA before changing scheduling or adding another queue. The
+11l A/B also shows a DMA stdio cache adds no throughput at 32 KiB when the source is already
+DMA-capable, so do not add a second cache buffer yet.
+
+**Touch list (8):** `platform/platform.h`, `platform/device/platform_device.c`,
+`platform/host/platform_host.c`, `control/wav_recorder.cpp`, `tests/host/test_wav_recorder.cpp`,
+`specs/MAP.md`, `specs/MEMORY.md`, this file.
+
+**Read list (5):** this 11m work-order; `platform/platform.h:SD card`;
+`control/wav_recorder.cpp:staging globals/flush_staging/wav_recorder_init/shutdown`;
+both platform backends' `platform_sd_preallocate`; `tests/host/test_wav_recorder.cpp:platform
+fakes and suite lifecycle`.
+
+**Reuse:** device `heap_caps_malloc` with `MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL`, host `malloc/free`,
+the existing 32 KiB staging capacity and recorder lifecycle. Allocation remains off the audio
+thread and occurs once at recorder initialization.
+
+**Don't read:** DSP/voice sources, SD profiler implementation, managed components, other stage
+docs, unrelated tests, or `MEMORY-archive.md`.
+
+**Implementation:** add portable `platform_sd_alloc_io_buffer(size)` and
+`platform_sd_free_io_buffer(ptr)` functions. Device returns internal DMA-capable memory; host
+uses ordinary heap memory. Document that this is storage-worker memory, never audio-thread
+allocation. Replace the static recorder staging array with a pointer allocated once before the
+storage worker starts. If allocation fails, expose the existing WORKER_START error and do not
+start capture. Free only after the worker has stopped successfully; if bounded stop fails, retain
+the buffer because the worker may still reference it. Re-init after a successful shutdown must
+allocate and work again. Do not add `setvbuf`, change the 32 KiB size, change write cadence, or
+touch the audio ring. Extend host fakes/tests to cover allocation failure and successful
+shutdown/re-init without leaking or double-freeing.
+
+**Acceptance:** `make format`, `make test`, `make host`, `make build`, and
+`make PROFILE=1 build` pass; membrane grep is clean. Commit one atomic fix and append a tight
+`MEMORY.md` entry with normal/PROFILE size changes. Required hardware retest: record for >10 s
+and capture all `record write`, checkpoint, and finish events. A 32 KiB live write must fall
+below 170.7 ms to sustain PCM; compare it with the prior 234–246 ms range.
+
+**Split-if:** allocation/free cannot be expressed without exposing ESP heap capabilities above
+`platform/`, or the recorder lifecycle can free while a failed-to-stop worker is live. Stop with
+the exact conflict rather than adding a global device-only include to control code.
 
 ## 11l — Profile SD write ceiling and DMA stdio cache
 

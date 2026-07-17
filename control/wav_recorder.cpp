@@ -31,7 +31,7 @@ std::atomic<bool>                 s_shutdown_requested{false};
 std::atomic<bool>                 s_worker_started{false};
 std::atomic<wav_recorder_state_t> s_state{WAV_RECORDER_IDLE};
 std::atomic<wav_recorder_error_t> s_error{WAV_RECORDER_ERROR_NONE};
-uint8_t                           s_pcm_staging[kPcmStagingBytes];
+uint8_t*                          s_pcm_staging;
 char                              s_path[kPathCapacity];
 
 #ifdef SYNTH_PROFILE
@@ -304,7 +304,7 @@ void start() {
 #endif
         return;
     }
-    memset(s_pcm_staging, 0, sizeof(s_pcm_staging));
+    memset(s_pcm_staging, 0, kPcmStagingBytes);
 #ifdef SYNTH_PROFILE
     const uint64_t prime_started = platform_millis();
 #endif
@@ -312,14 +312,14 @@ void start() {
         finish(WAV_RECORDER_ERROR_WRITE, false);
         return;
     }
-    const size_t prime_written = fwrite(s_pcm_staging, 1, sizeof(s_pcm_staging), s_file);
+    const size_t prime_written = fwrite(s_pcm_staging, 1, kPcmStagingBytes, s_file);
     const bool   prime_flushed = fflush(s_file) == 0;
 #ifdef SYNTH_PROFILE
-    printf("[PROFILE] record prime requested=%u committed=%u elapsed_ms=%llu dropped=%u\n",
-           (unsigned)sizeof(s_pcm_staging), (unsigned)prime_written,
-           (unsigned long long)(platform_millis() - prime_started), (unsigned)record_ring_dropped_blocks());
+    printf("[PROFILE] record prime requested=%u committed=%u elapsed_ms=%llu dropped=%u\n", (unsigned)kPcmStagingBytes,
+           (unsigned)prime_written, (unsigned long long)(platform_millis() - prime_started),
+           (unsigned)record_ring_dropped_blocks());
 #endif
-    if (prime_written != sizeof(s_pcm_staging) || !prime_flushed || fseek(s_file, 0, SEEK_SET) != 0) {
+    if (prime_written != kPcmStagingBytes || !prime_flushed || fseek(s_file, 0, SEEK_SET) != 0) {
         finish(WAV_RECORDER_ERROR_WRITE, false);
         return;
     }
@@ -403,6 +403,12 @@ extern "C" bool wav_recorder_init(void) {
     s_shutdown_requested.store(false, std::memory_order_relaxed);
     s_error.store(WAV_RECORDER_ERROR_NONE, std::memory_order_relaxed);
     s_state.store(WAV_RECORDER_IDLE, std::memory_order_relaxed);
+    s_pcm_staging = static_cast<uint8_t*>(platform_sd_alloc_io_buffer(kPcmStagingBytes));
+    if (s_pcm_staging == nullptr) {
+        s_error.store(WAV_RECORDER_ERROR_WORKER_START, std::memory_order_release);
+        s_state.store(WAV_RECORDER_ERROR, std::memory_order_release);
+        return false;
+    }
     if (platform_storage_worker_start(storage_worker, nullptr)) {
         s_worker_started.store(true, std::memory_order_release);
 #ifdef SYNTH_PROFILE
@@ -410,6 +416,8 @@ extern "C" bool wav_recorder_init(void) {
 #endif
         return true;
     }
+    platform_sd_free_io_buffer(s_pcm_staging);
+    s_pcm_staging = nullptr;
     s_error.store(WAV_RECORDER_ERROR_WORKER_START, std::memory_order_release);
     s_state.store(WAV_RECORDER_ERROR, std::memory_order_release);
 #ifdef SYNTH_PROFILE
@@ -424,6 +432,8 @@ extern "C" bool wav_recorder_shutdown(void) {
     s_shutdown_requested.store(true, std::memory_order_release);
     if (!platform_storage_worker_stop()) return false;
     s_worker_started.store(false, std::memory_order_release);
+    platform_sd_free_io_buffer(s_pcm_staging);
+    s_pcm_staging = nullptr;
     return true;
 }
 

@@ -30,6 +30,10 @@ std::atomic<bool>     s_preallocate_fails;
 std::atomic<uint64_t> s_preallocated_size;
 std::atomic<bool>     s_worker_done{true};
 bool                  s_worker_start_fails;
+bool                  s_io_alloc_fails;
+unsigned              s_io_alloc_calls;
+unsigned              s_io_free_calls;
+unsigned              s_worker_start_calls;
 std::thread           s_worker;
 
 uint32_t le32(const std::vector<uint8_t>& bytes, size_t offset) {
@@ -81,6 +85,10 @@ void reset(const char* suffix) {
     s_preallocate_fails        = false;
     s_preallocated_size        = 0;
     s_worker_start_fails       = false;
+    s_io_alloc_fails           = false;
+    s_io_alloc_calls           = 0;
+    s_io_free_calls            = 0;
+    s_worker_start_calls       = 0;
     TEST_ASSERT(wav_recorder_init(), "start recorder worker");
 }
 
@@ -174,6 +182,16 @@ extern "C" bool platform_sd_preallocate(const char* path, uint64_t size) {
     return true;
 }
 
+extern "C" void* platform_sd_alloc_io_buffer(size_t size) {
+    ++s_io_alloc_calls;
+    return s_io_alloc_fails ? nullptr : malloc(size);
+}
+
+extern "C" void platform_sd_free_io_buffer(void* ptr) {
+    if (ptr != nullptr) ++s_io_free_calls;
+    free(ptr);
+}
+
 extern "C" uint64_t platform_millis(void) {
     return s_millis.load();
 }
@@ -183,6 +201,7 @@ extern "C" void platform_sleep_ms(uint32_t ms) {
 }
 
 extern "C" bool platform_storage_worker_start(void (*storage_cb)(void*), void* ctx) {
+    ++s_worker_start_calls;
     if (s_worker_start_fails || s_worker.joinable()) return false;
     s_worker_done = false;
     s_worker      = std::thread([storage_cb, ctx]() {
@@ -206,14 +225,54 @@ void test_wav_recorder_suite() {
     printf("--- WavRecorder (async recoverable SD PCM writer) ---\n");
 
     {
+        test_begin("staging allocation failure is visible");
+        TEST_ASSERT(wav_recorder_shutdown(), "no previous worker");
+        s_io_alloc_fails     = true;
+        s_io_alloc_calls     = 0;
+        s_io_free_calls      = 0;
+        s_worker_start_calls = 0;
+        TEST_ASSERT(!wav_recorder_init(), "staging allocation fails");
+        TEST_ASSERT(wav_recorder_state() == WAV_RECORDER_ERROR, "allocation failure enters error");
+        TEST_ASSERT(wav_recorder_error() == WAV_RECORDER_ERROR_WORKER_START, "allocation failure reason");
+        TEST_ASSERT(s_io_alloc_calls == 1, "one staging allocation attempt");
+        TEST_ASSERT(s_io_free_calls == 0, "failed allocation is not freed");
+        TEST_ASSERT(s_worker_start_calls == 0, "worker does not start without staging");
+        TEST_ASSERT(wav_recorder_shutdown(), "allocation failure shutdown is harmless");
+        s_io_alloc_fails = false;
+        test_pass();
+    }
+
+    {
         test_begin("worker start failure is visible");
         TEST_ASSERT(wav_recorder_shutdown(), "no previous worker");
         s_worker_start_fails = true;
+        s_io_alloc_calls     = 0;
+        s_io_free_calls      = 0;
         TEST_ASSERT(!wav_recorder_init(), "worker start fails");
         TEST_ASSERT(wav_recorder_state() == WAV_RECORDER_ERROR, "start failure enters error");
         TEST_ASSERT(wav_recorder_error() == WAV_RECORDER_ERROR_WORKER_START, "start failure reason");
+        TEST_ASSERT(s_io_alloc_calls == 1 && s_io_free_calls == 1, "failed worker start releases staging");
         TEST_ASSERT(wav_recorder_shutdown(), "failed start shutdown is harmless");
+        TEST_ASSERT(s_io_free_calls == 1, "failed start staging is freed once");
         s_worker_start_fails = false;
+        test_pass();
+    }
+
+    {
+        test_begin("shutdown and re-init replace staging once");
+        TEST_ASSERT(wav_recorder_shutdown(), "no previous worker");
+        s_io_alloc_calls = 0;
+        s_io_free_calls  = 0;
+        TEST_ASSERT(wav_recorder_init(), "first worker starts");
+        TEST_ASSERT(s_io_alloc_calls == 1 && s_io_free_calls == 0, "first staging allocated");
+        TEST_ASSERT(wav_recorder_shutdown(), "first worker stops");
+        TEST_ASSERT(s_io_free_calls == 1, "first staging freed");
+        TEST_ASSERT(wav_recorder_shutdown(), "repeated shutdown is harmless");
+        TEST_ASSERT(s_io_free_calls == 1, "repeated shutdown does not double-free");
+        TEST_ASSERT(wav_recorder_init(), "second worker starts");
+        TEST_ASSERT(s_io_alloc_calls == 2, "re-init allocates replacement staging");
+        TEST_ASSERT(wav_recorder_shutdown(), "second worker stops");
+        TEST_ASSERT(s_io_free_calls == 2, "replacement staging freed once");
         test_pass();
     }
 
@@ -231,11 +290,13 @@ void test_wav_recorder_suite() {
         TEST_ASSERT(elapsed < std::chrono::milliseconds(10), "control snapshots return promptly");
         const auto stop_begin = std::chrono::steady_clock::now();
         TEST_ASSERT(!wav_recorder_shutdown(), "stalled worker reports bounded stop timeout");
+        TEST_ASSERT(s_io_free_calls == 0, "failed stop retains staging");
         const auto stop_elapsed = std::chrono::steady_clock::now() - stop_begin;
         TEST_ASSERT(stop_elapsed < std::chrono::milliseconds(250), "stop timeout remains bounded");
         s_stall_sd = false;
         wait_until([]() { return s_worker_done.load(); }, "released worker exits");
         TEST_ASSERT(wav_recorder_shutdown(), "released worker joins");
+        TEST_ASSERT(s_io_free_calls == 1, "successful stop frees retained staging");
         remove_tree(s_root);
         test_pass();
     }

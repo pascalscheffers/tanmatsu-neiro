@@ -1419,6 +1419,22 @@ error without revoking SD availability. The mount log now reports actual host wi
 recording's `record write` lines; compare best unloaded/default-vs-cache rates with live throughput
 and 187.5 KiB/s before considering recorder cache integration.
 
+## 2026-07-17 — Stage 11m: DMA-capable recorder staging
+
+Added portable storage-worker I/O allocation/free seams: device uses internal
+`MALLOC_CAP_DMA` memory and host uses `malloc`. Recorder init now allocates its unchanged 32 KiB
+staging buffer before worker start; allocation/start failure exposes WORKER_START, successful
+shutdown frees once, and a bounded stop timeout retains the still-referenced buffer. Re-init
+allocates a replacement. Host regressions cover allocation failure, cleanup, timeout retention,
+double-free protection, and re-init.
+
+**Verify:** `make format` ✅, `make test` ✅, `make host` ✅, `make build` ✅,
+`make PROFILE=1 build` ✅, membrane clean. Normal: image 1,184,790 B, DIRAM 241,426/576,464 B
+(41.88%). PROFILE: image 1,193,666 B, DIRAM 373,462/576,464 B (64.78%). Both recover 32,760 B
+static DIRAM; the 32 KiB staging allocation now occurs at runtime. **NEXT:** record >10 s and
+capture all `record write`, checkpoint, and finish events; 32 KiB live writes must fall below
+170.7 ms versus the prior 234–246 ms range.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
