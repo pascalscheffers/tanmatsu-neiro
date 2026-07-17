@@ -16,18 +16,20 @@ constexpr uint32_t kBytesPerFrame    = 4;
 constexpr uint32_t kMaxDataBytes     = UINT32_MAX - 36u;
 constexpr uint64_t kCheckpointMillis = 1000;
 constexpr size_t   kPathCapacity     = 512;
-constexpr size_t   kDrainBatchBlocks = 16;
+constexpr size_t   kPcmStagingBlocks = 128;
+constexpr size_t   kPcmStagingBytes  = kPcmStagingBlocks * kRecordBlockFrames * kBytesPerFrame;
 constexpr uint32_t kWorkerSleepMs    = 1;
 
 FILE*                             s_file;
 uint32_t                          s_data_bytes;
+size_t                            s_staged_bytes;
 uint64_t                          s_checkpoint_millis;
 std::atomic<bool>                 s_want_record{false};
 std::atomic<bool>                 s_shutdown_requested{false};
 std::atomic<bool>                 s_worker_started{false};
 std::atomic<wav_recorder_state_t> s_state{WAV_RECORDER_IDLE};
 std::atomic<wav_recorder_error_t> s_error{WAV_RECORDER_ERROR_NONE};
-uint8_t                           s_pcm_batch[kDrainBatchBlocks * kRecordBlockFrames * kBytesPerFrame];
+uint8_t                           s_pcm_staging[kPcmStagingBytes];
 
 void put_le16(uint8_t* out, uint16_t value) {
     out[0] = (uint8_t)value;
@@ -70,8 +72,17 @@ bool patch_header() {
     return fseek(s_file, 0, SEEK_END) == 0;
 }
 
+bool flush_staging() {
+    if (s_staged_bytes == 0) return true;
+    const size_t bytes_written = fwrite(s_pcm_staging, 1, s_staged_bytes, s_file);
+    s_data_bytes              += (uint32_t)bytes_written;
+    const bool complete        = bytes_written == s_staged_bytes;
+    s_staged_bytes             = 0;
+    return complete;
+}
+
 bool checkpoint() {
-    return patch_header() && fflush(s_file) == 0;
+    return flush_staging() && patch_header() && fflush(s_file) == 0;
 }
 
 bool close_file() {
@@ -83,29 +94,28 @@ bool close_file() {
 
 bool drain_ring_batch(wav_recorder_error_t& error, bool& caught_up) {
     RecordBlock block;
-    size_t      drained     = 0;
-    size_t      batch_bytes = 0;
-    while (drained < kDrainBatchBlocks && record_ring_pop(block)) {
+    size_t      drained = 0;
+    bool        flushed = false;
+    while (drained < kPcmStagingBlocks && !flushed && record_ring_pop(block)) {
         const uint32_t bytes = (uint32_t)block.frame_count * kBytesPerFrame;
-        if (bytes > kMaxDataBytes - s_data_bytes - batch_bytes) {
+        if (bytes > kMaxDataBytes - s_data_bytes - s_staged_bytes) {
             error = WAV_RECORDER_ERROR_SIZE_LIMIT;
             return false;
         }
         for (size_t i = 0; i < (size_t)block.frame_count * 2; ++i) {
-            put_le16(s_pcm_batch + batch_bytes + i * 2, (uint16_t)block.samples[i]);
+            put_le16(s_pcm_staging + s_staged_bytes, (uint16_t)block.samples[i]);
+            s_staged_bytes += 2;
+            if (s_staged_bytes == kPcmStagingBytes) {
+                if (!flush_staging()) {
+                    error = WAV_RECORDER_ERROR_WRITE;
+                    return false;
+                }
+                flushed = true;
+            }
         }
-        batch_bytes += bytes;
         ++drained;
     }
-    caught_up = drained < kDrainBatchBlocks;
-    if (batch_bytes != 0) {
-        const size_t bytes_written = fwrite(s_pcm_batch, 1, batch_bytes, s_file);
-        s_data_bytes              += (uint32_t)bytes_written;
-        if (bytes_written != batch_bytes) {
-            error = WAV_RECORDER_ERROR_WRITE;
-            return false;
-        }
-    }
+    caught_up = !flushed && drained < kPcmStagingBlocks;
     return true;
 }
 
@@ -123,7 +133,14 @@ void finish(wav_recorder_error_t error, bool drain) {
                 if (!caught_up) platform_sleep_ms(kWorkerSleepMs);
             }
         }
-        if (!checkpoint() && error == WAV_RECORDER_ERROR_NONE) {
+        bool finalized;
+        if (drain) {
+            finalized = checkpoint();
+        } else {
+            s_staged_bytes = 0;
+            finalized      = patch_header() && fflush(s_file) == 0;
+        }
+        if (!finalized && error == WAV_RECORDER_ERROR_NONE) {
             error = WAV_RECORDER_ERROR_WRITE;
         }
         if (!close_file() && error == WAV_RECORDER_ERROR_NONE) {
@@ -185,6 +202,7 @@ bool make_recording_path(char (&path)[kPathCapacity], wav_recorder_error_t& erro
 }
 
 void start() {
+    s_staged_bytes             = 0;
     wav_recorder_error_t error = WAV_RECORDER_ERROR_NONE;
     if (!platform_sd_available()) {
         s_error.store(WAV_RECORDER_ERROR_SD_UNAVAILABLE, std::memory_order_release);

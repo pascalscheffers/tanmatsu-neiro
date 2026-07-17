@@ -1324,6 +1324,18 @@ full blocks and a short tail.
 `make size`: image 1,183,060 B; app partition 44% free; DIRAM 244,998/576,464 B (42.5%), including
 114,624 B `.bss`. **NEXT:** on device, record for >10 s and inspect the finalized WAV.
 
+## 2026-07-17 — Stage 11h: true bulk SD writes (COMPLETE)
+
+The storage worker now retains PCM in one persistent 32 KiB static staging buffer and writes only
+when that buffer is full during steady state. Checkpoints and drained finalization flush short tails;
+RIFF preflight includes staged bytes, and partial writes retain only the committed prefix. A host
+regression proves a full staging unit reaches the file before stop/checkpoint; existing tail,
+checkpoint, overflow, card-loss, and write-failure coverage remains green.
+
+**Verify:** `make format` ✅, `make test` ✅, `make host` ✅, `make build` ✅, membrane clean.
+`make size`: image 1,183,288 B; app partition 44% free; DIRAM 273,674/576,464 B (47.47%), including
+143,300 B `.bss`. **NEXT:** on device, record for >10 s, stop, and inspect the finalized WAV.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

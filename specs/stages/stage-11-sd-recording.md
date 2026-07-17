@@ -18,6 +18,55 @@
 | 11f-i | storage-worker platform seam + SD diagnostics | medium | 11e device freeze repro |
 | 11f-ii | non-blocking recorder requests + worker I/O | high | 11f-i |
 | 11g | aggregate SD writes to sustain capture | high | 11f-ii device repro |
+| 11h | retain PCM until a true bulk write | high | 11g device repro |
+
+## 11h — Retain PCM until a true bulk write
+
+**Repro:** after 11g, six device recordings still stop with `REC:DROP` after
+0.383–0.440 s (287–330 complete 64-frame blocks), essentially the original 340 ms ring
+limit. The nominal 16-block/4 KiB batch did not materially improve capture.
+
+**Root cause:** the storage worker wakes every 1 ms while the 48 kHz/64-frame producer
+publishes only every 1.333 ms. `drain_ring_batch()` writes whatever it finds immediately,
+so steady state normally issues one 256-byte `fwrite`; the 4 KiB buffer is only a maximum,
+not persistent aggregation. This leaves the original ~750 tiny writes/s intact. Recorder
+memory traffic is below ~1 MiB/s including float reads and ring copies, so memory bandwidth
+is not the observed limit. The card's allocation accounting indicates 32 KiB FAT clusters.
+
+**Touch list (4):** `control/wav_recorder.cpp`, `tests/host/test_wav_recorder.cpp`,
+`specs/MEMORY.md`, `specs/stages/stage-11-sd-recording.md`.
+
+**Read list (4):** this 11h work-order; `control/wav_recorder.cpp:drain_ring_batch/checkpoint/finish/start`;
+`engine/record_ring.h:RecordBlock`; `tests/host/test_wav_recorder.cpp:multi-block/checkpoint/overflow tests`.
+
+**Reuse:** existing `RecordBlock`, RIFF accounting, one-second checkpoint, fixed ring,
+drop-newest failure policy, and storage worker. No allocation and no new filesystem seam.
+
+**Don't read:** DSP/voice sources, platform backends, managed components, other stage docs,
+or `MEMORY-archive.md`.
+
+**Implementation:** replace the per-call maximum batch with a persistent 32 KiB static PCM
+staging buffer (128 full audio blocks). Worker passes pop available ring blocks into the
+staging buffer but do not call `fwrite` until it is full. A full buffer is written once and
+then reused. Before the one-second RIFF checkpoint, and during clean/error finalization after
+the ring is drained, flush any short staged tail before patching the header. Reset staging on
+start. Preflight RIFF capacity using committed plus staged bytes; on a partial write, add only
+the committed prefix to `s_data_bytes`, discard the unwritten staging tail, preserve the first
+meaningful error, and finalize the valid prefix. Keep each steady-state pass bounded to at
+most the staging capacity plus one filesystem call, followed by the existing cooperative
+yield. Do not enlarge or move the audio ring.
+
+**Acceptance:** add a regression that publishes at least one complete 32 KiB staging unit
+and proves it reaches the file before stop/checkpoint, while the existing distinguishable
+multi-block short-tail test proves final tail flushing and exact ordering. Clean stop,
+checkpoint, overflow, card-loss, and write-failure tests remain green. `make format`,
+`make test`, `make host`, `make build`, and membrane grep pass; record device image/DIRAM
+sizes. Commit one atomic fix and append a tight `MEMORY.md` entry. Required hardware retest:
+record for >10 s, stop, and inspect the finalized WAV.
+
+**Split-if:** the additional 32 KiB static buffer does not fit the device DIRAM budget, or
+correct tail/error handling requires a public seam change. Stop with the measured conflict;
+do not move the audio producer ring to PSRAM, enlarge it, or change the drop policy.
 
 ## 11g — Aggregate SD writes to sustain real-time capture
 

@@ -252,6 +252,26 @@ void test_wav_recorder_suite() {
     }
 
     {
+        test_begin("full PCM staging unit writes before finalization");
+        reset("bulk-write");
+        start_recording();
+        s_stall_sd = true;
+        wait_until([]() { return s_sd_call_stalled.load(); }, "worker stalled before staging fill");
+        for (size_t block = 0; block < 128; ++block) {
+            publish(kRecordBlockFrames, 0.01f + (float)(block % 20) / 100.0f);
+        }
+        s_stall_sd = false;
+        wait_until(
+            []() { return read_file(s_root + "/recordings/rec0001.wav").size() == 44 + 128 * kRecordBlockFrames * 4; },
+            "full staging unit reaches file before stop or checkpoint");
+        TEST_ASSERT(wav_recorder_state() == WAV_RECORDER_RECORDING, "bulk write leaves recorder active");
+        stop_recording();
+        assert_header(read_file(s_root + "/recordings/rec0001.wav"), 128 * kRecordBlockFrames * 4);
+        finish_test();
+        test_pass();
+    }
+
+    {
         test_begin("one-second checkpoint patches recoverable sizes");
         reset("checkpoint");
         start_recording();
