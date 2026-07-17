@@ -71,6 +71,8 @@ Paths are relative to repo root. Dependencies live in `managed_components/` (ESP
 - `platform/platform.h` SD seam — `platform_sd_available` + `platform_sd_root`;
   boot-time `/sd` mount on device / `./sd` on host. Architecture: ADR 0024; closed work-orders:
   `specs/stages/stage-11-sd-recording.md`.
+- `platform/platform.h` storage-worker seam — `platform_storage_worker_start/stop`; runs one
+  filesystem callback off the control thread with explicit start failure and bounded shutdown.
 
 ## control/ , ui/ , app/ — the brain (soft-real-time, normal tasks)
 - `control/keyboard.{c,h}` — musical-typing / key input → note + param events.

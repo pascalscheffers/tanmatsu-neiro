@@ -178,6 +178,14 @@ int platform_storage_load(const char* key, void* buf, size_t max_len);
 bool        platform_sd_available(void);
 const char* platform_sd_root(void);
 
+// Run storage_cb(ctx) on a dedicated background worker. The callback owns its
+// shutdown request/state; stop waits a bounded time for it to return rather
+// than blocking the caller indefinitely on stuck filesystem I/O. Start and
+// stop return false if creation fails or the worker does not stop in time.
+// Never call these functions or the callback from the audio thread.
+bool platform_storage_worker_start(void (*storage_cb)(void* ctx), void* ctx);
+bool platform_storage_worker_stop(void);
+
 // ---------------------------------------------------------------------------
 // MIDI input (Stage 5a) — in-only raw byte stream
 // ---------------------------------------------------------------------------

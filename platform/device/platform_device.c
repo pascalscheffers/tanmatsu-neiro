@@ -59,13 +59,16 @@ static void mount_sd_card(void) {
     sd_pwr_ctrl_ldo_config_t ldo_config = {
         .ldo_chan_id = 4,
     };
+    ESP_LOGI(TAG, "SD setup: creating power controller (LDO %d)", ldo_config.ldo_chan_id);
     esp_err_t res = sd_pwr_ctrl_new_on_chip_ldo(&ldo_config, &s_sd_power);
     if (res != ESP_OK) {
-        ESP_LOGW(TAG, "SD power init failed: %s", esp_err_to_name(res));
+        ESP_LOGW(TAG, "SD setup: power creation failed: code=%d (%s)", (int)res, esp_err_to_name(res));
         return;
     }
+    ESP_LOGI(TAG, "SD setup: power controller ready");
     host.pwr_ctrl_handle = s_sd_power;
 
+    ESP_LOGI(TAG, "SD setup: configuring slot %d", host.slot);
     sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
     slot_config.width               = BSP_SDCARD_WIDTH;
     slot_config.clk                 = BSP_SDCARD_CLK;
@@ -75,14 +78,18 @@ static void mount_sd_card(void) {
     slot_config.d2                  = BSP_SDCARD_D2;
     slot_config.d3                  = BSP_SDCARD_D3;
     slot_config.flags              |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
+    ESP_LOGI(TAG, "SD setup: slot configured (width=%d, internal pull-ups)", slot_config.width);
 
+    ESP_LOGI(TAG, "SD setup: mounting filesystem at %s", s_sd_root);
     res = esp_vfs_fat_sdmmc_mount(s_sd_root, &host, &slot_config, &mount_config, &s_sd_card);
     if (res != ESP_OK) {
-        ESP_LOGW(TAG, "SD mount failed (continuing without card): %s", esp_err_to_name(res));
+        ESP_LOGW(TAG, "SD setup: mount failed: code=%d (%s); continuing without card", (int)res, esp_err_to_name(res));
         return;
     }
+    ESP_LOGI(TAG, "SD setup: filesystem mounted");
     s_sd_available = true;
-    ESP_LOGI(TAG, "SD mounted at %s", s_sd_root);
+    ESP_LOGI(TAG, "SD setup: card discovered: name=%s, capacity=%llu MiB", s_sd_card->cid.name,
+             (unsigned long long)s_sd_card->csd.capacity * s_sd_card->csd.sector_size / (1024u * 1024u));
 }
 
 // Largest audio block we will be asked to render; sized once, used by the audio
@@ -749,6 +756,52 @@ void platform_render_task_stop(void) {
         vTaskDelay(pdMS_TO_TICKS(2));
     }
     s_render_task = NULL;
+}
+
+// ---------------------------------------------------------------------------
+// Storage worker
+// ---------------------------------------------------------------------------
+// Below render/control and both USB-host tasks so filesystem latency cannot
+// delay input. The callback must arrange its own cooperative shutdown.
+#define STORAGE_PRIO       1u
+#define STORAGE_STACK_SIZE 8192u
+
+static atomic_bool s_storage_done      = true;
+static void (*s_storage_cb)(void* ctx) = NULL;
+static void* s_storage_ctx             = NULL;
+
+static void storage_task(void* arg) {
+    (void)arg;
+    s_storage_cb(s_storage_ctx);
+    s_storage_done = true;
+    vTaskDelete(NULL);
+}
+
+bool platform_storage_worker_start(void (*storage_cb)(void* ctx), void* ctx) {
+    if (storage_cb == NULL || !s_storage_done) return false;
+
+    s_storage_cb   = storage_cb;
+    s_storage_ctx  = ctx;
+    s_storage_done = false;
+    BaseType_t ok  = xTaskCreatePinnedToCore(storage_task, "storage", STORAGE_STACK_SIZE, NULL, STORAGE_PRIO, NULL, 0);
+    if (ok != pdPASS) {
+        ESP_LOGE(TAG, "storage worker create failed");
+        s_storage_done = true;
+        return false;
+    }
+    return true;
+}
+
+bool platform_storage_worker_stop(void) {
+    if (s_storage_done) return true;
+    for (int i = 0; i < 50 && !s_storage_done; i++) {
+        vTaskDelay(pdMS_TO_TICKS(2));
+    }
+    if (!s_storage_done) {
+        ESP_LOGW(TAG, "storage worker did not stop within 100 ms");
+        return false;
+    }
+    return true;
 }
 
 // ---------------------------------------------------------------------------

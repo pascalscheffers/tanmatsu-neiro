@@ -6,6 +6,8 @@
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include <errno.h>
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -389,6 +391,58 @@ bool platform_render_task_start(void (*render_cb)(void* ctx), void* ctx, uint32_
 
 void platform_render_task_stop(void) {
     // no-op on host
+}
+
+// ---------------------------------------------------------------------------
+// Storage worker
+// ---------------------------------------------------------------------------
+static pthread_t   s_storage_thread;
+static atomic_bool s_storage_done      = true;
+static bool        s_storage_joinable  = false;
+static void (*s_storage_cb)(void* ctx) = NULL;
+static void* s_storage_ctx             = NULL;
+
+static void* storage_thread(void* arg) {
+    (void)arg;
+    s_storage_cb(s_storage_ctx);
+    s_storage_done = true;
+    return NULL;
+}
+
+bool platform_storage_worker_start(void (*storage_cb)(void* ctx), void* ctx) {
+    if (storage_cb == NULL || !s_storage_done || s_storage_joinable) return false;
+
+    s_storage_cb   = storage_cb;
+    s_storage_ctx  = ctx;
+    s_storage_done = false;
+    int err        = pthread_create(&s_storage_thread, NULL, storage_thread, NULL);
+    if (err != 0) {
+        SDL_Log("storage worker create failed: %s", strerror(err));
+        s_storage_done = true;
+        return false;
+    }
+    s_storage_joinable = true;
+    return true;
+}
+
+bool platform_storage_worker_stop(void) {
+    if (!s_storage_joinable) return s_storage_done;
+
+    for (int i = 0; i < 50 && !s_storage_done; i++) {
+        usleep(2000);
+    }
+    if (!s_storage_done) {
+        SDL_Log("storage worker did not stop within 100 ms");
+        return false;
+    }
+
+    int err = pthread_join(s_storage_thread, NULL);
+    if (err != 0) {
+        SDL_Log("storage worker join failed: %s", strerror(err));
+        return false;
+    }
+    s_storage_joinable = false;
+    return true;
 }
 
 // ---------------------------------------------------------------------------
