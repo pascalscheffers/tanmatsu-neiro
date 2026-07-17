@@ -1366,6 +1366,19 @@ alongside `period-max`, `write` avg/max, `errors`, and `short` for the same inte
 this on-device A/B; volume-dependent crackle points past digital transport, while correlated period/
 write spikes or nonzero errors/short writes point at scheduling/I2S/DMA.
 
+## 2026-07-17 — Stage 11i: contiguous one-minute takes (COMPLETE)
+
+Recording start now preallocates an 11,520,044-byte take before enabling capture: contiguous FAT
+clusters on device, sparse extent on host. State remains IDLE through preallocation/header setup;
+PCM is capped at 60 seconds, checkpoints restore the committed cursor, and all finalization paths
+truncate to the exact valid WAV prefix. Preallocation failure removes the partial take and reports
+the existing WRITE error. PROFILE traces distinguish begin/success/failure.
+
+**Verify:** `make format` ✅, `make test` ✅, `make host` ✅, `make build` ✅, membrane clean.
+`make size`: image 1,184,532 B; app partition 43% free; DIRAM 274,186/576,464 B (47.56%), including
+143,812 B `.bss`. **NEXT:** device retest: arm Record, note arming latency, record 10–60 s, stop,
+inspect exact duration/size, and capture PROFILE recorder events.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

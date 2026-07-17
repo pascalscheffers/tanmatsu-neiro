@@ -6,6 +6,7 @@
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -362,6 +363,17 @@ bool platform_sd_available(void) {
 
 const char* platform_sd_root(void) {
     return s_sd_root;
+}
+
+bool platform_sd_preallocate(const char* path, uint64_t size) {
+    const int fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0666);
+    if (fd < 0) return false;
+    bool ok = ftruncate(fd, (off_t)size) == 0;
+    if (close(fd) != 0) ok = false;
+    if (!ok) {
+        unlink(path);
+    }
+    return ok;
 }
 
 // ---------------------------------------------------------------------------

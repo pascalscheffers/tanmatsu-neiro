@@ -68,8 +68,9 @@ Paths are relative to repo root. Dependencies live in `managed_components/` (ESP
   intent, wired as stages reach them (preset storage = Stage 2d).
 - `platform/device/` — ESP-IDF + badge-bsp impl. `platform/host/` — SDL2 + miniaudio impl
   (host pays any P4↔host conversion, ADR 0011).
-- `platform/platform.h` SD seam — `platform_sd_available` + `platform_sd_root`;
-  boot-time `/sd` mount on device / `./sd` on host. Architecture: ADR 0024; closed work-orders:
+- `platform/platform.h` SD seam — `platform_sd_available`, `platform_sd_root`, and path-based
+  `platform_sd_preallocate`; device allocates contiguous FAT clusters while host uses a sparse
+  extent. Boot-time `/sd` mount on device / `./sd` on host. Architecture: ADR 0024; closed work-orders:
   `specs/stages/stage-11-sd-recording.md`.
 - `platform/platform.h` storage-worker seam — `platform_storage_worker_start/stop`; runs one
   filesystem callback off the control thread with explicit start failure and bounded shutdown.
@@ -79,6 +80,8 @@ Paths are relative to repo root. Dependencies live in `managed_components/` (ESP
 - `control/wav_recorder.{h,cpp}` — **`wav_recorder_init/service/shutdown`** asynchronous WAV
   seam. Control publishes an atomic request and reads atomic state/error snapshots; the storage
   worker alone drains audio and owns non-overwriting `recordings/recNNNN.wav` plus finalization.
+  Start preallocates one 60-second take while IDLE; checkpoints restore the committed cursor and
+  finalization truncates away the unused extent.
 - `ui/ui.{cpp,h}` — PAX param pages rendered **from the table** (no model knowledge, ADR 0008).
 - `app/app.{c,h}` — app-level wiring (init order, the main loop); Record requests come only from
   `UIState.norms[ParamId::RECORD]`, with writer failures forcing the UI/engine shadow Off.

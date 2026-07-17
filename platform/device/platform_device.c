@@ -697,6 +697,10 @@ const char* platform_sd_root(void) {
     return s_sd_root;
 }
 
+bool platform_sd_preallocate(const char* path, uint64_t size) {
+    return esp_vfs_fat_create_contiguous_file(s_sd_root, path, size, true) == ESP_OK;
+}
+
 // ---------------------------------------------------------------------------
 // Cycle counter (0.5a)
 // ---------------------------------------------------------------------------

@@ -5,20 +5,22 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <atomic>
 #include "engine/record_ring.h"
 #include "platform/platform.h"
 
 namespace {
 
-constexpr uint32_t kSampleRate       = 48000;
-constexpr uint32_t kBytesPerFrame    = 4;
-constexpr uint32_t kMaxDataBytes     = UINT32_MAX - 36u;
-constexpr uint64_t kCheckpointMillis = 1000;
-constexpr size_t   kPathCapacity     = 512;
-constexpr size_t   kPcmStagingBlocks = 128;
-constexpr size_t   kPcmStagingBytes  = kPcmStagingBlocks * kRecordBlockFrames * kBytesPerFrame;
-constexpr uint32_t kWorkerSleepMs    = 1;
+constexpr uint32_t kSampleRate        = 48000;
+constexpr uint32_t kBytesPerFrame     = 4;
+constexpr uint32_t kMaxDataBytes      = 60u * kSampleRate * kBytesPerFrame;
+constexpr uint64_t kPreallocatedBytes = 44u + (uint64_t)kMaxDataBytes;
+constexpr uint64_t kCheckpointMillis  = 1000;
+constexpr size_t   kPathCapacity      = 512;
+constexpr size_t   kPcmStagingBlocks  = 128;
+constexpr size_t   kPcmStagingBytes   = kPcmStagingBlocks * kRecordBlockFrames * kBytesPerFrame;
+constexpr uint32_t kWorkerSleepMs     = 1;
 
 FILE*                             s_file;
 uint32_t                          s_data_bytes;
@@ -30,6 +32,7 @@ std::atomic<bool>                 s_worker_started{false};
 std::atomic<wav_recorder_state_t> s_state{WAV_RECORDER_IDLE};
 std::atomic<wav_recorder_error_t> s_error{WAV_RECORDER_ERROR_NONE};
 uint8_t                           s_pcm_staging[kPcmStagingBytes];
+char                              s_path[kPathCapacity];
 
 #ifdef SYNTH_PROFILE
 const char* error_name(wav_recorder_error_t error) {
@@ -96,7 +99,7 @@ bool patch_header() {
     if (fseek(s_file, 40, SEEK_SET) != 0 || fwrite(field, 1, sizeof(field), s_file) != sizeof(field)) {
         return false;
     }
-    return fseek(s_file, 0, SEEK_END) == 0;
+    return fseek(s_file, 44u + s_data_bytes, SEEK_SET) == 0;
 }
 
 bool flush_staging() {
@@ -177,6 +180,9 @@ void finish(wav_recorder_error_t error, bool drain) {
         if (!close_file() && error == WAV_RECORDER_ERROR_NONE) {
             error = WAV_RECORDER_ERROR_WRITE;
         }
+        if (truncate(s_path, (off_t)(44u + s_data_bytes)) != 0 && error == WAV_RECORDER_ERROR_NONE) {
+            error = WAV_RECORDER_ERROR_WRITE;
+        }
     }
     s_error.store(error, std::memory_order_release);
     s_state.store(error == WAV_RECORDER_ERROR_NONE ? WAV_RECORDER_IDLE : WAV_RECORDER_ERROR, std::memory_order_release);
@@ -237,6 +243,7 @@ bool make_recording_path(char (&path)[kPathCapacity], wav_recorder_error_t& erro
 }
 
 void start() {
+    s_data_bytes               = 0;
     s_staged_bytes             = 0;
     wav_recorder_error_t error = WAV_RECORDER_ERROR_NONE;
 #ifdef SYNTH_PROFILE
@@ -262,9 +269,25 @@ void start() {
     }
 #ifdef SYNTH_PROFILE
     printf("[PROFILE] record path=%s\n", path);
+    printf("[PROFILE] record preallocate begin path=%s bytes=%llu\n", path, (unsigned long long)kPreallocatedBytes);
 #endif
-    s_file = fopen(path, "wb");
+    if (!platform_sd_preallocate(path, kPreallocatedBytes)) {
+        const int saved_errno = errno;
+        unlink(path);
+        s_error.store(WAV_RECORDER_ERROR_WRITE, std::memory_order_release);
+        s_state.store(WAV_RECORDER_ERROR, std::memory_order_release);
+#ifdef SYNTH_PROFILE
+        printf("[PROFILE] record preallocate failure path=%s errno=%d\n", path, saved_errno);
+#endif
+        return;
+    }
+#ifdef SYNTH_PROFILE
+    printf("[PROFILE] record preallocate success path=%s bytes=%llu\n", path, (unsigned long long)kPreallocatedBytes);
+#endif
+    memcpy(s_path, path, strlen(path) + 1);
+    s_file = fopen(path, "r+b");
     if (s_file == nullptr) {
+        unlink(path);
         s_error.store(WAV_RECORDER_ERROR_OPEN, std::memory_order_release);
         s_state.store(WAV_RECORDER_ERROR, std::memory_order_release);
 #ifdef SYNTH_PROFILE
@@ -274,7 +297,8 @@ void start() {
     }
     uint8_t header[44];
     make_header(header, 0);
-    if (fwrite(header, 1, sizeof(header), s_file) != sizeof(header) || fflush(s_file) != 0) {
+    if (fwrite(header, 1, sizeof(header), s_file) != sizeof(header) || fflush(s_file) != 0 ||
+        fseek(s_file, sizeof(header), SEEK_SET) != 0) {
         finish(WAV_RECORDER_ERROR_WRITE, false);
         return;
     }

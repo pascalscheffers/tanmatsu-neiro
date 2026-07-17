@@ -1,5 +1,6 @@
 // tests/host/test_wav_recorder.cpp — recoverable SD WAV writer tests.
 #include <dirent.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +24,10 @@ std::atomic<bool>     s_available;
 std::atomic<uint64_t> s_millis;
 std::atomic<bool>     s_stall_sd;
 std::atomic<bool>     s_sd_call_stalled;
+std::atomic<bool>     s_stall_preallocate;
+std::atomic<bool>     s_preallocate_call_stalled;
+std::atomic<bool>     s_preallocate_fails;
+std::atomic<uint64_t> s_preallocated_size;
 std::atomic<bool>     s_worker_done{true};
 bool                  s_worker_start_fails;
 std::thread           s_worker;
@@ -66,12 +71,16 @@ void reset(const char* suffix) {
     char path[160];
     snprintf(path, sizeof(path), "/tmp/tanmatsu-wav-%ld-%s-XXXXXX", (long)getpid(), suffix);
     TEST_ASSERT(mkdtemp(path) != nullptr, "make temporary SD root");
-    s_root               = path;
-    s_available          = true;
-    s_millis             = 0;
-    s_stall_sd           = false;
-    s_sd_call_stalled    = false;
-    s_worker_start_fails = false;
+    s_root                     = path;
+    s_available                = true;
+    s_millis                   = 0;
+    s_stall_sd                 = false;
+    s_sd_call_stalled          = false;
+    s_stall_preallocate        = false;
+    s_preallocate_call_stalled = false;
+    s_preallocate_fails        = false;
+    s_preallocated_size        = 0;
+    s_worker_start_fails       = false;
     TEST_ASSERT(wav_recorder_init(), "start recorder worker");
 }
 
@@ -143,6 +152,28 @@ extern "C" const char* platform_sd_root(void) {
     return s_root.c_str();
 }
 
+extern "C" bool platform_sd_preallocate(const char* path, uint64_t size) {
+    if (s_stall_preallocate.load()) {
+        s_preallocate_call_stalled.store(true);
+        while (s_stall_preallocate.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (s_preallocate_fails.load()) return false;
+    const int fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0666);
+    if (fd < 0) return false;
+    bool ok = ftruncate(fd, (off_t)size) == 0;
+    if (close(fd) != 0) ok = false;
+    if (!ok) {
+        unlink(path);
+        return false;
+    }
+    struct stat st;
+    TEST_ASSERT(stat(path, &st) == 0, "stat preallocated take");
+    s_preallocated_size = (uint64_t)st.st_size;
+    TEST_ASSERT(wav_recorder_state() == WAV_RECORDER_IDLE, "preallocation precedes RECORDING");
+    TEST_ASSERT(!record_ring_enabled(), "capture disabled during preallocation");
+    return true;
+}
+
 extern "C" uint64_t platform_millis(void) {
     return s_millis.load();
 }
@@ -210,6 +241,40 @@ void test_wav_recorder_suite() {
     }
 
     {
+        test_begin("preallocation keeps recorder idle and capture disabled");
+        reset("preallocate-stall");
+        s_stall_preallocate = true;
+        wav_recorder_service(true);
+        wait_until([]() { return s_preallocate_call_stalled.load(); }, "worker entered stalled preallocation");
+        TEST_ASSERT(wav_recorder_state() == WAV_RECORDER_IDLE, "stalled preallocation stays idle");
+        TEST_ASSERT(!record_ring_enabled(), "stalled preallocation keeps capture disabled");
+        s_stall_preallocate = false;
+        wait_for_state(WAV_RECORDER_RECORDING, "released preallocation starts recording");
+        TEST_ASSERT(s_preallocated_size.load() == 11520044u, "one-minute logical extent exists before recording");
+        stop_recording();
+        assert_header(read_file(s_root + "/recordings/rec0001.wav"), 0);
+        finish_test();
+        test_pass();
+    }
+
+    {
+        test_begin("preallocation failure is visible and leaves no take");
+        reset("preallocate-failure");
+        s_preallocate_fails = true;
+        wav_recorder_service(true);
+        wait_for_state(WAV_RECORDER_ERROR, "preallocation failure enters error");
+        TEST_ASSERT(wav_recorder_error() == WAV_RECORDER_ERROR_WRITE, "preallocation failure reason");
+        TEST_ASSERT(!record_ring_enabled(), "failed preallocation never enables capture");
+        struct stat st;
+        TEST_ASSERT(stat((s_root + "/recordings/rec0001.wav").c_str(), &st) != 0 && errno == ENOENT,
+                    "failed preallocation removes partial take");
+        wav_recorder_service(false);
+        wait_for_state(WAV_RECORDER_IDLE, "release clears preallocation error");
+        finish_test();
+        test_pass();
+    }
+
+    {
         test_begin("exact header, payload, clean stop, no overwrite");
         reset("clean");
         const std::string recordings = s_root + "/recordings";
@@ -220,6 +285,7 @@ void test_wav_recorder_suite() {
         fclose(old);
 
         start_recording();
+        TEST_ASSERT(s_preallocated_size.load() == 11520044u, "successful start preallocates one minute");
         s_stall_sd = true;
         wait_until([]() { return s_sd_call_stalled.load(); }, "worker stalled before packed batch");
         for (size_t block = 0; block < 15; ++block) {
@@ -262,7 +328,16 @@ void test_wav_recorder_suite() {
         }
         s_stall_sd = false;
         wait_until(
-            []() { return read_file(s_root + "/recordings/rec0001.wav").size() == 44 + 128 * kRecordBlockFrames * 4; },
+            []() {
+                FILE* file = fopen((s_root + "/recordings/rec0001.wav").c_str(), "rb");
+                if (file == nullptr || fseek(file, 44, SEEK_SET) != 0) {
+                    if (file != nullptr) fclose(file);
+                    return false;
+                }
+                const int first_pcm_byte = fgetc(file);
+                fclose(file);
+                return first_pcm_byte != 0 && first_pcm_byte != EOF;
+            },
             "full staging unit reaches file before stop or checkpoint");
         TEST_ASSERT(wav_recorder_state() == WAV_RECORDER_RECORDING, "bulk write leaves recorder active");
         stop_recording();
@@ -282,12 +357,13 @@ void test_wav_recorder_suite() {
         wait_until(
             []() {
                 const auto bytes = read_file(s_root + "/recordings/rec0001.wav");
-                return bytes.size() == 60 && le32(bytes, 40) == 16;
+                return bytes.size() == 11520044u && le32(bytes, 40) == 16;
             },
             "checkpoint patches sizes");
         const std::vector<uint8_t> bytes = read_file(s_root + "/recordings/rec0001.wav");
-        assert_header(bytes, 16);
+        TEST_ASSERT(le32(bytes, 4) == 52 && le32(bytes, 40) == 16, "checkpoint header sizes");
         stop_recording();
+        assert_header(read_file(s_root + "/recordings/rec0001.wav"), 16);
         finish_test();
         test_pass();
     }

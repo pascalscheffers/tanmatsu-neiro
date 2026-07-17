@@ -19,6 +19,7 @@
 | 11f-ii | non-blocking recorder requests + worker I/O | high | 11f-i |
 | 11g | aggregate SD writes to sustain capture | high | 11f-ii device repro |
 | 11h | retain PCM until a true bulk write | high | 11g device repro |
+| 11i | preallocate a one-minute contiguous take | high | 11h device repro |
 
 ## 11h — Retain PCM until a true bulk write
 
@@ -67,6 +68,60 @@ record for >10 s, stop, and inspect the finalized WAV.
 **Split-if:** the additional 32 KiB static buffer does not fit the device DIRAM budget, or
 correct tail/error handling requires a public seam change. Stop with the measured conflict;
 do not move the audio producer ring to PSRAM, enlarge it, or change the drop policy.
+
+## 11i — Preallocate a one-minute contiguous take
+
+**Repro:** after 11h, the first 32 KiB filesystem write commits, then blocks for longer than the
+255-block audio ring's ~340 ms reserve. The error prefix is exact: 32,768 committed bytes plus
+65,280 drained ring bytes gives the final 98,048-byte valid prefix. Header creation and flush
+already complete before capture starts, so header-only housekeeping does not prevent the stall.
+
+**Root cause:** FAT cluster allocation still occurs in the live recording path. The storage
+worker cannot drain the ring while blocked in `fwrite`, so any allocation/write stall longer than
+the ring reserve causes the deliberate drop-newest error. ESP-IDF 5.5 provides
+`esp_vfs_fat_create_contiguous_file(..., alloc_now=true)`, a vetted wrapper over FatFs
+`f_expand`, for allocating the cluster chain before opening the stdio stream.
+
+**Touch list (8):** `platform/platform.h`, `platform/device/platform_device.c`,
+`platform/host/platform_host.c`, `control/wav_recorder.cpp`,
+`tests/host/test_wav_recorder.cpp`, `specs/MAP.md`, `specs/MEMORY.md`, this file.
+
+**Read list (5):** this 11i work-order; ADR 0024 §2–3; `control/wav_recorder.cpp:start/finish/
+patch_header/drain_ring_batch`; `platform/platform.h:SD card`; both platform backends'
+`platform_sd_available/platform_sd_root` implementations.
+
+**Reuse:** ESP-IDF's `esp_vfs_fat_create_contiguous_file` with `alloc_now=true`, the existing
+storage-worker start transition, `WAV_RECORDER_ERROR_WRITE`, libc `truncate`, and the current WAV
+header/checkpoint/finalization machinery. Do not add a second writer or enlarge the audio ring.
+
+**Don't read:** DSP/voice sources, managed-component sources, other stage docs,
+`MEMORY-archive.md`, or unrelated platform code.
+
+**Implementation:** add a path-based portable platform preallocation seam. Device creates an
+empty contiguous file of exactly `44 + 60 * 192000 = 11,520,044` bytes using the ESP-IDF helper;
+host creates the same logical extent with a sparse `ftruncate` so tests stay cheap. On failure,
+remove any partial file and report the existing write error. In `start()`, complete path choice,
+preallocation, reopen in update mode, zero-length WAV-header write+flush, and seek to byte 44
+before clearing the ring, publishing RECORDING, or enabling capture. Cap accepted PCM at exactly
+11,520,000 data bytes so the live path never extends the file. Header checkpointing must restore
+the data cursor to `44 + committed_bytes`, not the preallocated physical end. Every finalization
+path closes and truncates the file to `44 + committed_bytes`; preserve the first meaningful error.
+PROFILE logs must distinguish preallocation begin/success/failure. Do not add an arming enum: the
+existing IDLE snapshot is authoritative until all housekeeping succeeds.
+
+**Acceptance:** a host regression stalls preallocation and proves state remains IDLE and the
+audio ring remains disabled; successful start observes the preallocated logical extent before
+RECORDING; clean stop and checkpoint tests prove exact header/payload and no zero tail; a forced
+preallocation failure enters visible WRITE error without enabling capture or leaving a file.
+Existing overflow, card-loss, and write-failure tests remain green. `make format`, `make test`,
+`make host`, `make build`, `make size`, and membrane grep pass. Commit atomically and append a
+tight MEMORY entry. Required device retest: arm Record, note arming latency, record for 10–60 s,
+stop, inspect exact WAV duration/size, and capture PROFILE recorder events.
+
+**Split-if:** the ESP-IDF contiguous-file helper is unavailable to the device target, host sparse
+preallocation is not portable within the current build, or final truncation needs a new public
+filesystem-handle abstraction. Stop with the exact conflict rather than falling back to writing
+zeros or allocating during capture.
 
 ## 11g — Aggregate SD writes to sustain real-time capture
 

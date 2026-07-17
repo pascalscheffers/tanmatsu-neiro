@@ -195,6 +195,11 @@ int platform_storage_load(const char* key, void* buf, size_t max_len);
 bool        platform_sd_available(void);
 const char* platform_sd_root(void);
 
+// Create an empty file at path with its full logical extent allocated before
+// capture starts. Device storage makes the extent contiguous; the host may use
+// a sparse file. On failure, callers remove any partial file.
+bool platform_sd_preallocate(const char* path, uint64_t size);
+
 // Run storage_cb(ctx) on a dedicated background worker. The callback owns its
 // shutdown request/state; stop waits a bounded time for it to return rather
 // than blocking the caller indefinitely on stuck filesystem I/O. Start and
