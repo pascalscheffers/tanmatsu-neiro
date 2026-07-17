@@ -25,6 +25,59 @@
 | 11l | profile SD write ceiling and DMA stdio cache | high | 11k |
 | 11m | use DMA-capable recorder staging | high | 11l device benchmark |
 | 11n | isolate storage worker from core-0 starvation | medium | 11m device retest |
+| 11o | separate fresh-media and WAV-alignment cost | medium | 11n device retest |
+
+## 11o — Separate fresh-media and WAV-alignment cost
+
+**Status:** implemented; hardware retest pending.
+
+**Repro:** 11n is active (`storage worker started core=1 priority=1`) but the recorder still
+takes 238–260 ms per 32 KiB and overflows after 98,304 committed bytes. The 11l benchmark's
+first pass over its newly allocated 128 KiB extent took 1,124 ms (113 KiB/s), while every later
+case reopened and overwrote that same extent in 24–67 ms. It therefore did not establish a
+5.5 MiB/s fresh-write ceiling. It also wrote at offset 0, while WAV PCM starts at offset 44 and
+forces a partial-sector path around otherwise bulk-aligned transfers.
+
+**Root cause:** the earlier benchmark compared aligned overwrite traffic with unaligned fresh
+recording traffic, so its scheduling and DMA-buffer conclusions were based on a false ceiling.
+The current device evidence proves sustained recorder throughput is below 187.5 KiB/s, but does
+not yet distinguish fresh-media latency from the 44-byte payload offset. Measure that 2×2 split
+before changing the RIFF layout or physically initializing an entire take.
+
+**Touch list (3):** `platform/device/sd_profile.c`, `specs/MEMORY.md`, this file.
+
+**Read list (3):** this 11o work-order; `platform/device/sd_profile.c:sd_profile_run/
+benchmark_case`; `sniff.log:SD setup/sdbench/storage worker/record write`.
+
+**Reuse:** `esp_vfs_fat_create_contiguous_file`, the existing 32 KiB internal DMA-capable
+source buffer, `fopen`/`fseek`/`fwrite`/`fflush`, and PROFILE-only boot invocation. No recorder,
+task, ring, filesystem configuration, or public seam change.
+
+**Don't read:** recorder implementation, DSP/voice sources, host backend, managed components,
+other stage docs, tests, or `MEMORY-archive.md`.
+
+**Implementation:** replace the misleading multi-chunk/cache benchmark with two simultaneously
+allocated temporary extents so neither case can reuse the other's sectors. One extent reserves
+128 KiB of payload beginning at offset 44; the other reserves the same payload beginning at
+offset 4096, representing a legal sector-aligned padded RIFF layout. For each extent, measure
+exactly 128 KiB as four 32 KiB `fwrite` calls plus `fflush`, first on the newly allocated extent
+and then after reopen/seek as an overwrite. Keep the same explicit DMA-capable source. Log
+`phase=fresh|overwrite`, `offset=44|4096`, chunk, bytes, elapsed milliseconds, and KiB/s. Create
+and retain both distinct files before either fresh pass; clean up both files and all allocations
+on every error path while preserving the first error. Remove the unused stdio-cache allocation
+and old chunk-size matrix. Do not modify the live recorder based on the result in this job.
+
+**Acceptance:** `make format`, `make test`, `make host`, `make build`, and
+`make PROFILE=1 build` pass; membrane grep is clean. Commit one atomic diagnostic correction and
+append a tight `MEMORY.md` entry that marks 11n's root-cause claim falsified. Required hardware
+retest: capture all four new `sdbench` lines plus one recorder attempt. If fresh offset 4096 is
+above 187.5 KiB/s while fresh offset 44 is below it, author the padded-RIFF fix. If both fresh
+cases are below the producer, choose between whole-take physical initialization and visible card
+rejection; do not enlarge the finite ring.
+
+**Split-if:** two distinct contiguous temporary extents cannot be kept allocated concurrently,
+or the benchmark cannot guarantee the fresh passes precede their corresponding overwrites. Stop
+without making a recorder change.
 
 ## 11n — Isolate storage worker from core-0 starvation
 

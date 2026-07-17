@@ -1476,3 +1476,8 @@ Opus clears the entry when the gate is resolved.
 ✅ Stage 0.5d — CPU budget & polyphony — **RATIFIED 2026-06-28 (Opus 4.8)**
   Device: ESP32-P4 @ 360 MHz, block 64/48k = 480 000 cyc/blk. **ADR 0003 (8 + unison) stands**.
   Numbers + reasoning: `specs/stages/stage-0.5-results.md`.
+
+### 2026-07-17 — Stage 11o: fresh-media/alignment benchmark
+- Replaced the reused-sector SD matrix with distinct retained 128 KiB payload extents at offsets 44 and 4096; each now logs fresh then overwrite throughput using four 32 KiB DMA-source writes plus flush.
+- 11n's core-starvation root-cause claim is falsified: moving storage to core 1 did not restore recorder throughput, and the earlier 5.5 MiB/s result measured overwrite rather than fresh allocation.
+- Next: hardware-capture all four `sdbench` cases plus one recorder attempt; choose padded RIFF only if fresh 4096 clears 187.5 KiB/s while fresh 44 does not, otherwise decide physical take initialization versus visible card rejection.
