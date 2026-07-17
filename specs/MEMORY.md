@@ -1484,6 +1484,16 @@ are unchanged; the host regression now expects exact 6-block spacing.
 **NEXT (Pascal):** install the PROFILE build and repeat the same onset test. Compare audible
 crackle and transition `over` counts; this is still a diagnostic, not final play-feel tuning.
 
+## 2026-07-17 — Direct note-start interval doubled to 12 blocks (DEVICE A/B PENDING)
+
+The 6-block / 8 ms onset spacing still crackled on device. Doubled
+`kNoteOnStartIntervalBlocks` to 12: starts are now 16 ms apart at 64 frames / 48 kHz, and an
+eight-note chord spans 112 ms first-to-last. Queue ordering, note-off behavior, and ARP routing
+remain unchanged; the host regression now expects exact 12-block spacing.
+
+**NEXT (Pascal):** install the PROFILE build and repeat the same onset test. Compare audible
+crackle and transition `over` counts; this remains a diagnostic, not final play-feel tuning.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

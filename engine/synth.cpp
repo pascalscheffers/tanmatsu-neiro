@@ -358,8 +358,8 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
             }
         }
     } else {
-        // Stage 8 onset A/B: start at most one direct note, then leave five
-        // intervening blocks start-free (6-block / 8 ms start interval).
+        // Stage 8 onset A/B: start at most one direct note, then leave eleven
+        // intervening blocks start-free (12-block / 16 ms start interval).
         // Peek before pop so deferred commands remain ordered and none drop.
         // A note-off already at the queue head bypasses the cooldown; a
         // note-off behind a deferred note-on remains ordered behind it.
