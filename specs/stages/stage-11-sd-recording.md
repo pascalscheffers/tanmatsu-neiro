@@ -78,8 +78,9 @@ consumer and owns every directory/`FILE*` call and all state transitions. State/
 are atomic snapshots. A worker-start failure is visible and forces Record Off. Shutdown
 requests a clean finalize but waits only for the bounded platform stop contract. Preserve the
 first meaningful write/finalization error and check `readdir`, `closedir`, `fflush`, and
-`fclose` failures where they can change correctness. The worker may drain until caught up
-because it can no longer starve control/render; the audio producer always remains wait-free.
+`fclose` failures where they can change correctness. The worker drains only a fixed batch
+before yielding, so it cannot starve lower-priority FreeRTOS idle/watchdog tasks; the audio
+producer always remains wait-free.
 
 **Acceptance:** host tests use a stalled fake storage callback to prove control-side service
 and state reads return while the worker is blocked; start/stop transitions, overflow,

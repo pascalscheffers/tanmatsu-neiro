@@ -1,4 +1,4 @@
-// control/wav_recorder.h — control-thread SD WAV writer (ADR 0024).
+// control/wav_recorder.h — asynchronous SD WAV writer (ADR 0024).
 #pragma once
 
 #include <stdbool.h>

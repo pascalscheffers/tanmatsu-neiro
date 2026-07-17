@@ -54,7 +54,7 @@ an unverified upstream commit.
 The handoff is split by layer:
 
 - `engine/record_ring.{h,cpp}` owns a fixed SPSC block ring. The audio thread converts and
-  publishes one completed stereo block; the control thread pops blocks. It contains no file
+  publishes one completed stereo block; the storage worker pops blocks. It contains no file
   I/O and no platform headers.
 - `control/wav_recorder.{h,cpp}` owns directories, filenames, WAV headers, and `FILE*`. A
   dedicated low-priority storage worker is the sole ring consumer and the only thread that
@@ -78,7 +78,7 @@ atomic dropped-block counter increments and audio continues. The writer treats a
 a recording error, finalizes the valid prefix, and stops rather than silently producing a
 deceptive discontinuous take.
 
-### 3. Write recoverable PCM WAV files on the control thread
+### 3. Write recoverable PCM WAV files on a storage worker
 
 `wav_recorder_service(bool want_record)` runs every control-loop iteration but is non-blocking:
 it atomically publishes the desired state and snapshots worker-owned state/error. The storage
@@ -93,11 +93,15 @@ worker performs the following transitions:
 - write error, card loss, ring overflow, or RIFF 32-bit size exhaustion: disable, finalize
   the valid prefix if possible, close, report an error, and force the UI toggle off.
 
+Each worker pass drains a bounded block batch and then yields. This prevents the priority-1
+storage task from remaining permanently runnable and starving FreeRTOS idle/watchdog work when
+the producer and filesystem happen to run at similar rates.
+
 Format is little-endian RIFF/WAVE, 48 kHz, stereo, signed 16-bit PCM: 192,000 bytes/second.
 Files live in a dedicated directory so future samples/presets do not mix with recordings.
 No existing file is overwritten; exhausting `rec9999.wav` fails visibly.
 
-Once per second while recording, after draining, the control thread checkpoints the header
+Once per second while recording, after draining, the storage worker checkpoints the header
 sizes and calls `fflush`. A clean stop patches them again. Sudden power loss can therefore
 lose or leave unindexed at most the final checkpoint interval instead of leaving an all-zero
 length header. This is not a transactional filesystem guarantee; it is bounded damage with
