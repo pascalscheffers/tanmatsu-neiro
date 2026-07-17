@@ -24,6 +24,49 @@
 | 11k | run SDMMC at high-speed clock | medium | 11j throughput measurement |
 | 11l | profile SD write ceiling and DMA stdio cache | high | 11k |
 | 11m | use DMA-capable recorder staging | high | 11l device benchmark |
+| 11n | isolate storage worker from core-0 starvation | medium | 11m device retest |
+
+## 11n — Isolate storage worker from core-0 starvation
+
+**Repro:** with 11m's explicitly DMA-capable recorder staging, the pre-capture prime still takes
+242 ms and live 32 KiB writes take 237–256 ms, overflowing after the second write. The same card,
+four-bit 40 MHz bus, FatFs path, transfer size, and DMA-capable source write 32 KiB in about 24 ms
+in the 11l boot benchmark. Audio remains below budget. The boot benchmark runs before render,
+control, and USB-host tasks start; the storage worker is later pinned to core 0 at priority 1,
+below control 5, MIDI class 3, render 2, and USB daemon 2.
+
+**Root cause:** the DMA and filesystem paths can exceed the required throughput by a wide margin;
+the remaining measured difference is core-0 scheduling. Wall-clock `fwrite` time grows by roughly
+10x only after higher-priority core-0 tasks exist. Move the low-priority storage worker to core 1,
+where the audio task at `configMAX_PRIORITIES-2` always preempts it, rather than raising storage
+above latency-sensitive MIDI/render work on core 0.
+
+**Touch list (3):** `platform/device/platform_device.c`, `specs/MEMORY.md`, this file.
+
+**Read list (2):** this 11n work-order;
+`platform/device/platform_device.c:audio task/render priority/storage worker`.
+
+**Reuse:** the existing pinned FreeRTOS storage task, `STORAGE_PRIO=1`, audio task core 1 and high
+priority, and PROFILE logs. No new task, seam, queue, or buffer.
+
+**Don't read:** recorder implementation, DSP/voice sources, SD profiler, host backend, managed
+components, other stage docs, tests, or `MEMORY-archive.md`.
+
+**Implementation:** pin the existing storage task to core 1 instead of core 0. Keep priority 1,
+stack, lifecycle, and callback unchanged. Update the priority/affinity comment to document that
+audio always preempts storage and that storage no longer competes with control/render/USB on
+core 0. In PROFILE builds, log the storage worker's configured core and priority once when it
+starts. Do not change audio affinity/priority, storage priority, SD settings, buffering, or
+recorder policy.
+
+**Acceptance:** `make format`, `make test`, `make host`, `make build`, and
+`make PROFILE=1 build` pass; membrane grep is clean. Commit one atomic fix and append a tight
+`MEMORY.md` entry. Required hardware retest: confirm the worker log reports core 1 / priority 1,
+record for >10 s, and capture `record write`, checkpoint, finish, audio, and I2S PROFILE lines.
+Writes must average below 170.7 ms without audio overruns or new I2S errors/short writes.
+
+**Split-if:** the target is configured unicore or core 1 is unavailable. Stop without raising
+storage priority on core 0.
 
 ## 11m — Use DMA-capable recorder staging
 

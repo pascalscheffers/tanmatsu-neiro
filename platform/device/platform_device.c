@@ -466,8 +466,8 @@ bool platform_audio_start(const platform_audio_config_t* cfg, platform_audio_ren
     atomic_store(&s_audio_run, true);
     atomic_store(&s_audio_done, false);
 
-    // Pin to the app core (1), leaving core 0 for UI/MIDI/SD. High priority so
-    // the DMA queue never starves.
+    // Pin to the app core (1). High priority keeps the DMA queue fed and always
+    // preempts the low-priority storage worker that may share this core.
     BaseType_t ok =
         xTaskCreatePinnedToCore(audio_task, "audio", 4096, NULL, configMAX_PRIORITIES - 2, &s_audio_task, 1);
     if (ok != pdPASS) {
@@ -805,9 +805,11 @@ void platform_render_task_stop(void) {
 // ---------------------------------------------------------------------------
 // Storage worker
 // ---------------------------------------------------------------------------
-// Below render/control and both USB-host tasks so filesystem latency cannot
-// delay input. The callback must arrange its own cooperative shutdown.
+// Core 1 isolates storage from control/render/USB contention on core 0. Audio
+// shares core 1 at configMAX_PRIORITIES-2 and always preempts this priority-1
+// worker. The callback must arrange its own cooperative shutdown.
 #define STORAGE_PRIO       1u
+#define STORAGE_CORE       1u
 #define STORAGE_STACK_SIZE 8192u
 
 static atomic_bool s_storage_done      = true;
@@ -816,6 +818,9 @@ static void* s_storage_ctx             = NULL;
 
 static void storage_task(void* arg) {
     (void)arg;
+#ifdef SYNTH_PROFILE
+    ESP_LOGI(TAG, "storage worker started core=%u priority=%u", STORAGE_CORE, STORAGE_PRIO);
+#endif
     s_storage_cb(s_storage_ctx);
     s_storage_done = true;
     vTaskDelete(NULL);
@@ -827,7 +832,8 @@ bool platform_storage_worker_start(void (*storage_cb)(void* ctx), void* ctx) {
     s_storage_cb   = storage_cb;
     s_storage_ctx  = ctx;
     s_storage_done = false;
-    BaseType_t ok  = xTaskCreatePinnedToCore(storage_task, "storage", STORAGE_STACK_SIZE, NULL, STORAGE_PRIO, NULL, 0);
+    BaseType_t ok =
+        xTaskCreatePinnedToCore(storage_task, "storage", STORAGE_STACK_SIZE, NULL, STORAGE_PRIO, NULL, STORAGE_CORE);
     if (ok != pdPASS) {
         ESP_LOGE(TAG, "storage worker create failed");
         s_storage_done = true;

@@ -1435,6 +1435,21 @@ static DIRAM; the 32 KiB staging allocation now occurs at runtime. **NEXT:** rec
 capture all `record write`, checkpoint, and finish events; 32 KiB live writes must fall below
 170.7 ms versus the prior 234–246 ms range.
 
+## 2026-07-17 — Stage 11n: isolate storage scheduling
+
+Pinned the unchanged priority-1 storage worker to core 1 instead of core 0. The
+`configMAX_PRIORITIES-2` audio task always preempts it there, while control, render, and both USB
+tasks on core 0 no longer starve filesystem progress. PROFILE logs the configured storage core
+and priority once from the started task; stack, lifecycle, callback, buffering, and recorder policy
+are unchanged.
+
+**Verify:** `make format` ✅, `make test` ✅, `make host` ✅, `make build` ✅,
+`make PROFILE=1 build` ✅, membrane clean. Normal: image 1,184,790 B, DIRAM 241,426/576,464 B
+(41.88%). PROFILE: image 1,193,766 B, DIRAM 373,462/576,464 B (64.78%). **NEXT:** confirm the
+worker log reports core 1 / priority 1, record >10 s, and capture `record write`, checkpoint,
+finish, audio, and I2S PROFILE lines; writes must average <170.7 ms with zero audio overruns and
+no new I2S errors or short writes.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
