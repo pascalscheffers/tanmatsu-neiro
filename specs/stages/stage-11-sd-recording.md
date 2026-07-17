@@ -15,6 +15,80 @@
 | 11c | preset-safe table/UI toggle | medium | none |
 | 11d | portable recoverable WAV writer | high | 11a–11b |
 | 11e | app/UI integration and device verification | high | 11a–11d |
+| 11f-i | storage-worker platform seam + SD diagnostics | medium | 11e device freeze repro |
+| 11f-ii | non-blocking recorder requests + worker I/O | high | 11f-i |
+
+## 11f — Keep blocking SD work off the control loop
+
+**Repro:** on device, setting the table-driven Record row to On freezes the app; the sniff
+log has no recorder or SD setup diagnostics around the failure.
+
+**Root cause:** all FATFS operations run synchronously in the control loop, and
+`control/wav_recorder.cpp:drain_ring` drains until the live SPSC ring is empty. The audio
+producer can refill a block every 1.33 ms while a small FATFS write is in progress, so the
+consumer is not guaranteed to observe empty and `wav_recorder_service()` may never return.
+Even a drain cap would still allow one wedged `fwrite`/`fflush` to freeze input and UI work.
+Start/finish failures also lose useful libc error context, while the device mount logs only
+terminal failures.
+
+### 11f-i — Storage worker seam and mount diagnostics
+
+**Touch list (4):** `platform/platform.h`, `platform/device/platform_device.c`,
+`platform/host/platform_host.c`, `specs/MAP.md`.
+
+**Read list (3):** ADR 0024 §2–3; `platform/platform.h:Render task`;
+both backends' `platform_render_task_start/stop` implementations and the device
+`mount_sd_card` function.
+
+**Reuse:** the existing render-task lifecycle pattern, FreeRTOS task APIs on device, pthread
+or C++ thread support already linked by the host target, and ESP-IDF `ESP_LOG*` plus
+`esp_err_to_name`.
+
+**Implementation:** add a portable dedicated storage-worker start/stop seam. Device runs it
+on core 0 below render/control priority with a FATFS-safe fixed stack; host runs the same
+callback on a background thread. Start/stop return explicit success/failure and stop must be
+bounded rather than wait forever for a stuck callback. Add device logs immediately before and
+after SD power creation, slot configuration, mount, and successful card discovery; failure
+logs include operation, numeric code, and `esp_err_to_name`. Do not log from the audio thread.
+
+**Acceptance:** both backends compile, worker start failure is representable, device task
+priority cannot starve render/control/USB, `make host`, `make test`, `make build`, and
+`make format` pass; membrane clean.
+
+**Split-if:** the host needs a new link dependency beyond its existing system thread support.
+
+### 11f-ii — Non-blocking recorder control seam
+
+**Touch list (6):** `control/wav_recorder.h`, `control/wav_recorder.cpp`, `app/app.c`,
+`tests/host/test_wav_recorder.cpp`, `specs/MEMORY.md`, `specs/MAP.md`.
+
+**Read list (4):** ADR 0024 §2–3; `control/wav_recorder.cpp:drain_ring/start/finish`;
+`tests/host/test_wav_recorder.cpp:test_wav_recorder_suite`;
+`app/app.c:recorder service and shutdown`.
+
+**Reuse:** the 11f-i storage worker, existing drop-newest ring/error policy,
+`wav_recorder_error_t`, and C++ atomics.
+
+**Don't read:** DSP/voice sources, UI implementation, managed components, MEMORY archive,
+or unrelated platform code.
+
+**Implementation:** initialize the storage worker explicitly from the app. Make
+`wav_recorder_service` only atomically publish `want_record`; the worker remains the sole ring
+consumer and owns every directory/`FILE*` call and all state transitions. State/error getters
+are atomic snapshots. A worker-start failure is visible and forces Record Off. Shutdown
+requests a clean finalize but waits only for the bounded platform stop contract. Preserve the
+first meaningful write/finalization error and check `readdir`, `closedir`, `fflush`, and
+`fclose` failures where they can change correctness. The worker may drain until caught up
+because it can no longer starve control/render; the audio producer always remains wait-free.
+
+**Acceptance:** host tests use a stalled fake storage callback to prove control-side service
+and state reads return while the worker is blocked; start/stop transitions, overflow,
+card-loss, delayed flush/close errors, header/checkpoint, and payload behavior remain covered.
+`make host`, `make test`, `make build`, and `make format` pass; membrane clean.
+
+**Split-if:** deterministic failure injection requires production-only filesystem hooks, or
+safe shutdown requires forcibly deleting a task while it owns a `FILE*`. Stop and return the
+exact conflict; do not add either behavior silently.
 
 ## 11a — Mount SD behind the platform membrane
 

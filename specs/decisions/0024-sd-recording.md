@@ -56,8 +56,10 @@ The handoff is split by layer:
 - `engine/record_ring.{h,cpp}` owns a fixed SPSC block ring. The audio thread converts and
   publishes one completed stereo block; the control thread pops blocks. It contains no file
   I/O and no platform headers.
-- `control/wav_recorder.{h,cpp}` owns directories, filenames, WAV headers, and `FILE*`. Only
-  the control thread calls it.
+- `control/wav_recorder.{h,cpp}` owns directories, filenames, WAV headers, and `FILE*`. A
+  dedicated low-priority storage worker is the sole ring consumer and the only thread that
+  performs FATFS/libc file operations. The control thread only publishes the requested state
+  and reads atomic recorder status, so a slow or wedged card cannot freeze input or UI work.
 
 Reuse `engine/spsc_ring.h`; clarify its comments so producer/consumer roles are generic.
 Do not add per-sample atomics. A ring item carries a frame count and holds up to the configured
@@ -78,7 +80,9 @@ deceptive discontinuous take.
 
 ### 3. Write recoverable PCM WAV files on the control thread
 
-`wav_recorder_service(bool want_record)` runs every control-loop iteration:
+`wav_recorder_service(bool want_record)` runs every control-loop iteration but is non-blocking:
+it atomically publishes the desired state and snapshots worker-owned state/error. The storage
+worker performs the following transitions:
 
 - rising edge: require mounted SD, create `<sd-root>/recordings`, discard stale ring data,
   choose the next unused `rec0001.wav` … `rec9999.wav`, write a 44-byte PCM header, then
@@ -124,8 +128,10 @@ for a handheld recorder.
 - The enabled recording path adds float-to-int16 conversion plus one block publication.
   Measure PROFILE audio average/max before and during recording and record the delta per
   ADR 0015; do not infer it from host timing.
-- FATFS stalls affect only the control thread. A stall longer than roughly 340 ms causes a
-  visible stopped/error recording, never an audio deadline miss.
+- FATFS stalls affect only the low-priority storage worker. A stall longer than roughly 340 ms
+  fills the ring; the audio producer drops newest without waiting, and the worker reports a
+  visible stopped/error recording when the filesystem call returns. Input, UI, and the audio
+  deadline remain independent of card latency.
 - First-pass limitations are explicit: boot-time card discovery, PCM16 only, no safe-eject,
   no recording recovery beyond periodic header checkpoints, and a 4 GiB RIFF ceiling.
 
