@@ -9,10 +9,10 @@ static constexpr int kNumVoices = 8;
 // semitones (standard wheel range); not a patch param in v1. RPN bend-range ignored.
 static constexpr float kPitchBendRangeSemis = 2.0f;
 
-// Stage 8a: max direct-path (arp off) note-ons admitted per audio block. A
-// chord slamming N note-ons into one block spikes render time (allocator scan
-// + note_on() init x N) past the block budget and starves the blocking I2S
-// DMA. Capping admissions spreads an 8-note chord over ceil(8/2)=4 blocks
-// (~5.3ms at 1333us/block) -- well below strum-perception threshold. Note-offs
-// are never capped (see synth.cpp drain loop).
-static constexpr int kMaxNoteOnsPerBlock = 2;
+// Stage 8 onset-crackle diagnostic: minimum distance between direct-path
+// (arp-off) note starts. At 64 frames / 48 kHz, 3 blocks = 4 ms; an 8-note
+// chord therefore spans 7 * 4 ms = 28 ms from first start to last. This is a
+// deliberately conservative device A/B. Tighten only after PROFILE shows the
+// onset blocks staying below the 1333 us deadline. Note-offs ahead of a
+// deferred note-on are still drained immediately (see synth.cpp).
+static constexpr int kNoteOnStartIntervalBlocks = 3;

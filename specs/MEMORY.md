@@ -1450,6 +1450,30 @@ worker log reports core 1 / priority 1, record >10 s, and capture `record write`
 finish, audio, and I2S PROFILE lines; writes must average <170.7 ms with zero audio overruns and
 no new I2S errors or short writes.
 
+## 2026-07-17 — Direct note starts staggered by 3 blocks (DEVICE A/B PENDING)
+
+`rec0029.wav` is clean while the live device crackles only during note starts. Its final-master
+PCM has effectively zero whole-file DC (+0.000094), peak 0.646, and no clipped samples. The
+matching PROFILE run is steady once voices sound, but note transitions produce 38 deadline misses
+(worst 2.533 ms vs 1.333 ms/block). The existing Stage 8a guard was still present but allowed two
+fresh notes in one block; it was not sufficient for this onset-only case.
+
+- Replaced `kMaxNoteOnsPerBlock=2` with conservative `kNoteOnStartIntervalBlocks=3`: one direct
+  note start every 3 render blocks = 4 ms at 64/48 kHz. An eight-note chord spans 7 intervals =
+  28 ms first-to-last. Queue order and the ARP path are unchanged; head note-offs drain during the
+  cooldown, while commands behind a deferred note-on remain ordered. Panic/init clear cooldown.
+- Math from the run: steady 8-voice render is ~0.7–0.8 ms; two-start transition spikes add roughly
+  1.3–1.4 ms, or ~0.65–0.7 ms/start if approximately additive. One start every block is therefore
+  borderline under the 1.333 ms deadline; the 3-block interval is an intentionally audible-risk,
+  high-confidence diagnostic. Tighten to 2 or 1 only after device PROFILE/listening passes.
+- Updated the host regression to prove at most one start per block, exact 3-block spacing, all
+  eight notes delivered, and interleaved note-offs preserved.
+
+**Verify:** `make format` ✅, `make test` ✅, `make host` ✅, `make build` ✅,
+`make PROFILE=1 build` ✅. **NEXT (Pascal):** install the PROFILE build, repeat the same chord,
+and compare audible onset crackle plus `over` counts. Crackle gone confirms start staggering;
+crackle remaining with `over=0` keeps the fault downstream/transition-sensitive rather than CPU.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

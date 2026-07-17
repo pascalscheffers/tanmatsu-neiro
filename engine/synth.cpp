@@ -81,6 +81,9 @@ static std::atomic<bool>  s_panic{false};
 // Note events cross from the control thread (core 0) to the audio thread
 // (core 1) via this ring. 64 slots >> the few events a UI frame can produce.
 static CommandQueue<64> s_cmds;
+// Audio-thread-only direct-note start spacing. A value N means the next
+// direct note-on may start after N more render-block boundaries.
+static int              s_note_on_cooldown_blocks = 0;
 
 // Master musical clock (ADR 0010). Updated once per block on the audio thread.
 static Clock s_clock;
@@ -274,6 +277,7 @@ void synth_init(uint32_t sample_rate, size_t block_size) {
     s_sample_rate = (float)sample_rate;
     s_juno_model.init((float)sample_rate);
     s_alloc.init(&s_juno_model);
+    s_note_on_cooldown_blocks = 0;
 
     s_chorus.Init((float)sample_rate);
     s_limiter.init((float)sample_rate);  // ADR 0021: master-bus peak limiter
@@ -354,26 +358,25 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
             }
         }
     } else {
-        // Stage 8a: cap note-on admissions per block. A chord slamming N
-        // note-ons into one block spikes render time past budget and starves
-        // the blocking I2S DMA (specs/MEMORY.md poly-crackle diagnosis).
-        // Break-and-leave: once the cap is hit, peek (don't pop) the next
-        // kNoteOn and stop draining -- it and everything behind it (including
-        // any note-offs) wait for the next block, at most ~1.33ms later.
-        // Nothing is ever dropped; note-offs never trip the cap themselves.
-        int note_ons_admitted = 0;
+        // Stage 8 onset A/B: start at most one direct note, then leave two
+        // intervening blocks start-free (3-block / 4 ms start interval).
+        // Peek before pop so deferred commands remain ordered and none drop.
+        // A note-off already at the queue head bypasses the cooldown; a
+        // note-off behind a deferred note-on remains ordered behind it.
+        if (s_note_on_cooldown_blocks > 0) s_note_on_cooldown_blocks--;
+        bool note_on_admitted = false;
         while (true) {
-            if (note_ons_admitted >= kMaxNoteOnsPerBlock) {
-                NoteCmd next;
-                if (s_cmds.peek(next) && next.type == NoteCmd::kNoteOn) {
-                    break;  // leave remaining commands queued for next block
-                }
+            NoteCmd next;
+            if (s_cmds.peek(next) && next.type == NoteCmd::kNoteOn &&
+                (note_on_admitted || s_note_on_cooldown_blocks > 0)) {
+                break;  // leave this note-on and later commands queued
             }
             if (!s_cmds.pop(cmd)) break;
             if (cmd.type == NoteCmd::kNoteOn) {
                 NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
                 s_alloc.note_on(cmd.pitch, cmd.velocity, expr);
-                note_ons_admitted++;
+                note_on_admitted          = true;
+                s_note_on_cooldown_blocks = kNoteOnStartIntervalBlocks;
             } else {
                 s_alloc.note_off(cmd.pitch);
             }
@@ -383,6 +386,7 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     // Stage 5c: panic overrides any notes drained this block.
     if (s_panic.exchange(false, std::memory_order_relaxed)) {
         s_alloc.reset_all();
+        s_note_on_cooldown_blocks = 0;
         s_arp.clear();
         s_arp_had_notes = false;
         s_arp_step      = 0;
