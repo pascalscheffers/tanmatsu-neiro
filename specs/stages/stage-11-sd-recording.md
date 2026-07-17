@@ -20,6 +20,51 @@
 | 11g | aggregate SD writes to sustain capture | high | 11f-ii device repro |
 | 11h | retain PCM until a true bulk write | high | 11g device repro |
 | 11i | preallocate a one-minute contiguous take | high | 11h device repro |
+| 11j | measure and prime the first bulk SD write | medium | 11i device repro |
+
+## 11j — Measure and prime the first bulk SD write
+
+**Repro:** after 11i reports successful contiguous preallocation, recording still stops on
+the first 32 KiB staging flush. The exact prefix is 32,768 committed bytes plus 65,280 bytes
+drained from the 255 usable ring slots, for a finalized 98,048-byte file. Audio remains below
+budget. Therefore the first bulk `fwrite` blocks for longer than the ring's ~340 ms reserve;
+buffer capacity and audio CPU are not the current unknowns.
+
+**Root cause:** contiguous FAT allocation removes live cluster-chain allocation, but it does
+not prove that the card's first physical bulk write is latency-safe. The current profiler has
+no duration around `fwrite`, so it cannot distinguish a one-time cold write/erase stall from
+repeated slow 32 KiB transfers.
+
+**Touch list (3):** `control/wav_recorder.cpp`, `specs/MEMORY.md`, this file.
+
+**Read list (3):** this 11j work-order; `control/wav_recorder.cpp:flush_staging/start`;
+`platform/platform.h:platform_millis`.
+
+**Reuse:** the existing 32 KiB staging buffer, `platform_millis`, preallocated stream,
+PROFILE logging, and current header/cursor accounting. No new seam or allocation.
+
+**Don't read:** DSP/voice sources, platform backend implementations, managed components,
+other stage docs, tests, or `MEMORY-archive.md`.
+
+**Implementation:** in PROFILE builds, time every `flush_staging()` filesystem call and log
+requested bytes, committed bytes, elapsed milliseconds, cumulative committed bytes, and the
+current dropped-block count after it returns. During `start()`, after opening the preallocated
+file and before writing the real zero-length header or enabling capture, write exactly one full
+32 KiB zero-filled staging buffer at byte 44, flush it, log its duration with a distinct
+`record prime` event, then seek back to byte 0. Treat any short write, flush, or seek failure as
+the existing WRITE error. This is pre-capture housekeeping: do not add the priming bytes to
+`s_data_bytes`, and reset staging state before RECORDING. The final file remains truncated to
+the genuine captured prefix. Keep non-PROFILE behavior identical except for the priming write.
+
+**Acceptance:** `make format`, `make test`, `make host`, and `make PROFILE=1 build` pass;
+membrane grep is clean. Commit one atomic diagnostic fix and append a tight `MEMORY.md` entry.
+Required hardware retest: record until either >10 s or failure and capture all `record prime`,
+`record write`, checkpoint, and finish events. If priming is slow but later writes sustain,
+retain it; if later writes also exceed reserve, stop and use the timings to choose the next
+architecture change rather than enlarging another buffer blindly.
+
+**Split-if:** the priming write changes or extends the portable public seam, or the existing
+staging buffer cannot be safely reused before capture. Stop without implementing.
 
 ## 11h — Retain PCM until a true bulk write
 

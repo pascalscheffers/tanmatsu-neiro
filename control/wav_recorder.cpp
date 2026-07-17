@@ -104,10 +104,19 @@ bool patch_header() {
 
 bool flush_staging() {
     if (s_staged_bytes == 0) return true;
-    const size_t bytes_written = fwrite(s_pcm_staging, 1, s_staged_bytes, s_file);
+    const size_t requested = s_staged_bytes;
+#ifdef SYNTH_PROFILE
+    const uint64_t started = platform_millis();
+#endif
+    const size_t bytes_written = fwrite(s_pcm_staging, 1, requested, s_file);
     s_data_bytes              += (uint32_t)bytes_written;
-    const bool complete        = bytes_written == s_staged_bytes;
+    const bool complete        = bytes_written == requested;
     s_staged_bytes             = 0;
+#ifdef SYNTH_PROFILE
+    printf("[PROFILE] record write requested=%u committed=%u elapsed_ms=%llu cumulative=%u dropped=%u\n",
+           (unsigned)requested, (unsigned)bytes_written, (unsigned long long)(platform_millis() - started),
+           (unsigned)s_data_bytes, (unsigned)record_ring_dropped_blocks());
+#endif
     return complete;
 }
 
@@ -295,6 +304,26 @@ void start() {
 #endif
         return;
     }
+    memset(s_pcm_staging, 0, sizeof(s_pcm_staging));
+#ifdef SYNTH_PROFILE
+    const uint64_t prime_started = platform_millis();
+#endif
+    if (fseek(s_file, 44, SEEK_SET) != 0) {
+        finish(WAV_RECORDER_ERROR_WRITE, false);
+        return;
+    }
+    const size_t prime_written = fwrite(s_pcm_staging, 1, sizeof(s_pcm_staging), s_file);
+    const bool   prime_flushed = fflush(s_file) == 0;
+#ifdef SYNTH_PROFILE
+    printf("[PROFILE] record prime requested=%u committed=%u elapsed_ms=%llu dropped=%u\n",
+           (unsigned)sizeof(s_pcm_staging), (unsigned)prime_written,
+           (unsigned long long)(platform_millis() - prime_started), (unsigned)record_ring_dropped_blocks());
+#endif
+    if (prime_written != sizeof(s_pcm_staging) || !prime_flushed || fseek(s_file, 0, SEEK_SET) != 0) {
+        finish(WAV_RECORDER_ERROR_WRITE, false);
+        return;
+    }
+    s_staged_bytes = 0;
     uint8_t header[44];
     make_header(header, 0);
     if (fwrite(header, 1, sizeof(header), s_file) != sizeof(header) || fflush(s_file) != 0 ||

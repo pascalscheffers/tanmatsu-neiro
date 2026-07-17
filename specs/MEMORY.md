@@ -1379,6 +1379,19 @@ the existing WRITE error. PROFILE traces distinguish begin/success/failure.
 143,812 B `.bss`. **NEXT:** device retest: arm Record, note arming latency, record 10–60 s, stop,
 inspect exact duration/size, and capture PROFILE recorder events.
 
+## 2026-07-17 — Stage 11j: prime and time bulk SD writes
+
+Reused the 32 KiB PCM staging buffer to issue and flush one zero-filled write at byte 44 before
+capture, then rewound for the real header without changing WAV byte accounting. PROFILE now logs
+distinct `record prime` timing and every `record write` request/commit/elapsed/cumulative/drop
+snapshot; failures retain the existing WRITE path and final truncation still removes the prime.
+
+**Verify:** `make format` ✅, `make test` ✅, `make host` ✅, `make PROFILE=1 build` ✅, membrane
+clean. `make size`: image 1,184,642 B; app partition 43% free; DIRAM 274,186/576,464 B (47.56%),
+including 143,812 B `.bss`. **NEXT:** on device, record until >10 s or failure and capture all
+`record prime`, `record write`, checkpoint, and finish events; retain priming only if later writes
+sustain the stream.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
