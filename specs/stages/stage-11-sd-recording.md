@@ -17,6 +17,51 @@
 | 11e | app/UI integration and device verification | high | 11a–11d |
 | 11f-i | storage-worker platform seam + SD diagnostics | medium | 11e device freeze repro |
 | 11f-ii | non-blocking recorder requests + worker I/O | high | 11f-i |
+| 11g | aggregate SD writes to sustain capture | high | 11f-ii device repro |
+
+## 11g — Aggregate SD writes to sustain real-time capture
+
+**Repro:** on device, every recording stops with `REC:DROP` after roughly 0.38–0.47 s.
+The finalized card files contain 287, 288, 351, and 319 complete 64-frame blocks. The SPSC
+ring has 255 usable slots (~340 ms), so the file lengths fingerprint a full ring plus only a
+few completed writer batches; the writer is not sustaining the producer's 750 blocks/s.
+
+**Root cause:** `drain_ring_batch()` converts and calls `fwrite` once per 64-frame block, so
+48 kHz stereo capture becomes 750 tiny 256-byte stdio/FATFS writes per second. The existing
+eight-block batch bounds scheduling time but does not aggregate filesystem I/O. On the tested
+card, the low-priority storage worker falls behind and the deliberate drop-newest policy
+finalizes the valid prefix.
+
+**Touch list (4):** `control/wav_recorder.cpp`, `tests/host/test_wav_recorder.cpp`,
+`specs/MEMORY.md`, `specs/stages/stage-11-sd-recording.md`.
+
+**Read list (4):** this 11g work-order; `control/wav_recorder.cpp:drain_ring_batch/finish`;
+`engine/record_ring.h:RecordBlock`; `tests/host/test_wav_recorder.cpp:clean-stop and overflow tests`.
+
+**Reuse:** existing `RecordBlock`, fixed-batch/yield policy, RIFF size accounting, and
+drop-newest error behavior. Use one fixed storage-worker buffer; no allocation and no new
+filesystem abstraction.
+
+**Don't read:** DSP/voice sources, platform backends, managed components, other stage docs,
+or `MEMORY-archive.md`.
+
+**Implementation:** make one 4 KiB `fwrite` for up to sixteen full 64-frame blocks instead
+of one 256-byte `fwrite` per block. Pack variable-length blocks contiguously, preflight the
+entire batch against the RIFF size limit, and update `s_data_bytes` by bytes actually written.
+Preserve partial-write detection, final draining, checkpointing, the bounded batch yield,
+and the audio-side ring unchanged. Keep the 4 KiB buffer in static storage rather than the
+8 KiB FreeRTOS worker stack. Extend the host test to publish multiple distinguishable blocks
+(including a short final block) and verify the exact contiguous PCM payload and header size.
+
+**Acceptance:** the multi-block regression proves ordered, byte-exact packing with a short
+tail; clean stop, overflow, checkpoint, card-loss, and write-failure tests remain green;
+`make host`, `make test`, `make build`, and `make format` pass; membrane clean. Commit one
+atomic fix and append a tight `MEMORY.md` entry including build/size results and the required
+on-device retest (`REC` for >10 s, then inspect the WAV).
+
+**Split-if:** one 4 KiB filesystem write still cannot be expressed without changing the
+public recorder/ring seam, or device static/stack memory no longer fits. Stop with the exact
+measured conflict; do not enlarge the audio ring or change the drop policy.
 
 ## 11f — Keep blocking SD work off the control loop
 

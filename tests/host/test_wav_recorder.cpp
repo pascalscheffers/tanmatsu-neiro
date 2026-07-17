@@ -220,15 +220,32 @@ void test_wav_recorder_suite() {
         fclose(old);
 
         start_recording();
+        s_stall_sd = true;
+        wait_until([]() { return s_sd_call_stalled.load(); }, "worker stalled before packed batch");
+        for (size_t block = 0; block < 15; ++block) {
+            publish(kRecordBlockFrames, 0.01f + (float)block / 100.0f);
+        }
         publish(3, 0.25f);
+        s_stall_sd = false;
         stop_recording();
         TEST_ASSERT(wav_recorder_state() == WAV_RECORDER_IDLE, "clean stop is idle");
         TEST_ASSERT(wav_recorder_error() == WAV_RECORDER_ERROR_NONE, "clean stop has no error");
 
-        const std::vector<uint8_t> bytes = read_file(recordings + "/rec0002.wav");
-        assert_header(bytes, 12);
-        TEST_ASSERT(bytes[44] == 255 && bytes[45] == 31, "left PCM little endian");
-        TEST_ASSERT(bytes[46] == 1 && bytes[47] == 224, "right PCM little endian");
+        const std::vector<uint8_t> bytes       = read_file(recordings + "/rec0002.wav");
+        constexpr size_t           full_frames = 15 * kRecordBlockFrames;
+        assert_header(bytes, (full_frames + 3) * 4);
+        for (size_t frame = 0; frame < full_frames + 3; ++frame) {
+            const size_t block       = frame / kRecordBlockFrames;
+            const size_t block_frame = frame % kRecordBlockFrames;
+            const float  base        = block < 15 ? 0.01f + (float)block / 100.0f : 0.25f;
+            const auto   left        = (int16_t)((base + (float)block_frame / 1000.0f) * 32767.0f);
+            const auto   right       = (int16_t)(-(base + (float)block_frame / 1000.0f) * 32767.0f);
+            const size_t offset      = 44 + frame * 4;
+            TEST_ASSERT(bytes[offset] == (uint8_t)left && bytes[offset + 1] == (uint8_t)((uint16_t)left >> 8),
+                        "packed left PCM is ordered and exact");
+            TEST_ASSERT(bytes[offset + 2] == (uint8_t)right && bytes[offset + 3] == (uint8_t)((uint16_t)right >> 8),
+                        "packed right PCM is ordered and exact");
+        }
         TEST_ASSERT(read_file(first).size() == 3, "existing take untouched");
         finish_test();
         test_pass();

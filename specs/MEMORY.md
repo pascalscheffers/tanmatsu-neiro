@@ -1313,6 +1313,17 @@ Host regressions cover a deliberately stalled SD call (control calls remain prom
 timeout, worker-start failure, async start/stop, payload/header/checkpoint, overflow prefix, card
 loss, and delayed filesystem failure. **NEXT:** repeat Stage 11e device acceptance with SD inserted.
 
+## 2026-07-17 — Stage 11g: aggregate SD recording writes (COMPLETE)
+
+The storage worker now packs up to sixteen 64-frame blocks into one static 4 KiB buffer and issues
+one byte-counted `fwrite`, preserving size-limit preflight, partial-write accounting, bounded yields,
+and final draining. The clean-stop regression verifies byte-exact ordered PCM across distinguishable
+full blocks and a short tail.
+
+**Verify:** `make format` ✅, `make test` ✅, `make host` ✅, `make build` ✅, membrane clean.
+`make size`: image 1,183,060 B; app partition 44% free; DIRAM 244,998/576,464 B (42.5%), including
+114,624 B `.bss`. **NEXT:** on device, record for >10 s and inspect the finalized WAV.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

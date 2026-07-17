@@ -16,7 +16,7 @@ constexpr uint32_t kBytesPerFrame    = 4;
 constexpr uint32_t kMaxDataBytes     = UINT32_MAX - 36u;
 constexpr uint64_t kCheckpointMillis = 1000;
 constexpr size_t   kPathCapacity     = 512;
-constexpr size_t   kDrainBatchBlocks = 8;
+constexpr size_t   kDrainBatchBlocks = 16;
 constexpr uint32_t kWorkerSleepMs    = 1;
 
 FILE*                             s_file;
@@ -27,6 +27,7 @@ std::atomic<bool>                 s_shutdown_requested{false};
 std::atomic<bool>                 s_worker_started{false};
 std::atomic<wav_recorder_state_t> s_state{WAV_RECORDER_IDLE};
 std::atomic<wav_recorder_error_t> s_error{WAV_RECORDER_ERROR_NONE};
+uint8_t                           s_pcm_batch[kDrainBatchBlocks * kRecordBlockFrames * kBytesPerFrame];
 
 void put_le16(uint8_t* out, uint16_t value) {
     out[0] = (uint8_t)value;
@@ -82,26 +83,29 @@ bool close_file() {
 
 bool drain_ring_batch(wav_recorder_error_t& error, bool& caught_up) {
     RecordBlock block;
-    size_t      drained = 0;
+    size_t      drained     = 0;
+    size_t      batch_bytes = 0;
     while (drained < kDrainBatchBlocks && record_ring_pop(block)) {
         const uint32_t bytes = (uint32_t)block.frame_count * kBytesPerFrame;
-        if (bytes > kMaxDataBytes - s_data_bytes) {
+        if (bytes > kMaxDataBytes - s_data_bytes - batch_bytes) {
             error = WAV_RECORDER_ERROR_SIZE_LIMIT;
             return false;
         }
-        uint8_t pcm[kRecordBlockFrames * kBytesPerFrame];
         for (size_t i = 0; i < (size_t)block.frame_count * 2; ++i) {
-            put_le16(pcm + i * 2, (uint16_t)block.samples[i]);
+            put_le16(s_pcm_batch + batch_bytes + i * 2, (uint16_t)block.samples[i]);
         }
-        const size_t frames_written = fwrite(pcm, kBytesPerFrame, block.frame_count, s_file);
-        s_data_bytes               += (uint32_t)frames_written * kBytesPerFrame;
-        if (frames_written != block.frame_count) {
-            error = WAV_RECORDER_ERROR_WRITE;
-            return false;
-        }
+        batch_bytes += bytes;
         ++drained;
     }
     caught_up = drained < kDrainBatchBlocks;
+    if (batch_bytes != 0) {
+        const size_t bytes_written = fwrite(s_pcm_batch, 1, batch_bytes, s_file);
+        s_data_bytes              += (uint32_t)bytes_written;
+        if (bytes_written != batch_bytes) {
+            error = WAV_RECORDER_ERROR_WRITE;
+            return false;
+        }
+    }
     return true;
 }
 
