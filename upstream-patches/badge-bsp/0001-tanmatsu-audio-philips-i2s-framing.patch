@@ -1,0 +1,43 @@
+Subject: [PATCH] bsp/tanmatsu: transmit Philips-framed I2S to match ES8156 config
+
+The Tanmatsu audio BSP configures the P4's I2S transmitter with
+`I2S_STD_MSB_SLOT_DEFAULT_CONFIG` (left-justified / MSB slot format,
+`targets/tanmatsu/badge_bsp_audio.c:32`), but `es8156_configure` programs the
+ES8156 codec for standard I2S ("Philips") framing (SDP REG11 `sp_protocal=0`,
+`es8156.c:1329`). MSB and Philips differ by one BCLK of data delay after each
+WS edge, so the codec samples the serial stream one bit skewed from where the
+transmitter puts the MSB.
+
+Effect: the codec effectively reads every sample doubled, with the sign bit
+wrapping for any sample magnitude ≥ 0.5 FS. This reproduces exactly as onset
+crackle on loud transients (attack peaks that cross 0.5 FS wrap; sustained
+levels below it don't), is gain-sensitive, present on both the speaker and
+headphone outputs, and invisible in the pre-DAC float capture (the tap point
+is upstream of the codec, so the wrap only happens on-chip) — see the
+analysis in `specs/MEMORY.md` (2026-07-17, "Output-path audit") and
+`specs/stages/stage-12-output-path-audit.md` (WO-12a).
+
+Fix: use `I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG` for the transmitter so its
+framing matches the codec's fixed Philips-mode configuration. Only the slot
+format changes; bit width, channel mode, clocks, and GPIO wiring are
+untouched.
+
+WHY WE CARRY THIS: badge-bsp is a pinned managed component
+(`managed_components/badgeteam__badge-bsp`, gitignored, owned by the ESP-IDF
+component manager) so this fix cannot be committed there directly. This patch
+is applied over the pinned component at build time
+(`tools/apply-upstream-patches.sh`) and is intended for upstream submission to
+badgeteam/badge-bsp. Retire it once merged and the dependency is bumped. See
+`upstream-patches/README.md` and `specs/07-upstream-contributions.md`.
+
+--- a/targets/tanmatsu/badge_bsp_audio.c
++++ b/targets/tanmatsu/badge_bsp_audio.c
+@@ -29,7 +29,7 @@
+
+     i2s_std_config_t i2s_config = {
+         .clk_cfg  = I2S_STD_CLK_DEFAULT_CONFIG(rate),
+-        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
++        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
+         .gpio_cfg =
+             {
+                 .mclk = BSP_I2S_MCLK,

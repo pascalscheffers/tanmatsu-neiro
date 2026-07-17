@@ -1517,6 +1517,24 @@ work-orders in [`stages/stage-12-output-path-audit.md`](stages/stage-12-output-p
 **NEXT:** dispatch WO-12a (Philips slot patch via `upstream-patches/`, decisive A/B),
 then 12b register audit; 12c/12d/12e per the stage doc's decision tree.
 
+## 2026-07-17 — WO-12a: Philips-framed I2S slot config for ES8156 (build green, A/B pending)
+
+Changed `badge_bsp_audio.c:32` from `I2S_STD_MSB_SLOT_DEFAULT_CONFIG` to
+`I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG`, tracked as
+[`upstream-patches/badge-bsp/0001-tanmatsu-audio-philips-i2s-framing.patch`](../upstream-patches/badge-bsp/0001-tanmatsu-audio-philips-i2s-framing.patch)
+(mapping added to `tools/apply-upstream-patches.sh`). Matches the transmitter's slot
+format to `es8156_configure`'s fixed Philips framing (`sp_protocal=0`), per H1 in the
+stage-12 audit — the one-bit skew was the suspected cause of onset crackle via
+sign-bit wrap ≥0.5 FS. `make patches` applies idempotently (verified twice, clean and
+via `make build`); `make build` completes green (`Project build complete`).
+
+**NEXT (Pascal, device A/B — human step, no flashing done here):** flash this build,
+same patch/chord at master gain 0.5, speaker and headphone. Expect: onset crackle
+gone (or reduced to H2's mild flat-top saturation) and overall level down ≈6 dB
+(codec no longer reading doubled). Line-record before/after gain 0.5; after-recording
+should show no non-periodic full-scale wrap discontinuities. If crackle persists
+unchanged, H1 is falsified — revert this patch and run WO-12c instead.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

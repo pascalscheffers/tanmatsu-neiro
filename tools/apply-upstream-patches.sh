@@ -23,6 +23,7 @@ MANAGED="$ROOT/managed_components"
 resolve_target() {
     case "$1" in
         pax-graphics) echo "robotman2412__pax-gfx" ;;
+        badge-bsp) echo "badgeteam__badge-bsp" ;;
         *) echo "" ;;
     esac
 }
