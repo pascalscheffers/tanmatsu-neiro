@@ -1264,6 +1264,21 @@ Tests cover PERFORM collection, serialization omission, crafted-v2 filtering, un
 v1/v2 round trips. Size: app `0x11fcc0` (44% partition free), DIRAM 240,854 B / 41.78%.
 **NEXT:** Stage 11d WAV writer.
 
+## 2026-07-17 — Stage 11d: recoverable WAV writer (COMPLETE)
+
+Added the control-thread ADR 0024 recorder state machine. Rising requests validate the mounted SD,
+create `recordings/`, select the first free `rec0001.wav`…`rec9999.wav`, clear stale ring data,
+write an exact 44-byte little-endian stereo PCM16/48 kHz header, then enable capture. The writer
+drains committed blocks, checkpoints RIFF/data sizes plus `fflush` once per second, and finalizes on
+clean stop. Card loss, ring overflow, write failure, and RIFF exhaustion disable capture, preserve
+the valid prefix where possible, close, and latch a compact visible error until the request drops.
+
+**Verify:** `make format` ✅, `make host` ✅, `make test` ✅, `make build` ✅, membrane clean.
+Tests cover exact header/payload bytes, increment/no-overwrite naming, clean finalization, periodic
+checkpoint recovery, overflow prefix finalization, card loss, and real filesystem write failure.
+Size: app `0x11fcc0` (44% partition free), DIRAM 240,854 B / 41.78% (unchanged from 11c).
+**NEXT:** Stage 11e app/UI integration and on-device recording validation.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

@@ -52,6 +52,7 @@ idf_component_register(
 		"${DAISYSP}/Source/Utility/dcblock.cpp"
 		# Stage 1d: musical-typing input.
 		"../control/keyboard.c"
+		"../control/wav_recorder.cpp"
 		# Stage 5a: MIDI parser + router (device uses no-op platform_midi_read stub).
 		"../control/midi_in.c"
 		"../control/midi_router.c"
