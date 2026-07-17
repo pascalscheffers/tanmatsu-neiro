@@ -6,6 +6,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(tanmatsu_tests C CXX)
 set(CMAKE_CXX_STANDARD 17)
+find_package(Threads REQUIRED)
 
 get_filename_component(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 set(DAISYSP "${REPO_ROOT}/dsp/vendor/daisysp")
@@ -81,3 +82,4 @@ target_include_directories(tanmatsu-tests PRIVATE
 # Explicitly exclude -ffast-math to keep FTZ disabled (ADR 0012).
 # -O2 matches the device shipping build (Stage 0.5 -O2 confirmation).
 target_compile_options(tanmatsu-tests PRIVATE -O2 -fno-fast-math)
+target_link_libraries(tanmatsu-tests PRIVATE Threads::Threads)

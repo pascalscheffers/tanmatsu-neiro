@@ -1299,6 +1299,20 @@ interactive host toggle was not run because the SDL app has no non-GUI event inj
 avg/max/over before vs during and delta; verify absent-card error is visible, Record returns Off,
 and audio continues; record flash/DIRAM/PROFILE delta against the pre-recording device build.
 
+## 2026-07-17 — Stage 11f-ii: asynchronous WAV recorder (COMPLETE)
+
+Moved all recorder ring consumption and libc/FATFS work to the 11f-i storage worker. The app now
+uses explicit init/shutdown; control service is one atomic request store, state/error reads are
+atomic snapshots, worker-start failure is visible, and a stuck worker returns the platform's
+bounded stop failure without forced deletion. Worker drains eight blocks per batch and sleeps
+between batches; finalization preserves the first error and checks directory, flush, and close
+failures.
+
+**Verify:** `make format` ✅, `make host` ✅, `make test` ✅, `make build` ✅; membrane clean.
+Host regressions cover a deliberately stalled SD call (control calls remain prompt), bounded stop
+timeout, worker-start failure, async start/stop, payload/header/checkpoint, overflow prefix, card
+loss, and delayed filesystem failure. **NEXT:** repeat Stage 11e device acceptance with SD inserted.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

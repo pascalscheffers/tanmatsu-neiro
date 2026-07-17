@@ -25,9 +25,15 @@ enum {
     WAV_RECORDER_ERROR_WRITE,
     WAV_RECORDER_ERROR_RING_OVERFLOW,
     WAV_RECORDER_ERROR_SIZE_LIMIT,
+    WAV_RECORDER_ERROR_WORKER_START,
 };
 
-// Call once per control-loop iteration. A latched error remains visible while
+// Start/stop the dedicated storage worker. Shutdown requests a clean finalize
+// and returns false if the platform's bounded worker stop times out.
+bool wav_recorder_init(void);
+bool wav_recorder_shutdown(void);
+
+// Non-blocking control-side request. A latched error remains visible while
 // want_record is true; releasing the request returns the recorder to idle.
 void wav_recorder_service(bool want_record);
 

@@ -297,6 +297,7 @@ void app_run(void) {
     // loads the boot preset, sets preset_name to "INIT".
     UIState ui_state;
     ui_state_init(&ui_state);
+    wav_recorder_init();
 
     const platform_audio_config_t audio_cfg = {
         .sample_rate = SAMPLE_RATE,
@@ -516,7 +517,9 @@ void app_run(void) {
 
     // Finalize an active WAV before the audio source is stopped or the app
     // returns to the launcher.
-    wav_recorder_service(false);
+    if (!wav_recorder_shutdown()) {
+        printf("WAV recorder worker did not stop before timeout\n");
+    }
     platform_render_task_stop();
     platform_audio_stop();
     // ESC / window-close ends the loop; hand control back to the launcher (on

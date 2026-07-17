@@ -1,10 +1,11 @@
-// control/wav_recorder.cpp — recoverable PCM WAV drain on the control thread.
+// control/wav_recorder.cpp — recoverable PCM WAV drain on the storage worker.
 #include "wav_recorder.h"
 #include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <atomic>
 #include "engine/record_ring.h"
 #include "platform/platform.h"
 
@@ -15,12 +16,17 @@ constexpr uint32_t kBytesPerFrame    = 4;
 constexpr uint32_t kMaxDataBytes     = UINT32_MAX - 36u;
 constexpr uint64_t kCheckpointMillis = 1000;
 constexpr size_t   kPathCapacity     = 512;
+constexpr size_t   kDrainBatchBlocks = 8;
+constexpr uint32_t kWorkerSleepMs    = 1;
 
-FILE*                s_file;
-uint32_t             s_data_bytes;
-uint64_t             s_checkpoint_millis;
-wav_recorder_state_t s_state = WAV_RECORDER_IDLE;
-wav_recorder_error_t s_error = WAV_RECORDER_ERROR_NONE;
+FILE*                             s_file;
+uint32_t                          s_data_bytes;
+uint64_t                          s_checkpoint_millis;
+std::atomic<bool>                 s_want_record{false};
+std::atomic<bool>                 s_shutdown_requested{false};
+std::atomic<bool>                 s_worker_started{false};
+std::atomic<wav_recorder_state_t> s_state{WAV_RECORDER_IDLE};
+std::atomic<wav_recorder_error_t> s_error{WAV_RECORDER_ERROR_NONE};
 
 void put_le16(uint8_t* out, uint16_t value) {
     out[0] = (uint8_t)value;
@@ -67,16 +73,17 @@ bool checkpoint() {
     return patch_header() && fflush(s_file) == 0;
 }
 
-void close_file() {
-    if (s_file != nullptr) {
-        fclose(s_file);
-        s_file = nullptr;
-    }
+bool close_file() {
+    if (s_file == nullptr) return true;
+    FILE* file = s_file;
+    s_file     = nullptr;
+    return fclose(file) == 0;
 }
 
-bool drain_ring(wav_recorder_error_t& error) {
+bool drain_ring_batch(wav_recorder_error_t& error, bool& caught_up) {
     RecordBlock block;
-    while (record_ring_pop(block)) {
+    size_t      drained = 0;
+    while (drained < kDrainBatchBlocks && record_ring_pop(block)) {
         const uint32_t bytes = (uint32_t)block.frame_count * kBytesPerFrame;
         if (bytes > kMaxDataBytes - s_data_bytes) {
             error = WAV_RECORDER_ERROR_SIZE_LIMIT;
@@ -92,24 +99,35 @@ bool drain_ring(wav_recorder_error_t& error) {
             error = WAV_RECORDER_ERROR_WRITE;
             return false;
         }
+        ++drained;
     }
+    caught_up = drained < kDrainBatchBlocks;
     return true;
 }
 
 void finish(wav_recorder_error_t error, bool drain) {
     record_ring_set_enabled(false);
     if (s_file != nullptr) {
-        wav_recorder_error_t drain_error = WAV_RECORDER_ERROR_NONE;
-        if (drain && !drain_ring(drain_error) && error == WAV_RECORDER_ERROR_NONE) {
-            error = drain_error;
+        if (drain) {
+            bool caught_up = false;
+            while (!caught_up) {
+                wav_recorder_error_t drain_error = WAV_RECORDER_ERROR_NONE;
+                if (!drain_ring_batch(drain_error, caught_up)) {
+                    if (error == WAV_RECORDER_ERROR_NONE) error = drain_error;
+                    break;
+                }
+                if (!caught_up) platform_sleep_ms(kWorkerSleepMs);
+            }
         }
         if (!checkpoint() && error == WAV_RECORDER_ERROR_NONE) {
             error = WAV_RECORDER_ERROR_WRITE;
         }
-        close_file();
+        if (!close_file() && error == WAV_RECORDER_ERROR_NONE) {
+            error = WAV_RECORDER_ERROR_WRITE;
+        }
     }
-    s_error = error;
-    s_state = error == WAV_RECORDER_ERROR_NONE ? WAV_RECORDER_IDLE : WAV_RECORDER_ERROR;
+    s_error.store(error, std::memory_order_release);
+    s_state.store(error == WAV_RECORDER_ERROR_NONE ? WAV_RECORDER_IDLE : WAV_RECORDER_ERROR, std::memory_order_release);
 }
 
 bool make_recording_path(char (&path)[kPathCapacity], wav_recorder_error_t& error) {
@@ -133,6 +151,7 @@ bool make_recording_path(char (&path)[kPathCapacity], wav_recorder_error_t& erro
         return false;
     }
     uint8_t used[(10000 + 7) / 8] = {};
+    errno                         = 0;
     while (const dirent* entry = readdir(dir)) {
         const char* name = entry->d_name;
         if (strlen(name) == 11 && memcmp(name, "rec", 3) == 0 && memcmp(name + 7, ".wav", 4) == 0 && name[3] >= '0' &&
@@ -142,7 +161,12 @@ bool make_recording_path(char (&path)[kPathCapacity], wav_recorder_error_t& erro
             used[number / 8] |= (uint8_t)(1u << (number % 8));
         }
     }
-    closedir(dir);
+    const bool directory_ok = errno == 0;
+    const bool close_ok     = closedir(dir) == 0;
+    if (!directory_ok || !close_ok) {
+        error = WAV_RECORDER_ERROR_DIRECTORY;
+        return false;
+    }
     for (int number = 1; number <= 9999; ++number) {
         if ((used[number / 8] & (uint8_t)(1u << (number % 8))) == 0) {
             if (snprintf(path, sizeof(path), "%s/rec%04d.wav", directory, number) < (int)sizeof(path)) {
@@ -159,20 +183,20 @@ bool make_recording_path(char (&path)[kPathCapacity], wav_recorder_error_t& erro
 void start() {
     wav_recorder_error_t error = WAV_RECORDER_ERROR_NONE;
     if (!platform_sd_available()) {
-        s_state = WAV_RECORDER_ERROR;
-        s_error = WAV_RECORDER_ERROR_SD_UNAVAILABLE;
+        s_error.store(WAV_RECORDER_ERROR_SD_UNAVAILABLE, std::memory_order_release);
+        s_state.store(WAV_RECORDER_ERROR, std::memory_order_release);
         return;
     }
     char path[kPathCapacity];
     if (!make_recording_path(path, error)) {
-        s_state = WAV_RECORDER_ERROR;
-        s_error = error;
+        s_error.store(error, std::memory_order_release);
+        s_state.store(WAV_RECORDER_ERROR, std::memory_order_release);
         return;
     }
     s_file = fopen(path, "wb");
     if (s_file == nullptr) {
-        s_state = WAV_RECORDER_ERROR;
-        s_error = WAV_RECORDER_ERROR_OPEN;
+        s_error.store(WAV_RECORDER_ERROR_OPEN, std::memory_order_release);
+        s_state.store(WAV_RECORDER_ERROR, std::memory_order_release);
         return;
     }
     uint8_t header[44];
@@ -183,61 +207,96 @@ void start() {
     }
     s_data_bytes        = 0;
     s_checkpoint_millis = platform_millis();
-    s_error             = WAV_RECORDER_ERROR_NONE;
-    s_state             = WAV_RECORDER_RECORDING;
+    s_error.store(WAV_RECORDER_ERROR_NONE, std::memory_order_release);
+    s_state.store(WAV_RECORDER_RECORDING, std::memory_order_release);
     record_ring_set_enabled(false);
     record_ring_clear();
     record_ring_reset_dropped_blocks();
     record_ring_set_enabled(true);
 }
 
-}  // namespace
+void storage_worker(void*) {
+    while (true) {
+        const bool want_record = s_want_record.load(std::memory_order_acquire);
+        const auto state       = s_state.load(std::memory_order_acquire);
 
-extern "C" void wav_recorder_service(bool want_record) {
-    if (s_state == WAV_RECORDER_ERROR) {
-        if (!want_record) {
-            s_error = WAV_RECORDER_ERROR_NONE;
-            s_state = WAV_RECORDER_IDLE;
+        if (state == WAV_RECORDER_ERROR) {
+            if (!want_record) {
+                s_error.store(WAV_RECORDER_ERROR_NONE, std::memory_order_release);
+                s_state.store(WAV_RECORDER_IDLE, std::memory_order_release);
+            }
+        } else if (state == WAV_RECORDER_IDLE) {
+            if (want_record) start();
+        } else if (!want_record) {
+            finish(WAV_RECORDER_ERROR_NONE, true);
+        } else if (!platform_sd_available()) {
+            finish(WAV_RECORDER_ERROR_SD_UNAVAILABLE, false);
+        } else if (record_ring_dropped_blocks() != 0) {
+            finish(WAV_RECORDER_ERROR_RING_OVERFLOW, true);
+        } else {
+            wav_recorder_error_t error     = WAV_RECORDER_ERROR_NONE;
+            bool                 caught_up = false;
+            if (!drain_ring_batch(error, caught_up)) {
+                finish(error, false);
+            } else {
+                const uint64_t now = platform_millis();
+                if (now - s_checkpoint_millis >= kCheckpointMillis) {
+                    if (!checkpoint()) {
+                        finish(WAV_RECORDER_ERROR_WRITE, false);
+                    } else {
+                        s_checkpoint_millis = now;
+                    }
+                }
+            }
         }
-        return;
-    }
-    if (s_state == WAV_RECORDER_IDLE) {
-        if (want_record) {
-            start();
-        }
-        return;
-    }
-    if (!want_record) {
-        finish(WAV_RECORDER_ERROR_NONE, true);
-        return;
-    }
-    if (!platform_sd_available()) {
-        finish(WAV_RECORDER_ERROR_SD_UNAVAILABLE, false);
-        return;
-    }
-    if (record_ring_dropped_blocks() != 0) {
-        finish(WAV_RECORDER_ERROR_RING_OVERFLOW, true);
-        return;
-    }
-    wav_recorder_error_t error = WAV_RECORDER_ERROR_NONE;
-    if (!drain_ring(error)) {
-        finish(error, false);
-        return;
-    }
-    const uint64_t now = platform_millis();
-    if (now - s_checkpoint_millis >= kCheckpointMillis) {
-        if (!checkpoint()) {
-            finish(WAV_RECORDER_ERROR_WRITE, false);
+
+        if (s_shutdown_requested.load(std::memory_order_acquire)) {
+            s_want_record.store(false, std::memory_order_release);
+            if (s_state.load(std::memory_order_acquire) == WAV_RECORDER_RECORDING) {
+                finish(WAV_RECORDER_ERROR_NONE, true);
+            }
             return;
         }
-        s_checkpoint_millis = now;
+        platform_sleep_ms(kWorkerSleepMs);
     }
+}
+
+}  // namespace
+
+extern "C" bool wav_recorder_init(void) {
+    if (s_worker_started.load(std::memory_order_acquire)) {
+        return !s_shutdown_requested.load(std::memory_order_acquire);
+    }
+    s_want_record.store(false, std::memory_order_relaxed);
+    s_shutdown_requested.store(false, std::memory_order_relaxed);
+    s_error.store(WAV_RECORDER_ERROR_NONE, std::memory_order_relaxed);
+    s_state.store(WAV_RECORDER_IDLE, std::memory_order_relaxed);
+    if (platform_storage_worker_start(storage_worker, nullptr)) {
+        s_worker_started.store(true, std::memory_order_release);
+        return true;
+    }
+    s_error.store(WAV_RECORDER_ERROR_WORKER_START, std::memory_order_release);
+    s_state.store(WAV_RECORDER_ERROR, std::memory_order_release);
+    return false;
+}
+
+extern "C" bool wav_recorder_shutdown(void) {
+    if (!s_worker_started.load(std::memory_order_acquire)) return true;
+    s_want_record.store(false, std::memory_order_release);
+    s_shutdown_requested.store(true, std::memory_order_release);
+    if (!platform_storage_worker_stop()) return false;
+    s_worker_started.store(false, std::memory_order_release);
+    return true;
+}
+
+extern "C" void wav_recorder_service(bool want_record) {
+    s_want_record.store(want_record, std::memory_order_release);
 }
 
 extern "C" wav_recorder_state_t wav_recorder_state(void) {
-    return s_state;
+    return s_state.load(std::memory_order_acquire);
 }
 
 extern "C" wav_recorder_error_t wav_recorder_error(void) {
-    return s_error;
+    return s_error.load(std::memory_order_acquire);
 }

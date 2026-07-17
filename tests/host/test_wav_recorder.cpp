@@ -7,7 +7,10 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <atomic>
+#include <chrono>
 #include <string>
+#include <thread>
 #include <vector>
 #include "control/wav_recorder.h"
 #include "engine/record_ring.h"
@@ -15,9 +18,14 @@
 
 namespace {
 
-std::string s_root;
-bool        s_available;
-uint64_t    s_millis;
+std::string           s_root;
+std::atomic<bool>     s_available;
+std::atomic<uint64_t> s_millis;
+std::atomic<bool>     s_stall_sd;
+std::atomic<bool>     s_sd_call_stalled;
+std::atomic<bool>     s_worker_done{true};
+bool                  s_worker_start_fails;
+std::thread           s_worker;
 
 uint32_t le32(const std::vector<uint8_t>& bytes, size_t offset) {
     return (uint32_t)bytes[offset] | ((uint32_t)bytes[offset + 1] << 8) | ((uint32_t)bytes[offset + 2] << 16) |
@@ -51,16 +59,48 @@ void remove_tree(const std::string& root) {
 }
 
 void reset(const char* suffix) {
-    wav_recorder_service(false);
+    TEST_ASSERT(wav_recorder_shutdown(), "stop previous worker");
     record_ring_set_enabled(false);
     record_ring_clear();
     record_ring_reset_dropped_blocks();
     char path[160];
     snprintf(path, sizeof(path), "/tmp/tanmatsu-wav-%ld-%s-XXXXXX", (long)getpid(), suffix);
     TEST_ASSERT(mkdtemp(path) != nullptr, "make temporary SD root");
-    s_root      = path;
-    s_available = true;
-    s_millis    = 0;
+    s_root               = path;
+    s_available          = true;
+    s_millis             = 0;
+    s_stall_sd           = false;
+    s_sd_call_stalled    = false;
+    s_worker_start_fails = false;
+    TEST_ASSERT(wav_recorder_init(), "start recorder worker");
+}
+
+template <typename Predicate>
+void wait_until(Predicate predicate, const char* message) {
+    for (int i = 0; i < 2000; ++i) {
+        if (predicate()) return;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    TEST_ASSERT(false, message);
+}
+
+void wait_for_state(wav_recorder_state_t state, const char* message) {
+    wait_until([state]() { return wav_recorder_state() == state; }, message);
+}
+
+void start_recording() {
+    wav_recorder_service(true);
+    wait_for_state(WAV_RECORDER_RECORDING, "recording started");
+}
+
+void stop_recording() {
+    wav_recorder_service(false);
+    wait_for_state(WAV_RECORDER_IDLE, "recording stopped");
+}
+
+void finish_test() {
+    TEST_ASSERT(wav_recorder_shutdown(), "stop recorder worker");
+    remove_tree(s_root);
 }
 
 void publish(size_t frames, float base = 0.1f) {
@@ -92,7 +132,11 @@ void assert_header(const std::vector<uint8_t>& bytes, uint32_t data_bytes) {
 }  // namespace
 
 extern "C" bool platform_sd_available(void) {
-    return s_available;
+    if (s_stall_sd.load()) {
+        s_sd_call_stalled.store(true);
+        while (s_stall_sd.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return s_available.load();
 }
 
 extern "C" const char* platform_sd_root(void) {
@@ -100,11 +144,70 @@ extern "C" const char* platform_sd_root(void) {
 }
 
 extern "C" uint64_t platform_millis(void) {
-    return s_millis;
+    return s_millis.load();
+}
+
+extern "C" void platform_sleep_ms(uint32_t ms) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+}
+
+extern "C" bool platform_storage_worker_start(void (*storage_cb)(void*), void* ctx) {
+    if (s_worker_start_fails || s_worker.joinable()) return false;
+    s_worker_done = false;
+    s_worker      = std::thread([storage_cb, ctx]() {
+        storage_cb(ctx);
+        s_worker_done = true;
+    });
+    return true;
+}
+
+extern "C" bool platform_storage_worker_stop(void) {
+    if (!s_worker.joinable()) return s_worker_done.load();
+    for (int i = 0; i < 100 && !s_worker_done.load(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (!s_worker_done.load()) return false;
+    s_worker.join();
+    return true;
 }
 
 void test_wav_recorder_suite() {
-    printf("--- WavRecorder (recoverable SD PCM writer) ---\n");
+    printf("--- WavRecorder (async recoverable SD PCM writer) ---\n");
+
+    {
+        test_begin("worker start failure is visible");
+        TEST_ASSERT(wav_recorder_shutdown(), "no previous worker");
+        s_worker_start_fails = true;
+        TEST_ASSERT(!wav_recorder_init(), "worker start fails");
+        TEST_ASSERT(wav_recorder_state() == WAV_RECORDER_ERROR, "start failure enters error");
+        TEST_ASSERT(wav_recorder_error() == WAV_RECORDER_ERROR_WORKER_START, "start failure reason");
+        TEST_ASSERT(wav_recorder_shutdown(), "failed start shutdown is harmless");
+        s_worker_start_fails = false;
+        test_pass();
+    }
+
+    {
+        test_begin("stalled SD cannot block control service or state reads");
+        reset("stalled");
+        s_stall_sd = true;
+        wav_recorder_service(true);
+        wait_until([]() { return s_sd_call_stalled.load(); }, "worker entered stalled SD call");
+        const auto begin = std::chrono::steady_clock::now();
+        wav_recorder_service(false);
+        (void)wav_recorder_state();
+        (void)wav_recorder_error();
+        const auto elapsed = std::chrono::steady_clock::now() - begin;
+        TEST_ASSERT(elapsed < std::chrono::milliseconds(10), "control snapshots return promptly");
+        const auto stop_begin = std::chrono::steady_clock::now();
+        TEST_ASSERT(!wav_recorder_shutdown(), "stalled worker reports bounded stop timeout");
+        const auto stop_elapsed = std::chrono::steady_clock::now() - stop_begin;
+        TEST_ASSERT(stop_elapsed < std::chrono::milliseconds(250), "stop timeout remains bounded");
+        s_stall_sd = false;
+        wait_until([]() { return s_worker_done.load(); }, "released worker exits");
+        TEST_ASSERT(wav_recorder_shutdown(), "released worker joins");
+        remove_tree(s_root);
+        test_pass();
+    }
 
     {
         test_begin("exact header, payload, clean stop, no overwrite");
@@ -116,11 +219,9 @@ void test_wav_recorder_suite() {
         TEST_ASSERT(old != nullptr && fwrite("old", 1, 3, old) == 3, "precreate old take");
         fclose(old);
 
-        wav_recorder_service(true);
-        TEST_ASSERT(wav_recorder_state() == WAV_RECORDER_RECORDING, "recording started");
+        start_recording();
         publish(3, 0.25f);
-        wav_recorder_service(true);
-        wav_recorder_service(false);
+        stop_recording();
         TEST_ASSERT(wav_recorder_state() == WAV_RECORDER_IDLE, "clean stop is idle");
         TEST_ASSERT(wav_recorder_error() == WAV_RECORDER_ERROR_NONE, "clean stop has no error");
 
@@ -129,64 +230,76 @@ void test_wav_recorder_suite() {
         TEST_ASSERT(bytes[44] == 255 && bytes[45] == 31, "left PCM little endian");
         TEST_ASSERT(bytes[46] == 1 && bytes[47] == 224, "right PCM little endian");
         TEST_ASSERT(read_file(first).size() == 3, "existing take untouched");
-        remove_tree(s_root);
+        finish_test();
         test_pass();
     }
 
     {
         test_begin("one-second checkpoint patches recoverable sizes");
         reset("checkpoint");
-        wav_recorder_service(true);
+        start_recording();
         publish(4);
         s_millis = 999;
-        wav_recorder_service(true);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
         s_millis = 1000;
-        wav_recorder_service(true);
+        wait_until(
+            []() {
+                const auto bytes = read_file(s_root + "/recordings/rec0001.wav");
+                return bytes.size() == 60 && le32(bytes, 40) == 16;
+            },
+            "checkpoint patches sizes");
         const std::vector<uint8_t> bytes = read_file(s_root + "/recordings/rec0001.wav");
         assert_header(bytes, 16);
-        wav_recorder_service(false);
-        remove_tree(s_root);
+        stop_recording();
+        finish_test();
         test_pass();
     }
 
     {
         test_begin("overflow stops and finalizes queued prefix");
         reset("overflow");
-        wav_recorder_service(true);
+        start_recording();
+        s_stall_sd = true;
+        wait_until([]() { return s_sd_call_stalled.load(); }, "worker stalled before overflow");
         float left[1] = {}, right[1] = {};
         for (size_t i = 0; i < 255; ++i) {
             TEST_ASSERT(record_ring_publish(left, right, 1), "fill ring");
         }
         TEST_ASSERT(!record_ring_publish(left, right, 1), "overflow ring");
-        wav_recorder_service(true);
-        TEST_ASSERT(wav_recorder_state() == WAV_RECORDER_ERROR, "overflow enters error");
+        s_stall_sd = false;
+        wait_for_state(WAV_RECORDER_ERROR, "overflow enters error");
         TEST_ASSERT(wav_recorder_error() == WAV_RECORDER_ERROR_RING_OVERFLOW, "overflow reason");
         assert_header(read_file(s_root + "/recordings/rec0001.wav"), 255 * 4);
         wav_recorder_service(false);
-        TEST_ASSERT(wav_recorder_state() == WAV_RECORDER_IDLE, "release clears error state");
-        remove_tree(s_root);
+        wait_for_state(WAV_RECORDER_IDLE, "release clears error state");
+        finish_test();
         test_pass();
     }
 
     {
         test_begin("card loss stops with visible error");
         reset("card-loss");
-        wav_recorder_service(true);
+        start_recording();
+        s_stall_sd = true;
+        wait_until([]() { return s_sd_call_stalled.load(); }, "worker stalled before card loss");
         publish(2);
         s_available = false;
-        wav_recorder_service(true);
-        TEST_ASSERT(wav_recorder_state() == WAV_RECORDER_ERROR, "card loss enters error");
+        s_stall_sd  = false;
+        wait_for_state(WAV_RECORDER_ERROR, "card loss enters error");
         TEST_ASSERT(wav_recorder_error() == WAV_RECORDER_ERROR_SD_UNAVAILABLE, "card loss reason");
         assert_header(read_file(s_root + "/recordings/rec0001.wav"), 0);
         wav_recorder_service(false);
-        remove_tree(s_root);
+        wait_for_state(WAV_RECORDER_IDLE, "release clears card error");
+        finish_test();
         test_pass();
     }
 
     {
         test_begin("real filesystem write failure is latched");
         reset("write-failure");
-        wav_recorder_service(true);
+        start_recording();
+        s_stall_sd = true;
+        wait_until([]() { return s_sd_call_stalled.load(); }, "worker stalled before write failure");
         publish(2);
         struct rlimit old_limit;
         TEST_ASSERT(getrlimit(RLIMIT_FSIZE, &old_limit) == 0, "read file-size limit");
@@ -194,15 +307,15 @@ void test_wav_recorder_suite() {
         limit.rlim_cur          = 44;
         void (*old_signal)(int) = signal(SIGXFSZ, SIG_IGN);
         TEST_ASSERT(setrlimit(RLIMIT_FSIZE, &limit) == 0, "set file-size limit");
-        wav_recorder_service(true);
-        s_millis = 1000;
-        wav_recorder_service(true);
+        s_millis   = 1000;
+        s_stall_sd = false;
+        wait_for_state(WAV_RECORDER_ERROR, "write failure enters error");
         TEST_ASSERT(setrlimit(RLIMIT_FSIZE, &old_limit) == 0, "restore file-size limit");
         signal(SIGXFSZ, old_signal);
-        TEST_ASSERT(wav_recorder_state() == WAV_RECORDER_ERROR, "write failure enters error");
         TEST_ASSERT(wav_recorder_error() == WAV_RECORDER_ERROR_WRITE, "write failure reason");
         wav_recorder_service(false);
-        remove_tree(s_root);
+        wait_for_state(WAV_RECORDER_IDLE, "release clears write error");
+        finish_test();
         test_pass();
     }
 

@@ -76,9 +76,9 @@ Paths are relative to repo root. Dependencies live in `managed_components/` (ESP
 
 ## control/ , ui/ , app/ — the brain (soft-real-time, normal tasks)
 - `control/keyboard.{c,h}` — musical-typing / key input → note + param events.
-- `control/wav_recorder.{h,cpp}` — **`wav_recorder_service(want_record)`** control-thread WAV
-  writer/state seam. Creates non-overwriting `recordings/recNNNN.wav`, checkpoints/finalizes the
-  PCM16 header, and exposes compact state/error enums; called on every app control-loop iteration.
+- `control/wav_recorder.{h,cpp}` — **`wav_recorder_init/service/shutdown`** asynchronous WAV
+  seam. Control publishes an atomic request and reads atomic state/error snapshots; the storage
+  worker alone drains audio and owns non-overwriting `recordings/recNNNN.wav` plus finalization.
 - `ui/ui.{cpp,h}` — PAX param pages rendered **from the table** (no model knowledge, ADR 0008).
 - `app/app.{c,h}` — app-level wiring (init order, the main loop); Record requests come only from
   `UIState.norms[ParamId::RECORD]`, with writer failures forcing the UI/engine shadow Off.
