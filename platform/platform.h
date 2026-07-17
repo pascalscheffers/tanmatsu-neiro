@@ -154,6 +154,23 @@ void platform_sleep_ms(uint32_t ms);
 //   out_count    — total blocks counted (the denominator for the average)
 void platform_audio_profile_read(uint32_t* out_avg_cyc, uint32_t* out_max_cyc, uint32_t* out_over, uint32_t* out_count);
 
+typedef struct {
+    uint32_t write_avg_cyc;
+    uint32_t write_max_cyc;
+    uint32_t period_max_cyc;
+    uint32_t write_calls;
+    uint32_t write_errors;
+    uint32_t short_writes;
+} platform_audio_i2s_profile_t;
+
+// Snapshot and reset downstream I2S timing/error counters. Returns zeros
+// outside SYNTH_PROFILE and on host.
+void platform_audio_i2s_profile_read(platform_audio_i2s_profile_t* out);
+
+// PROFILE-only control-thread codec A/B seam. Returns true only when the
+// requested output percentage was applied; unsupported outside device PROFILE.
+bool platform_audio_profile_set_codec_volume(uint32_t percent);
+
 // ---------------------------------------------------------------------------
 // Storage (Stage 2d) — key/blob store
 // ---------------------------------------------------------------------------

@@ -173,6 +173,12 @@ static volatile uint64_t s_ab_sum             = 0;
 static volatile uint32_t s_ab_count           = 0;
 static volatile uint32_t s_ab_max             = 0;
 static volatile uint32_t s_ab_over            = 0;
+static volatile uint64_t s_i2s_write_sum      = 0;
+static volatile uint32_t s_i2s_write_max      = 0;
+static volatile uint32_t s_i2s_period_max     = 0;
+static volatile uint32_t s_i2s_write_calls    = 0;
+static volatile uint32_t s_i2s_write_errors   = 0;
+static volatile uint32_t s_i2s_short_writes   = 0;
 #endif
 
 // ---------------------------------------------------------------------------
@@ -202,9 +208,17 @@ static inline int16_t to_i16(float v) {
 static void audio_task(void* arg) {
     (void)arg;
     const size_t n = s_block;
+#ifdef SYNTH_PROFILE
+    uint32_t previous_loop_start = 0;
+#endif
     while (atomic_load(&s_audio_run)) {
 #ifdef SYNTH_PROFILE
         uint32_t cyc_start = esp_cpu_get_cycle_count();
+        if (previous_loop_start != 0) {
+            uint32_t period = cyc_start - previous_loop_start;
+            if (period > s_i2s_period_max) s_i2s_period_max = period;
+        }
+        previous_loop_start = cyc_start;
 #endif
         s_render(s_left, s_right, n, s_render_user);
 #ifdef SYNTH_PROFILE
@@ -220,7 +234,19 @@ static void audio_task(void* arg) {
         }
         size_t written = 0;
         // Blocking write on the DMA queue is the real-time deadline mechanism.
+#ifdef SYNTH_PROFILE
+        const size_t requested   = n * 2 * sizeof(int16_t);
+        uint32_t     write_start = esp_cpu_get_cycle_count();
+        esp_err_t    write_err   = i2s_channel_write(s_i2s, s_interleaved, requested, &written, portMAX_DELAY);
+        uint32_t     write_cyc   = esp_cpu_get_cycle_count() - write_start;
+        s_i2s_write_sum         += write_cyc;
+        s_i2s_write_calls++;
+        if (write_cyc > s_i2s_write_max) s_i2s_write_max = write_cyc;
+        if (write_err != ESP_OK) s_i2s_write_errors++;
+        if (written != requested) s_i2s_short_writes++;
+#else
         i2s_channel_write(s_i2s, s_interleaved, n * 2 * sizeof(int16_t), &written, portMAX_DELAY);
+#endif
     }
     // Flush one block of silence so the DMA's last buffer isn't a stale tone the
     // codec would replay until the channel is disabled (platform_audio_stop does
@@ -829,5 +855,37 @@ void platform_audio_profile_read(uint32_t* out_avg_cyc, uint32_t* out_max_cyc, u
     *out_max_cyc = 0;
     *out_over    = 0;
     *out_count   = 0;
+#endif
+}
+
+void platform_audio_i2s_profile_read(platform_audio_i2s_profile_t* out) {
+#ifdef SYNTH_PROFILE
+    uint64_t write_sum = s_i2s_write_sum;
+    uint32_t calls     = s_i2s_write_calls;
+    *out               = (platform_audio_i2s_profile_t){
+                      .write_avg_cyc  = calls ? (uint32_t)(write_sum / calls) : 0u,
+                      .write_max_cyc  = s_i2s_write_max,
+                      .period_max_cyc = s_i2s_period_max,
+                      .write_calls    = calls,
+                      .write_errors   = s_i2s_write_errors,
+                      .short_writes   = s_i2s_short_writes,
+    };
+    s_i2s_write_sum    = 0;
+    s_i2s_write_max    = 0;
+    s_i2s_period_max   = 0;
+    s_i2s_write_calls  = 0;
+    s_i2s_write_errors = 0;
+    s_i2s_short_writes = 0;
+#else
+    *out = (platform_audio_i2s_profile_t){0};
+#endif
+}
+
+bool platform_audio_profile_set_codec_volume(uint32_t percent) {
+#ifdef SYNTH_PROFILE
+    return bsp_audio_set_volume((float)percent) == ESP_OK;
+#else
+    (void)percent;
+    return false;
 #endif
 }

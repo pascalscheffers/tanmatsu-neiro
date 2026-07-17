@@ -312,7 +312,8 @@ void app_run(void) {
     bool     running         = true;
     uint64_t next_ctrl       = 0;
 #ifdef SYNTH_PROFILE
-    uint64_t next_prof = 0;
+    uint64_t next_prof        = 0;
+    uint32_t codec_volume_pct = 80u;
 #endif
 
     // SINGLE-PRODUCER INVARIANT: all engine_note_on/off calls happen on this one
@@ -332,6 +333,18 @@ void app_run(void) {
             // is unused by musical typing (control/keyboard.c) and the UI, so it's
             // free to repurpose here. Diagnostic-only -- intercepted before
             // keyboard/UI dispatch so it never also triggers musical/UI behavior.
+            if (ev.type == PLATFORM_EV_KEY && ev.pressed && ev.key == 32 /* SPACE */ &&
+                (ev.mods & PLATFORM_MOD_SHIFT) != 0) {
+                uint32_t requested_pct = codec_volume_pct == 80u ? 40u : 80u;
+                if (platform_audio_profile_set_codec_volume(requested_pct)) {
+                    codec_volume_pct = requested_pct;
+                    printf("[PROFILE] codec volume=%u%% ok\n", (unsigned)codec_volume_pct);
+                } else {
+                    printf("[PROFILE] codec volume=%u%% failed (still %u%%)\n", (unsigned)requested_pct,
+                           (unsigned)codec_volume_pct);
+                }
+                continue;
+            }
             if (ev.type == PLATFORM_EV_KEY && ev.pressed && ev.key == 32 /* SPACE */) {
                 engine_tap_freeze_now();
                 printf("[TAP] freeze requested\n");
@@ -469,6 +482,12 @@ void app_run(void) {
             if (div == 0) div = 1;
             printf("[PROFILE] audio avg=%u max=%u over=%u/%u us-budget=1333\n", (unsigned)(avg_cyc / div),
                    (unsigned)(max_cyc / div), (unsigned)over, (unsigned)count);
+            platform_audio_i2s_profile_t i2s;
+            platform_audio_i2s_profile_read(&i2s);
+            printf("[PROFILE] i2s codec=%u%% period-max=%uus write=%u/%uus calls=%u errors=%u short=%u\n",
+                   (unsigned)codec_volume_pct, (unsigned)(i2s.period_max_cyc / div),
+                   (unsigned)(i2s.write_avg_cyc / div), (unsigned)(i2s.write_max_cyc / div), (unsigned)i2s.write_calls,
+                   (unsigned)i2s.write_errors, (unsigned)i2s.short_writes);
             float pk_mono, pk_postgain, min_gr, pk_out;
             engine_profile_read(&pk_mono, &pk_postgain, &min_gr, &pk_out);
             printf("[PROFILE] sig  mono=%.2f postg=%.2f gr=%.2f out=%.2f\n", (double)pk_mono, (double)pk_postgain,

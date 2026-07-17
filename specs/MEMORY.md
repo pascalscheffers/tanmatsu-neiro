@@ -1348,6 +1348,24 @@ build behavior and logging remain unchanged.
 **NEXT:** repeat the device toggle under `make sniff`; the first missing/failed event now identifies
 whether the break is input/UI, SD setup, file creation, or the running writer.
 
+## 2026-07-17 — Downstream crackle A/B diagnostic (COMPLETE)
+
+Added a single-build downstream discriminator after clean final-master recordings bounded the fault
+to I2S/DMA, ES8156, amplifier, or analog output. `PROFILE=1` now reports one-second I2S write
+call/error/short counts, write average/maximum, and full audio-loop period maximum; Shift+Space
+toggles codec volume 80%↔40% on confirmed BSP success while plain Space still freezes the RAM tap.
+Shipping audio remains fixed at 80% with the original unmeasured per-block write path. Verified
+`make format`, `make test`, `make host`, `make build`, and `make PROFILE=1 build`.
+
+**Device runbook:** `make PROFILE=1 build install run`; in another terminal run `make sniff`; start
+SD recording, play the crackle repro at the initial 80% while capturing `[PROFILE] i2s` lines, press
+Shift+Space and require `[PROFILE] codec volume=40% ok`, then repeat the identical passage at 40%
+without stopping the recording. Press plain Space only if a RAM-tap capture is also wanted. Stop the
+recording cleanly, retain the sniff log and WAV, and compare audible crackle incidence at 80% vs 40%
+alongside `period-max`, `write` avg/max, `errors`, and `short` for the same intervals. **NEXT:** run
+this on-device A/B; volume-dependent crackle points past digital transport, while correlated period/
+write spikes or nonzero errors/short writes point at scheduling/I2S/DMA.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
