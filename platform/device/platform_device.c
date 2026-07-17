@@ -34,6 +34,7 @@
 // Stage 5b: USB-A host MIDI (both builds; host-only in SYNTH_USB_HOST_DEBUG).
 #include "midi_usb_device.h"
 #include "midi_usb_host.h"
+#include "sd_profile.h"
 
 static const char TAG[] = "platform";
 
@@ -88,10 +89,13 @@ static void mount_sd_card(void) {
         return;
     }
     ESP_LOGI(TAG, "SD setup: filesystem mounted");
-    s_sd_available = true;
-    ESP_LOGI(TAG, "SD setup: card discovered: name=%s, capacity=%llu MiB, max_freq=%d kHz", s_sd_card->cid.name,
+    s_sd_available         = true;
+    const size_t bus_width = sdmmc_host_get_slot_width(host.slot);
+    ESP_LOGI(TAG, "SD setup: card discovered: name=%s, capacity=%llu MiB, max_freq=%d kHz, bus_width=%u",
+             s_sd_card->cid.name,
              (unsigned long long)s_sd_card->csd.capacity * s_sd_card->csd.sector_size / (1024u * 1024u),
-             s_sd_card->max_freq_khz);
+             s_sd_card->max_freq_khz, (unsigned)bus_width);
+    sd_profile_run(s_sd_root);
 }
 
 // Largest audio block we will be asked to render; sized once, used by the audio

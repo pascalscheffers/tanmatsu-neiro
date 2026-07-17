@@ -22,6 +22,59 @@
 | 11i | preallocate a one-minute contiguous take | high | 11h device repro |
 | 11j | measure and prime the first bulk SD write | medium | 11i device repro |
 | 11k | run SDMMC at high-speed clock | medium | 11j throughput measurement |
+| 11l | profile SD write ceiling and DMA stdio cache | high | 11k |
+
+## 11l — Profile SD write ceiling and DMA stdio cache
+
+**Repro:** at the original 20 MHz mount, live 32 KiB writes sustain only about 138 KiB/s
+(236–237 ms each), below the recorder's required 187.5 KiB/s. A proposed upstream helper wraps
+`fopen` with an internal `MALLOC_CAP_DMA` buffer installed through `setvbuf`, but that code does
+not itself enable peripheral DMA. The checked-in Tanmatsu BSP declares a four-bit SDMMC bus
+(`BSP_SDCARD_WIDTH=4`, D0–D3 on GPIO 39–42), while the physical-link width is disputed and must
+be reported from the initialized host rather than assumed.
+
+**Root cause:** the current live timing mixes card/bus throughput, stdio/FatFS overhead, and
+core-0 scheduling. Before another recorder architecture change, measure the unloaded filesystem
+ceiling across transfer sizes and A/B the upstream DMA-capable stdio-cache technique.
+
+**Touch list (6):** `platform/device/sd_profile.h`, `platform/device/sd_profile.c`,
+`platform/device/platform_device.c`, `main/CMakeLists.txt`, `specs/MEMORY.md`, this file.
+
+**Read list (5):** this 11l work-order; `platform/device/platform_device.c:mount_sd_card`;
+`main/CMakeLists.txt:idf_component_register`; the user-supplied `asp_fastopen` sample in this
+work-order; `sdkconfig_tanmatsu:FAT Filesystem support`.
+
+**Reuse:** `esp_vfs_fat_create_contiguous_file`, `heap_caps_malloc` with
+`MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL`, `setvbuf`, `esp_timer_get_time`, and the mounted `/sd`
+filesystem. Keep the live recorder and its per-write profiler unchanged.
+
+**Don't read:** recorder implementation, DSP/voice sources, host backend, managed components,
+other stage docs, tests, or `MEMORY-archive.md`.
+
+**Implementation:** add a device-only `sd_profile_run(root)` module called once immediately
+after a successful mount, compiled to a no-op unless `SYNTH_PROFILE` is defined. It creates and
+contiguously preallocates a temporary 128 KiB file beneath the SD root, allocates a 32 KiB
+DMA-capable internal source buffer, and benchmarks exactly 128 KiB of `fwrite`+`fflush` traffic
+at 4, 8, 16, and 32 KiB transfer sizes. Run each size twice using a freshly opened stream:
+(a) libc's default buffering; (b) a separate 32 KiB internal DMA-capable buffer installed with
+`setvbuf` before any stream I/O, matching the supplied fast-open technique. Log mode, chunk,
+bytes, elapsed milliseconds, and integer KiB/s; also log whether both allocated buffers are
+DMA-capable. Close between cases, preserve the first error, remove the temporary file, and free
+both buffers on every path. A benchmark failure logs and returns without making SD unavailable.
+Do not run this diagnostic in normal builds. Extend the successful mount log with the actual
+host bus width from `sdmmc_host_get_slot_width` as well as negotiated frequency. Do not change
+the live recorder, task priorities, ring/staging capacity, sample format, or filesystem config.
+
+**Acceptance:** `make format`, `make test`, `make host`, normal `make build`, and
+`make PROFILE=1 build` pass; membrane grep is clean. Commit one atomic diagnostic feature and
+append a tight `MEMORY.md` entry. Required hardware retest: capture boot `SD setup` and all
+`sdbench` lines, then make one live recording and capture `record write` lines. Compare the best
+unloaded KiB/s with the live rate and the required 187.5 KiB/s. Retain a DMA stdio cache in the
+recorder only in a later work-order if the A/B result materially improves throughput.
+
+**Split-if:** the contiguous helper cannot safely reuse a named temporary file, `setvbuf` cannot
+be called before I/O on a fresh stream, or cleanup requires a new public platform seam. Stop
+without changing the recorder.
 
 ## 11k — Run SDMMC at high-speed clock
 

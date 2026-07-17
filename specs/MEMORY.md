@@ -1404,6 +1404,21 @@ including 143,812 B `.bss`. **NEXT:** confirm boot reports 40000 kHz, record >10
 all `record write`, checkpoint, and finish events; full-write latency must average <170.7 ms and
 the setting stays only if mount/write remain error-free.
 
+## 2026-07-17 — Stage 11l: profile SD write ceiling
+
+Added a device-only PROFILE boot diagnostic that preallocates one 128 KiB temporary extent and
+runs fresh-stream 4/8/16/32 KiB `fwrite`+`fflush` cases with libc defaults and a separate 32 KiB
+internal DMA-capable `setvbuf` cache. A second 32 KiB DMA-capable source buffer feeds every case;
+logs report both capabilities, bytes, elapsed ms, and integer KiB/s. Cleanup preserves the first
+error without revoking SD availability. The mount log now reports actual host width.
+
+**Verify:** `make format` ✅, `make test` ✅, `make host` ✅, `make build` ✅,
+`make PROFILE=1 build` ✅, membrane clean. Normal: image 1,184,714 B, DIRAM 274,186/576,464 B
+(47.56%). PROFILE: image 1,193,594 B, DIRAM 406,222/576,464 B (70.47%); benchmark buffers add
+64 KiB only at runtime. **NEXT:** capture boot `SD setup` and all `sdbench` lines, then one live
+recording's `record write` lines; compare best unloaded/default-vs-cache rates with live throughput
+and 187.5 KiB/s before considering recorder cache integration.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
