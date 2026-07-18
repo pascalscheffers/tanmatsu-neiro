@@ -1589,3 +1589,24 @@ Opus clears the entry when the gate is resolved.
 - PCM now begins at byte 4096 behind a standards-compliant `JUNK` chunk; RIFF/data patching, checkpoint cursor restoration, one-minute preallocation, and all final truncation use the padded offset. The complete header reuses the existing 32 KiB DMA staging buffer.
 - Host tests cover the exact chunk layout, zero padding, payload order, checkpoint continuation, clean/error lengths, and a write failure beyond the header. `ffprobe` accepts the generated artifact as 48 kHz stereo PCM16 WAV. `make format`, `make test`, `make host`, normal/PROFILE builds, and `make size` pass. Normal: image 1,184,972 B, mapped flash 1,054,762 B, DIRAM 241,426/576,464 B (41.88%). PROFILE: image 1,193,154 B.
 - Next: record for >10 s on device and capture prime/write/checkpoint/finish plus audio/I2S PROFILE lines; every steady 32 KiB write must be <170.7 ms with zero drops, overruns, I2S errors, or short writes, then confirm the finalized duration in a standard player.
+
+## 2026-07-18 — Crackle-hunt scaffolding retired
+
+Removed the dead diagnostic instruments left over from the (now-closed) crackle hunt —
+root cause was the I2S slot-format mismatch, fixed and device-verified in WO-12a
+(7868588 / 1ae0ce6). Two commits:
+- **Audio-tap + codec A/B** (`8c2493e`'s sibling, `f7d9c4c`): the `engine/synth.cpp`
+  RAM-tap ring + `tap_capture()`, its `synth.h` reader contract, `app/app.c`'s
+  `tap_dump()`/CRC32/base64 + SPACE (freeze) and Shift+SPACE (codec-volume A/B) key
+  handlers, the `platform_audio_profile_set_codec_volume()` seam across
+  `platform.h`/`platform_device.c`/`platform_host.c`, the `BSP_INPUT_SCANCODE_SPACE`
+  force-delivery case, and `tools/tap2wav.py`.
+- **SD boot benchmark** (`8c2493e`): `platform/device/sd_profile.{c,h}` and its boot
+  call site + `main/CMakeLists.txt` entry.
+- Kept, untouched: per-region CPU sub-timers, worst-block/IPC profiler, signal-magnitude
+  probe, I2S write/period profiler, `engine/bench.c`, WAV-recorder PROFILE events —
+  all still compile under `make PROFILE=1 build`.
+- Verify: `make test`/`make host`/`make build`/`make PROFILE=1 build` all green.
+  `make size` (non-PROFILE): flash 1,054,744 B (.text 769,836 / .rodata 284,384),
+  DIRAM 241,474/576,464 (41.89%), total image 1,185,002 B — in line with pre-existing
+  Stage 11p numbers, confirming this was pure removal with no new cost.
