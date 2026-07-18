@@ -64,7 +64,7 @@ static constexpr uint16_t kModDestPitch = 0xFFFE;
 // kModDestPwm: virtual destination for pulse-width modulation.
 // Unit: bipolar offset added to OSC_PWM base value (range [-1, +1]).
 // JunoVoice render() reads mod_out.pwm_mod and adds it to p_osc_pwm_ before
-// clamping to [0.05, 0.95] and calling osc_main_.set_pw().
+// clamping to [0.05, 0.95] and calling osc_pulse_.set_pw().
 static constexpr uint16_t kModDestPwm = 0xFFFDu;
 
 // ── Routing slot ──────────────────────────────────────────────────────────

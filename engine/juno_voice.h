@@ -1,5 +1,6 @@
 // engine/juno_voice.h — Juno-106-inspired voice (ADR 0002, ADR 0008).
-// Signal chain: PolyBLEP saw + sub (−1 oct) + noise → SVF LP → ADSR VCA.
+// Signal chain: PolyBLEP saw + pulse (independent switches, ADR 0026/WO-13c)
+// + square sub (−1 oct) + noise → SVF LP → ADSR VCA.
 // set_param() uses ParamId::* values (see param_id.h) — the param store
 // pushes smoothed physical values from the table every block (Stage 2b).
 //
@@ -75,7 +76,13 @@ private:
     // Stage 3b-i: mod matrix instance (one per voice).
     ModMatrix mod_matrix_;
 
-    dsp::Osc            osc_main_;
+    // WO-13c (ADR 0026): saw + pulse are independent, phase-coherent oscillators that
+    // can both sound at once (replaces the old mutually-exclusive osc_main_). Their
+    // outputs are gated by p_osc_saw_on_/p_osc_pulse_on_ (contribution only — toggling
+    // never resets phase). osc_sub_ is a fixed square one octave below (ADR 0026,
+    // supersedes ADR 0020's saw sub).
+    dsp::Osc            osc_saw_;
+    dsp::Osc            osc_pulse_;
     dsp::Osc            osc_sub_;
     daisysp::WhiteNoise noise_;
     dsp::Filter         filter_;
@@ -105,8 +112,11 @@ private:
     float p_sub_level_        = 0.30f;
     float p_noise_level_      = 0.05f;
     float p_osc_pwm_          = 0.50f;  // pulse-width amount (0=narrow..1=wide; cache-only until osc gains set_pw)
-    int   p_osc_waveform_     = 0;      // waveform select: 0=saw, 1=pulse, 2=tri
-    float p_osc_range_semi_   = 0.0f;   // DCO range offset in semitones
+    // WO-13c (ADR 0026): independent DCO wave-enable switches (both may be on at once).
+    // Default saw-on/pulse-off is the neutral (prior SAW-default) sound.
+    int   p_osc_saw_on_       = 1;
+    int   p_osc_pulse_on_     = 0;
+    float p_osc_range_semi_   = 0.0f;  // DCO range offset in semitones
     float p_cutoff_           = 2000.0f;
     float p_res_              = 0.30f;
     float p_vcf_env_depth_    = 0.35f;   // ENV2 → VCF mod depth

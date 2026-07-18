@@ -20,8 +20,12 @@ void JunoVoice::init(float sample_rate) {
     gate_        = false;
     vel_scale_   = 1.0f;
 
-    osc_main_.init(sample_rate);
+    osc_saw_.init(sample_rate);
+    osc_pulse_.init(sample_rate);
+    osc_pulse_.set_waveform(1);  // pulse osc is always WAVE_POLYBLEP_SQUARE
     osc_sub_.init(sample_rate);
+    osc_sub_.set_waveform(1);  // WO-13c/ADR 0026: sub is a fixed square, one octave below
+    osc_sub_.set_pw(0.5f);     // fixed 50% duty — not user-editable
     noise_.Init();
     filter_.init(sample_rate);
     env_.init(sample_rate);
@@ -48,7 +52,8 @@ void JunoVoice::note_on(uint8_t pitch, uint8_t velocity, NoteExpression expr) {
 
     midi_note_ = pitch;
     float freq = daisysp::mtof((float)pitch);
-    osc_main_.set_freq(freq);
+    osc_saw_.set_freq(freq);
+    osc_pulse_.set_freq(freq);
     osc_sub_.set_freq(freq * 0.5f);  // -1 octave sub
 
     vel_scale_ = (float)velocity / 127.0f;
@@ -85,8 +90,9 @@ void JunoVoice::reset() {
     vel_scale_ = 1.0f;
     env_.reset();  // re-init to IDLE: no release tail, instant silence
     env2_.reset();
-    osc_main_.reset();
-    osc_sub_.reset();
+    osc_saw_.reset();
+    osc_pulse_.reset();
+    osc_sub_.reset();  // Reset() only rewinds phase; waveform/pw set at init() persist
     // ADR 0018: per-voice LFOs removed; engine owns the shared free-running LFO.
     env2_value_ = 0.0f;
     lfo1_value_ = 0.0f;
@@ -107,13 +113,17 @@ void JunoVoice::set_param(int id, float value) {
         case ParamId::NOISE_LEVEL:
             p_noise_level_ = value;
             break;
-        // OSC_PWM: pulse-width base value; applied in render() via osc_main_.set_pw().
+        // OSC_PWM: pulse-width base value; applied in render() via osc_pulse_.set_pw().
         case ParamId::OSC_PWM:
             p_osc_pwm_ = value;
             break;
-        // OSC_WAVEFORM: 0=SAW, 1=PULSE, 2=TRI; applied in render() via osc_main_.set_waveform().
-        case ParamId::OSC_WAVEFORM:
-            p_osc_waveform_ = (int)value;
+        // WO-13c (ADR 0026): independent wave-enable switches, gate contribution only —
+        // never resets phase (that only happens in note_on()/reset()).
+        case ParamId::OSC_SAW_ON:
+            p_osc_saw_on_ = (int)value;
+            break;
+        case ParamId::OSC_PULSE_ON:
+            p_osc_pulse_on_ = (int)value;
             break;
         // OSC_RANGE: semitone offset applied to base freq in render().
         case ParamId::OSC_RANGE:
@@ -294,15 +304,13 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
     if (amp_end < 0.0f) amp_end = 0.0f;
     if (amp_end > 1.0f) amp_end = 1.0f;
 
-    // Waveform: apply once per block (waveform switch is not audio-rate; block-rate is fine).
-    osc_main_.set_waveform(p_osc_waveform_);
-
     // PWM: apply once per block (block-rate, ~750 Hz @ 64/48k — ample for a slow LFO sweep).
     // Clamp [0.05, 0.95] to avoid degenerate silent/full-duty pulse at the extremes.
+    // Only affects osc_pulse_ (osc_saw_ ignores pw; osc_sub_ is fixed at 0.5).
     float pw = p_osc_pwm_ + mout.pwm_mod;
     if (pw < 0.05f) pw = 0.05f;
     if (pw > 0.95f) pw = 0.95f;
-    osc_main_.set_pw(pw);
+    osc_pulse_.set_pw(pw);
 
     // Sub / noise level mods (also once per block — fast enough):
     float eff_sub   = p_sub_level_ + mout.osc_sub;
@@ -333,14 +341,21 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
         float cur_freq = base_freq + freq_step * (float)i;
         float cur_amp  = p_osc_level_ + amp_step * (float)i;
 
-        osc_main_.set_freq(cur_freq);
+        osc_saw_.set_freq(cur_freq);
+        osc_pulse_.set_freq(cur_freq);
         osc_sub_.set_freq(cur_freq * 0.5f);
         // filter_.set_freq is called once per block above (block-rate cutoff).
 
-        float osc   = osc_main_.process() * cur_amp;
-        float sub   = osc_sub_.process() * eff_sub;
-        float noise = noise_.Process() * eff_noise;
-        float mixed = osc + sub + noise;
+        // WO-13c (ADR 0026): saw and pulse are independent switches that sum when both
+        // are on. Both oscillators always advance (process() is always called on each,
+        // whether or not it contributes) so toggling a switch never causes a phase jump.
+        float saw_out   = osc_saw_.process();
+        float pulse_out = osc_pulse_.process();
+        float osc       = (p_osc_saw_on_ ? saw_out : 0.0f) + (p_osc_pulse_on_ ? pulse_out : 0.0f);
+        osc             = osc * cur_amp;
+        float sub       = osc_sub_.process() * eff_sub;
+        float noise     = noise_.Process() * eff_noise;
+        float mixed     = osc + sub + noise;
 
         filter_.process(mixed);  // anti-denormal inside filter.h
         float filtered = filter_.output();

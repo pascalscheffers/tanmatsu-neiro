@@ -30,17 +30,22 @@ const ParamDesc JUNO_PARAM_TABLE[] = {
      FLAG_AUDIO_RATE | FLAG_PER_VOICE | FLAG_MOD_DEST},
     {ParamId::NOISE_LEVEL, GROUP_OSC, "Noise Level", "Noise", 0.0f, 1.0f, 0.05f, CURVE_LIN, UNIT_PCT, "%.2f", 0xFF,
      5.0f, FLAG_AUDIO_RATE | FLAG_PER_VOICE},
-    // OSC_PWM: pulse-width base value [0, 1]. OSC_WAVEFORM must be PULSE (1) for
-    // PWM to be audible. Wired in Stage 3c-iii: render() applies once per block
-    // via osc_main_.set_pw(). LFO→PWM routing (kModDestPwm) is live in "Clean 106".
+    // OSC_PWM: pulse-width base value [0, 1]. OSC_PULSE_ON must be on (1) for
+    // PWM to be audible. Wired in Stage 3c-iii, retargeted WO-13c: render() applies
+    // once per block via osc_pulse_.set_pw(). LFO→PWM routing (kModDestPwm) is live
+    // in "Clean 106".
     {ParamId::OSC_PWM, GROUP_OSC, "OSC PWM", "PWM", 0.0f, 1.0f, 0.50f, CURVE_LIN, UNIT_PCT, "%.2f", 0xFF, 5.0f,
      FLAG_AUDIO_RATE | FLAG_PER_VOICE | FLAG_MOD_DEST},
-    // OSC_WAVEFORM: DCO waveform select. 0=SAW, 1=PULSE (variable duty via OSC_PWM),
-    // 2=TRI. Wired in Stage 3c-iii: applies to osc_main_ only; osc_sub_ stays SAW (ADR 0020).
-    {ParamId::OSC_WAVEFORM, GROUP_OSC, "OSC Waveform", "Wave", 0.0f, 2.0f, 0.0f, CURVE_STEPPED, UNIT_NONE, "%.0f", 0xFF,
-     0.0f, FLAG_PER_VOICE},
+    // OSC_WAVEFORM is RETIRED (ADR 0026 / WO-13c) — no descriptor row. See param_id.h.
     // OSC_RANGE: DCO range offset in semitones (−24 = 2 oct down, +24 = 2 oct up).
     {ParamId::OSC_RANGE, GROUP_OSC, "OSC Range", "Range", -24.0f, 24.0f, 0.0f, CURVE_STEPPED, UNIT_SEMI, "%.0f", 0xFF,
+     0.0f, FLAG_PER_VOICE},
+    // OSC_SAW_ON / OSC_PULSE_ON (WO-13c, ADR 0026): independent DCO wave-enable switches —
+    // both can be on together and sum, matching the real Juno-106 DCO's byte-16 bits.
+    // Neutral default: saw on / pulse off (matches the prior SAW-default INIT sound).
+    {ParamId::OSC_SAW_ON, GROUP_OSC, "OSC Saw", "Saw", 0.0f, 1.0f, 1.0f, CURVE_STEPPED, UNIT_NONE, "%.0f", 0xFF, 0.0f,
+     FLAG_PER_VOICE},
+    {ParamId::OSC_PULSE_ON, GROUP_OSC, "OSC Pulse", "Pulse", 0.0f, 1.0f, 0.0f, CURVE_STEPPED, UNIT_NONE, "%.0f", 0xFF,
      0.0f, FLAG_PER_VOICE},
 
     // --- FILTER ---

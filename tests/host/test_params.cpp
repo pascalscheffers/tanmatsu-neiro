@@ -49,7 +49,9 @@ void test_params_table_coverage() {
     TEST_ASSERT(find_param(ParamId::SUB_LEVEL) != nullptr, "SUB_LEVEL missing");
     TEST_ASSERT(find_param(ParamId::NOISE_LEVEL) != nullptr, "NOISE_LEVEL missing");
     TEST_ASSERT(find_param(ParamId::OSC_PWM) != nullptr, "OSC_PWM missing");
-    TEST_ASSERT(find_param(ParamId::OSC_WAVEFORM) != nullptr, "OSC_WAVEFORM missing");
+    /* WO-13c (ADR 0026): OSC_WAVEFORM retired — replaced by two independent switches. */
+    TEST_ASSERT(find_param(ParamId::OSC_SAW_ON) != nullptr, "OSC_SAW_ON missing");
+    TEST_ASSERT(find_param(ParamId::OSC_PULSE_ON) != nullptr, "OSC_PULSE_ON missing");
     TEST_ASSERT(find_param(ParamId::OSC_RANGE) != nullptr, "OSC_RANGE missing");
 
     /* FILTER / VCF group */
@@ -171,6 +173,27 @@ void test_params_osc_pwm_row() {
     TEST_ASSERT(p->min == 0.0f, "OSC_PWM min must be 0");
     TEST_ASSERT(p->max == 1.0f, "OSC_PWM max must be 1");
     TEST_ASSERT((p->flags & FLAG_MOD_DEST) != 0, "OSC_PWM must be a MOD_DEST");
+    test_pass();
+}
+
+/* 4b. OSC_SAW_ON / OSC_PULSE_ON rows: WO-13c independent wave switches (ADR 0026). */
+void test_params_osc_wave_switch_rows() {
+    test_begin("OSC_SAW_ON/OSC_PULSE_ON rows: stepped 0..1, saw default on, pulse default off");
+
+    const ParamDesc* saw = find_param(ParamId::OSC_SAW_ON);
+    TEST_ASSERT(saw != nullptr, "OSC_SAW_ON not in table");
+    TEST_ASSERT(saw->id == 0x16, "OSC_SAW_ON id must be 0x16");
+    TEST_ASSERT(saw->curve == CURVE_STEPPED && saw->min == 0.0f && saw->max == 1.0f, "OSC_SAW_ON stepped 0..1");
+    TEST_ASSERT(saw->def == 1.0f, "OSC_SAW_ON default must be ON (neutral prior SAW-default sound)");
+
+    const ParamDesc* pulse = find_param(ParamId::OSC_PULSE_ON);
+    TEST_ASSERT(pulse != nullptr, "OSC_PULSE_ON not in table");
+    TEST_ASSERT(pulse->id == 0x17, "OSC_PULSE_ON id must be 0x17");
+    TEST_ASSERT(pulse->curve == CURVE_STEPPED && pulse->min == 0.0f && pulse->max == 1.0f, "OSC_PULSE_ON stepped 0..1");
+    TEST_ASSERT(pulse->def == 0.0f, "OSC_PULSE_ON default must be OFF");
+
+    /* OSC_WAVEFORM (0x14) must no longer have a descriptor row (retired). */
+    TEST_ASSERT(find_param(ParamId::OSC_WAVEFORM) == nullptr, "retired OSC_WAVEFORM must have no table row");
     test_pass();
 }
 
@@ -334,6 +357,7 @@ void test_params_suite() {
     test_params_ids_unique_and_in_range();
     test_params_count_matches_table();
     test_params_osc_pwm_row();
+    test_params_osc_wave_switch_rows();
     test_params_vca_level_zero_silences();
     test_params_osc_range_shifts_freq();
     test_params_vca_gate_mode();

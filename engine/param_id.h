@@ -34,8 +34,18 @@ static constexpr uint16_t OSC_LEVEL    = 0x10;  // main oscillator mix level
 static constexpr uint16_t SUB_LEVEL    = 0x11;  // sub-oscillator level
 static constexpr uint16_t NOISE_LEVEL  = 0x12;  // noise mix level
 static constexpr uint16_t OSC_PWM      = 0x13;  // DCO pulse-width amount (0=narrow..1=wide)
-static constexpr uint16_t OSC_WAVEFORM = 0x14;  // DCO waveform select (0=saw, 1=pulse, 2=tri)
+// OSC_WAVEFORM (0x14) is RETIRED (ADR 0026 / WO-13c): the Juno-106 DCO's saw and pulse
+// waves are independent switches (both can sound at once, matching the original
+// byte-16 bits), not a mutually-exclusive select. The ID is kept defined (unused, no
+// descriptor row, no set_param case) purely so old references still compile; it must
+// never be reused for a new meaning and never gains a table row again.
+static constexpr uint16_t OSC_WAVEFORM = 0x14;  // RETIRED — do not use; see note above.
 static constexpr uint16_t OSC_RANGE    = 0x15;  // DCO range offset in semitones (−24..+24)
+// WO-13c: independent DCO wave-enable switches (ADR 0026). Both may be on together;
+// their outputs sum. Fixed neutral default: saw on, pulse off (matches the prior
+// SAW-default sound so the INIT patch is unchanged).
+static constexpr uint16_t OSC_SAW_ON   = 0x16;  // 0=off, 1=on (default: on)
+static constexpr uint16_t OSC_PULSE_ON = 0x17;  // 0=off, 1=on (default: off)
 
 // FILTER group (0x20-0x2F) — SVF multimode filter + HPF
 static constexpr uint16_t FILTER_CUTOFF    = 0x20;  // VCF cutoff frequency
