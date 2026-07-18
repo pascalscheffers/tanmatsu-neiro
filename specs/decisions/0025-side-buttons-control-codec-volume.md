@@ -16,18 +16,22 @@ the synth's gain staging and limiter behaviour.
 ## Decision
 
 - The side buttons adjust ES8156 codec volume on the control thread, never in the audio path.
-- Volume moves in 5-percentage-point steps, with an immediate step on press, a 250 ms hold
+- User-facing volume moves from 0–100 in 5-point steps, with an immediate step on press, a 250 ms hold
   delay, then one step every 150 ms while held.
-- The range is 0–90%. The 90% ceiling preserves ADR 0021's measured-safe device landing;
-  the rejected 100% setting overloaded the downstream analog output.
+- The platform and UI expose 0–100, where user-facing 100 maps to 90% codec volume. The
+  90% codec ceiling preserves ADR 0021's measured-safe device landing; the rejected codec
+  100% setting overloaded the downstream analog output.
 - The platform HAL exposes canonical volume-up/down keys plus codec-volume get/set functions.
   The host maps its media-volume keys and applies the same attenuation in its audio sink.
-- Volume is session state in this slice: startup is 90%, with no preset serialization, NVS
-  persistence, or parameter-table row.
+- The AMP page shows a read-only Volume bar before Master Gain. It is live session chrome,
+  not a synth parameter: arrow/F1/F2 navigation remains over the declarative parameter table,
+  while the dedicated side buttons update the bar and its 0–100 value.
+- Volume is session state in this slice: startup is logical 100 (codec 90%), with no preset
+  serialization, NVS persistence, or parameter-table row.
 - Speaker-amplifier enable and headphone auto-routing remain unchanged.
 
 ## Consequences
 
 Physical loudness is independent of patch tone, limiter drive, and MIDI-file automation.
-Codec I2C writes stay off the real-time thread. A volume overlay and wear-safe persistence
-can be added later without changing the control assignment or audio architecture.
+Codec I2C writes stay off the real-time thread. Wear-safe persistence can be added later
+without changing the control assignment or audio architecture.
