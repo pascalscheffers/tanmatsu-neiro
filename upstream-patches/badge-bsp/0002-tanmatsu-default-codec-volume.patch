@@ -1,0 +1,34 @@
+Subject: [PATCH] bsp/tanmatsu: initialize codec volume to 90 percent
+
+The generic ES8156 driver leaves its raw volume register at 100 after codec
+configuration. On Tanmatsu, that is only about 56% of the badge BSP's public
+0..100 volume scale because `bsp_audio_set_volume` maps the scale to the
+codec's full 0..180 register range. Applications which do not immediately set
+their own volume therefore inherit an implicit, unusually quiet driver
+default rather than a board-level output setting.
+
+Set a defined Tanmatsu startup volume of 90% after configuring the codec. The
+level is below the 100% setting that overloaded an external analog-loop
+capture, while remaining close to the clean 88% measurement. Applications
+can still override it through the existing `bsp_audio_set_volume` API.
+
+The setting belongs in badge-bsp rather than the generic ES8156 component:
+the BSP owns the board's analog output policy, while the codec driver remains
+usable on boards with different output stages.
+
+WHY WE CARRY THIS: badge-bsp is a pinned managed component
+(`managed_components/badgeteam__badge-bsp`, gitignored, owned by the ESP-IDF
+component manager) so this fix cannot be committed there directly. This patch
+is applied over the pinned component at build time
+(`tools/apply-upstream-patches.sh`) and is intended for upstream submission to
+badgeteam/badge-bsp after the 90% device listening/analog-loop validation in
+ADR 0021. Retire it once merged and the dependency is bumped. See
+`upstream-patches/README.md` and `specs/07-upstream-contributions.md`.
+
+--- a/targets/tanmatsu/badge_bsp_audio.c
++++ b/targets/tanmatsu/badge_bsp_audio.c
+@@ -83 +83,3 @@ esp_err_t bsp_audio_initialize() {
+-    return initialize_i2s(44100);
++    ESP_RETURN_ON_ERROR(bsp_audio_set_volume(90.0f), TAG, "Failed to set default codec volume");
++
++    return initialize_i2s(44100);

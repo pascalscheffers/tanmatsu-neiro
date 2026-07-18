@@ -1647,6 +1647,14 @@ reports `codec=90%`. ADR 0021 records the 88→100→90 measurement path.
 samples/flat tops, true peak below 0 dBTP, and clean speaker/headphone listening. If the repeated
 performance peaks materially higher, return to the already-clean 88% landing.
 
+## 2026-07-18 — Track 90% Tanmatsu codec default upstream
+
+Added `upstream-patches/badge-bsp/0002-tanmatsu-default-codec-volume.patch`: after the generic
+ES8156 configuration leaves raw volume 100 (~56% of the BSP scale), the Tanmatsu BSP now chooses
+a defined 90% board startup level. Apps can still override it; the synth retains its explicit
+90% request so its ADR 0021 output policy does not depend silently on a dependency default.
+Submission remains gated on the pending 90% speaker/headphone + analog-loop validation.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

@@ -78,6 +78,12 @@ Tiered by when it bites. Nothing here is committed-to yet — these are *needs t
   accessor (sample rate + bit width + channels) would let us stop hardcoding 16-bit stereo,
   and a `bsp_audio_set_rate` that handles the disable/enable internally would be cleaner.
   Minor; raise if it annoys us.
+- **[now] Tanmatsu codec startup volume (2026-07-18).** The generic ES8156 driver leaves raw
+  volume 100, only about 56% of badge-bsp's 0..100 scale; apps which do not set volume inherit
+  that implicit driver default. Board output policy belongs in badge-bsp, so
+  **`upstream-patches/badge-bsp/0002-tanmatsu-default-codec-volume.patch`** explicitly sets
+  90% after codec configuration while preserving the existing setter for app overrides. Ready
+  to PR after ADR 0021's pending 90% speaker/headphone and analog-loop validation; retire on merge.
 - **[Stage 5] USB-host MIDI.** ADR 0005's real unknown. If neither IDF nor BSP provides a
   USB-host MIDI class driver, a reusable component (contributed to badge.team) is better
   than a private one. Discuss scope with Renze before building.
