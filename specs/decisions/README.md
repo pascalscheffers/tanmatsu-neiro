@@ -23,3 +23,4 @@ decision, and the consequence. Supersede rather than rewrite history.
 | [0015](0015-spending-cpu-headroom.md) | Spend the Stage 0.5 CPU headroom on richness (reverb, oversampling) over raw voice count; profile the video path before waveform animation |
 | [0016](0016-master-output-soft-clip.md) | Master output stage = linear headroom + a gentle cubic soft-clip ceiling (no baked-in drive; overt grit is a future `MASTER_DRIVE` param) |
 | [0017](0017-orchestrator-worker-methodology.md) | Default build methodology: Opus orchestrates, fresh-context Sonnet workers execute closed work-orders; gates return to Opus (amends 0014) |
+| [0025](0025-side-buttons-control-codec-volume.md) | Dedicated side buttons control session-level codec volume (0–90%), independent of patch gain and MIDI CC7 |
