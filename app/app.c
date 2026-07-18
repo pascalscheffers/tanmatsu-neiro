@@ -43,6 +43,7 @@
 
 #define VOLUME_STEP_PCT        5u
 #define VOLUME_REPEAT_DELAY    250u
+#define VOLUME_STORAGE_KEY     "volume"
 #define VOLUME_REPEAT_INTERVAL 150u
 
 // Voice-meter debounce (Stage 8 diag, 2026-07-07). The active-voice count churns
@@ -90,7 +91,7 @@ static void bench_wait_for_key(void) {
 // ---------------------------------------------------------------------------
 static uint32_t s_last_drawn_seq = 0;
 
-static void adjust_volume(UIState* s, int direction) {
+static bool adjust_volume(UIState* s, int direction) {
     uint32_t current = platform_audio_volume_get();
     uint32_t next    = current;
     if (direction > 0) {
@@ -103,6 +104,8 @@ static void adjust_volume(UIState* s, int direction) {
     } else {
         next = 0u;
     }
+    if (next == current) return false;
+
     if (platform_audio_volume_set(next)) {
         uint32_t applied = platform_audio_volume_get();
         if (applied != s->volume_pct) {
@@ -112,7 +115,15 @@ static void adjust_volume(UIState* s, int direction) {
             ui_band_content(&a, &b);
             ui_invalidate(a, b);
         }
+        return applied == next;
     }
+    return false;
+}
+
+static void save_volume_if_dirty(bool* dirty) {
+    if (!*dirty) return;
+    uint8_t volume = (uint8_t)platform_audio_volume_get();
+    if (platform_storage_save(VOLUME_STORAGE_KEY, &volume, sizeof(volume)) == 0) *dirty = false;
 }
 
 static void render_cb(void* arg) {
@@ -210,6 +221,16 @@ void app_run(void) {
         return;
     }
 
+    // Probe one byte beyond the stable payload size so the host file-backed
+    // store can reject oversized/corrupt values as well as the device NVS store.
+    uint8_t stored_volume[2];
+    int     stored_volume_len = platform_storage_load(VOLUME_STORAGE_KEY, stored_volume, sizeof(stored_volume));
+    if (stored_volume_len == 1 && stored_volume[0] <= 100u) {
+        // Best effort: platform init's logical 100 remains the safe fallback if
+        // applying the persisted value fails.
+        (void)platform_audio_volume_set(stored_volume[0]);
+    }
+
 #ifdef SYNTH_BENCH
     // Profiling mode (Stage 0.5): run the kernel table + load ramp, then stop.
     // Never enters the normal UI loop. The bench binary is built separately
@@ -252,6 +273,7 @@ void app_run(void) {
     uint64_t next_ctrl          = 0;
     bool     volume_up_held     = false;
     bool     volume_down_held   = false;
+    bool     volume_dirty       = false;
     uint64_t volume_up_repeat   = 0;
     uint64_t volume_down_repeat = 0;
 #ifdef SYNTH_PROFILE
@@ -273,16 +295,20 @@ void app_run(void) {
             if (ev.type == PLATFORM_EV_KEY && ev.key == PLATFORM_KEY_VOLUME_UP) {
                 volume_up_held = ev.pressed;
                 if (ev.pressed) {
-                    adjust_volume(&ui_state, 1);
+                    if (adjust_volume(&ui_state, 1)) volume_dirty = true;
                     volume_up_repeat = platform_millis() + VOLUME_REPEAT_DELAY;
+                } else {
+                    save_volume_if_dirty(&volume_dirty);
                 }
                 continue;
             }
             if (ev.type == PLATFORM_EV_KEY && ev.key == PLATFORM_KEY_VOLUME_DOWN) {
                 volume_down_held = ev.pressed;
                 if (ev.pressed) {
-                    adjust_volume(&ui_state, -1);
+                    if (adjust_volume(&ui_state, -1)) volume_dirty = true;
                     volume_down_repeat = platform_millis() + VOLUME_REPEAT_DELAY;
+                } else {
+                    save_volume_if_dirty(&volume_dirty);
                 }
                 continue;
             }
@@ -357,11 +383,11 @@ void app_run(void) {
         // --- Control tick + inline render (when no render task) ---
         uint64_t now = platform_millis();
         if (volume_up_held && now >= volume_up_repeat) {
-            adjust_volume(&ui_state, 1);
+            if (adjust_volume(&ui_state, 1)) volume_dirty = true;
             volume_up_repeat = now + VOLUME_REPEAT_INTERVAL;
         }
         if (volume_down_held && now >= volume_down_repeat) {
-            adjust_volume(&ui_state, -1);
+            if (adjust_volume(&ui_state, -1)) volume_dirty = true;
             volume_down_repeat = now + VOLUME_REPEAT_INTERVAL;
         }
         if (now >= next_ctrl) {
@@ -461,6 +487,9 @@ void app_run(void) {
 #endif
         platform_sleep_ms(POLL_MS);
     }
+
+    // Covers launcher exit while a key is held and retries a failed release save.
+    save_volume_if_dirty(&volume_dirty);
 
     // Finalize an active WAV before the audio source is stopped or the app
     // returns to the launcher.

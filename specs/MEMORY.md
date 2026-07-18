@@ -1673,6 +1673,17 @@ approximately −6.2 dB (codec ~83%). Logical 50% is −12.0 dB and 25% is −24
 speaker; confirm the upper range has useful ~1 dB-per-5-point changes and no objectionable
 step noise.
 
+## 2026-07-18 — Listening volume persists
+
+- Logical listening volume now loads through the existing app storage seam from key `volume`
+  as an exact one-byte `uint8_t`; invalid data or apply failure safely retains logical 100.
+- Successful changes are saved on volume-key release rather than each hold-repeat step, with
+  dirty-state retry on a later release or normal shutdown. Volume remains outside presets and
+  the declarative parameter table.
+- Verify: `make format`, `make test`, `make host`, `make build`, and `make size` pass; no direct
+  ESP/NVS dependency crosses the platform membrane. Flash 1,056,834 B; DIRAM
+  241,474/576,464 B (41.89%); image 1,187,092 B.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

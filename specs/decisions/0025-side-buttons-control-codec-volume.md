@@ -28,12 +28,20 @@ the synth's gain staging and limiter behaviour.
 - The AMP page shows a read-only Volume bar before Master Gain. It is live session chrome,
   not a synth parameter: arrow/F1/F2 navigation remains over the declarative parameter table,
   while the dedicated side buttons update the bar and its 0–100 value.
-- Volume is session state in this slice: startup is logical 100 (codec 90%), with no preset
-  serialization, NVS persistence, or parameter-table row.
+- Volume is app state outside presets and the parameter table. The app-owned storage domain
+  persists it under key `volume` as an exact one-byte `uint8_t` logical-percent payload. On
+  device this is the existing `neiro_synth` NVS namespace; the host uses the same storage seam.
+- Startup accepts only an exact one-byte payload in the inclusive range 0–100. Missing,
+  malformed, or out-of-range data, and a platform apply failure, all fall back safely to the
+  existing logical 100 default (codec 90%).
+- Successful changes mark the value dirty. Hold-repeat remains control-thread-only and does
+  not write storage per step: release of either volume key saves the last successfully applied
+  logical value, and normal shutdown retries once if the value is still dirty. Dirty state is
+  cleared only after a successful save; no-ops at 0 or 100 do not mark it.
 - Speaker-amplifier enable and headphone auto-routing remain unchanged.
 
 ## Consequences
 
 Physical loudness is independent of patch tone, limiter drive, and MIDI-file automation.
-Codec I2C writes stay off the real-time thread. Wear-safe persistence can be added later
-without changing the control assignment or audio architecture.
+Codec I2C and persistence writes stay off the real-time thread. Release batching limits NVS
+wear without changing the control assignment or audio architecture.

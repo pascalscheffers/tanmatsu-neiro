@@ -31,7 +31,7 @@ typedef struct {
     char     preset_name[33];            // displayed in the status strip
     int      preset_idx;                 // factory index (0-based) or -1 for user preset
     float    norms[UI_NORM_TABLE_SIZE];  // normalised [0,1] shadow per param ID
-    uint32_t volume_pct;                 // session-only logical listening volume (0–100)
+    uint32_t volume_pct;                 // app-persisted logical listening volume (0–100)
 
     // Audition-with-revert state (WO-3, preset browser page).
     // Snapshot is captured when entering page 0; restored on back/navigate-away

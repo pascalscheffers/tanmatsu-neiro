@@ -105,7 +105,7 @@ bool platform_audio_start(const platform_audio_config_t* cfg, platform_audio_ren
 // Stop the audio sink; no further render calls occur after this returns.
 void platform_audio_stop(void);
 
-// Session-only listening volume, expressed as logical 0–100 percent. The
+// App-persisted listening volume, expressed as logical 0–100 percent. The
 // device maps 100 to its safe 90% codec ceiling; the host maps it to 0.0–1.0
 // sink gain. Call these only from the control thread; the setter clamps its
 // input and returns false if the platform could not apply it.
