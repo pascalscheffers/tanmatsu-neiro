@@ -1615,6 +1615,23 @@ take with representative single notes and dense chords. Retain `sniff.log`; comp
 and `out` with the gain-2.0 baseline, then analyze the new WAV for LUFS, peaks, crest factor, and
 rail samples. Raise codec output further only if the analog outputs remain clean and comfortable.
 
+## 2026-07-18 — Codec 100% analog-output trial
+
+Pascal clarified that `test.wav` is an external analog-loop capture (Tanmatsu 3.5 mm
+output → Apple 3.5 mm/USB-C input), not an SD master. At codec 88% it measures 44.1 kHz
+mono, −14.6 LUFS integrated, −3.25 dBFS sample peak / −3.3 dBTP, −17.1 dBFS RMS,
+13.84 dB crest, with zero samples above −1 dBFS and zero rail hits.
+
+Set the device codec to 100% for the requested trial; PROFILE will report `codec=100%`.
+The BSP maps 88→100% from ES8156 register 158→180, nominally about +11 dB, which is
+larger than the capture's 3.3 dB peak margin. The identical passage may therefore clip
+the codec/output or Apple input; this is a measurement run, not a final landing.
+
+**NEXT (Pascal):** flash, repeat the same instruments and capture chain, and retain both
+the new WAV and PROFILE log. Check by ear at safe headphone/speaker level. Compare peak,
+rail/flat-top count, LUFS, and limiter `postg/gr/out`; reduce codec volume if the analog
+capture clips or the physical outputs distort.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

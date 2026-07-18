@@ -198,7 +198,7 @@ static size_t                   s_block       = 0;
 
 // Physical loudness belongs at the codec, leaving MASTER_GAIN at a meaningful
 // unity default and reducing unnecessary limiter drive (ADR 0021 amendment).
-static const uint32_t kCodecVolumePct = 88u;
+static const uint32_t kCodecVolumePct = 100u;
 
 static float   s_left[MAX_BLOCK];
 static float   s_right[MAX_BLOCK];
