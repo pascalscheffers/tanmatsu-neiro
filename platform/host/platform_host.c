@@ -15,6 +15,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include "audio_volume.h"
 #include "miniaudio.h"
 #include "pax_internal.h"  // pax_get_index_conv: native-format pixel -> ARGB
 #include "platform.h"
@@ -87,7 +88,7 @@ static void audio_callback(ma_device* device, void* output, const void* input, m
 
     static float left[MAX_CHUNK];
     static float right[MAX_CHUNK];
-    const float  volume = (float)atomic_load(&s_volume_pct) / 100.0f;
+    const float  volume = platform_volume_gain(atomic_load(&s_volume_pct));
 
     ma_uint32 done = 0;
     while (done < frame_count) {

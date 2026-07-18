@@ -65,6 +65,7 @@ idf_component_register(
 		"../ui/ui_page_table.cpp"
 		"../ui/ui_focus.cpp"
 		"../ui/ui_dirty.cpp"
+		"../platform/audio_volume.c"
 		"../platform/device/platform_device.c"
 		"../platform/device/midi_usb_device.c"
 		"../platform/device/midi_usb_host.c"

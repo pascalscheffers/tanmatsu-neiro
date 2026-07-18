@@ -26,6 +26,7 @@ add_executable(tanmatsu-tests
     test_saturate.cpp
     test_dcblock.cpp
     test_limiter.cpp
+    test_audio_volume.cpp
     test_preset.cpp
     test_mod_sources.cpp
     test_mod_matrix.cpp
@@ -60,6 +61,7 @@ add_executable(tanmatsu-tests
     "${REPO_ROOT}/engine/record_ring.cpp"
     "${REPO_ROOT}/control/wav_recorder.cpp"
     "${REPO_ROOT}/control/midi_in.c"
+    "${REPO_ROOT}/platform/audio_volume.c"
 )
 
 target_include_directories(tanmatsu-tests PRIVATE

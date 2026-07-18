@@ -17,7 +17,9 @@ the synth's gain staging and limiter behaviour.
 
 - The side buttons adjust ES8156 codec volume on the control thread, never in the audio path.
 - User-facing volume moves from 0–100 in 5-point steps, with an immediate step on press, a 250 ms hold
-  delay, then one step every 150 ms while held.
+  delay, then one step every 150 ms while held. Logical percent follows a square-law listening taper
+  (`gain = norm²`) rather than mapping linearly into the codec's dB-coded register. Representative
+  relative attenuation is −6.2 dB at 70%, −12.0 dB at 50%, and −24.1 dB at 25%.
 - The platform and UI expose 0–100, where user-facing 100 maps to 90% codec volume. The
   90% codec ceiling preserves ADR 0021's measured-safe device landing; the rejected codec
   100% setting overloaded the downstream analog output.

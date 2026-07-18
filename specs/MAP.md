@@ -62,6 +62,8 @@ Paths are relative to repo root. Dependencies live in `managed_components/` (ESP
   unless a work-order points at a specific file.
 
 ## platform/ — the HAL (the only place bsp/SDL/miniaudio may appear, ADR 0007)
+- `platform/audio_volume.{h,c}` — shared square-law listening-volume curve; host applies its
+  gain directly, while device converts the same attenuation to the ES8156/BSP dB-coded scale.
 - `platform/platform.h` — **the 5-seam HAL**: `platform_init`, `platform_framebuffer` +
   `platform_present` (display), `platform_audio_start/stop` + `platform_audio_render_fn` +
   `platform_event_t`/`platform_poll` (input). MIDI transport + **storage** seams are declared

@@ -7,6 +7,7 @@
 #include <math.h>
 #include <stdatomic.h>
 #include <string.h>
+#include "audio_volume.h"
 #include "bsp/audio.h"
 #include "bsp/device.h"
 #include "bsp/display.h"
@@ -514,10 +515,10 @@ uint32_t platform_audio_volume_get(void) {
 
 bool platform_audio_volume_set(uint32_t pct) {
     if (pct > 100u) pct = 100u;
-    uint32_t codec_pct = (pct * 90u + 50u) / 100u;
-    if (bsp_audio_set_volume((float)codec_pct) != ESP_OK) return false;
+    float codec_pct = platform_volume_codec_pct(pct);
+    if (bsp_audio_set_volume(codec_pct) != ESP_OK) return false;
     s_volume_pct       = pct;
-    s_codec_volume_pct = codec_pct;
+    s_codec_volume_pct = (uint32_t)(codec_pct + 0.5f);
     return true;
 }
 

@@ -65,6 +65,7 @@ set(HOST_SRCS
     "${REPO_ROOT}/control/wav_recorder.cpp"
     "${REPO_ROOT}/ui/ui.cpp"
     "${REPO_ROOT}/app/app.c"
+    "${REPO_ROOT}/platform/audio_volume.c"
     "${REPO_ROOT}/platform/host/platform_host.c"
     "${REPO_ROOT}/platform/host/miniaudio_impl.c"
     "${REPO_ROOT}/platform/host/midi_host.cpp"

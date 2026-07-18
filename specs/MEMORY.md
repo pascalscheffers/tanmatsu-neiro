@@ -1655,6 +1655,24 @@ a defined 90% board startup level. Apps can still override it; the synth retains
 90% request so its ADR 0021 output policy does not depend silently on a dependency default.
 Submission remains gated on the pending 90% speaker/headphone + analog-loop validation.
 
+## 2026-07-18 — Listening-volume curve fixed
+
+Replaced the linear logical-percent → ES8156 register mapping with a shared square-law
+listening taper (`gain = norm²`) while retaining codec 90% as the measured-safe maximum.
+The old mapping made logical 70% approximately −24.5 dB relative to maximum; it is now
+approximately −6.2 dB (codec ~83%). Logical 50% is −12.0 dB and 25% is −24.1 dB.
+
+- `platform/audio_volume.{h,c}` owns the curve once. Device converts its attenuation to the
+  BSP's dB-coded codec scale; host applies the same gain at its sink. Zero retains maximum
+  codec attenuation and values above 100 clamp.
+- ADR 0025 records the taper; MAP points to the new shared seam. Focused tests cover anchor
+  points, ceiling, clamp, and monotonicity.
+- Verify: `make format` ✅, `make test` ✅, `make host` ✅, `make build` ✅ (43% app partition free).
+
+**NEXT (Pascal):** flash and check the dedicated side buttons across 100→0 on headphones and
+speaker; confirm the upper range has useful ~1 dB-per-5-point changes and no objectionable
+step noise.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
