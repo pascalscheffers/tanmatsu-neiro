@@ -40,10 +40,10 @@ static SDL_Texture*  s_texture  = NULL;
 static pax_buf_t     s_fb       = {0};
 
 static ma_device                s_device;
-static bool                     s_audio_running    = false;
-static platform_audio_render_fn s_render           = NULL;
-static void*                    s_render_user      = NULL;
-static _Atomic uint32_t         s_codec_volume_pct = 90u;
+static bool                     s_audio_running = false;
+static platform_audio_render_fn s_render        = NULL;
+static void*                    s_render_user   = NULL;
+static _Atomic uint32_t         s_volume_pct    = 100u;
 
 static uint64_t s_start_ms = 0;
 
@@ -87,7 +87,7 @@ static void audio_callback(ma_device* device, void* output, const void* input, m
 
     static float left[MAX_CHUNK];
     static float right[MAX_CHUNK];
-    const float  volume = (float)atomic_load(&s_codec_volume_pct) / 90.0f;
+    const float  volume = (float)atomic_load(&s_volume_pct) / 100.0f;
 
     ma_uint32 done = 0;
     while (done < frame_count) {
@@ -209,12 +209,12 @@ void platform_audio_stop(void) {
 }
 
 uint32_t platform_audio_volume_get(void) {
-    return atomic_load(&s_codec_volume_pct);
+    return atomic_load(&s_volume_pct);
 }
 
 bool platform_audio_volume_set(uint32_t pct) {
-    if (pct > 90u) pct = 90u;
-    atomic_store(&s_codec_volume_pct, pct);
+    if (pct > 100u) pct = 100u;
+    atomic_store(&s_volume_pct, pct);
     return true;
 }
 

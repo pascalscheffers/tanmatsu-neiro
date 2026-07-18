@@ -90,20 +90,29 @@ static void bench_wait_for_key(void) {
 // ---------------------------------------------------------------------------
 static uint32_t s_last_drawn_seq = 0;
 
-static void adjust_volume(int direction) {
+static void adjust_volume(UIState* s, int direction) {
     uint32_t current = platform_audio_volume_get();
     uint32_t next    = current;
     if (direction > 0) {
-        if (next <= 90u - VOLUME_STEP_PCT)
+        if (next <= 100u - VOLUME_STEP_PCT)
             next += VOLUME_STEP_PCT;
         else
-            next = 90u;
+            next = 100u;
     } else if (next >= VOLUME_STEP_PCT) {
         next -= VOLUME_STEP_PCT;
     } else {
         next = 0u;
     }
-    platform_audio_volume_set(next);
+    if (platform_audio_volume_set(next)) {
+        uint32_t applied = platform_audio_volume_get();
+        if (applied != s->volume_pct) {
+            s->volume_pct = applied;
+            s->change_seq++;
+            int a, b;
+            ui_band_content(&a, &b);
+            ui_invalidate(a, b);
+        }
+    }
 }
 
 static void render_cb(void* arg) {
@@ -264,7 +273,7 @@ void app_run(void) {
             if (ev.type == PLATFORM_EV_KEY && ev.key == PLATFORM_KEY_VOLUME_UP) {
                 volume_up_held = ev.pressed;
                 if (ev.pressed) {
-                    adjust_volume(1);
+                    adjust_volume(&ui_state, 1);
                     volume_up_repeat = platform_millis() + VOLUME_REPEAT_DELAY;
                 }
                 continue;
@@ -272,7 +281,7 @@ void app_run(void) {
             if (ev.type == PLATFORM_EV_KEY && ev.key == PLATFORM_KEY_VOLUME_DOWN) {
                 volume_down_held = ev.pressed;
                 if (ev.pressed) {
-                    adjust_volume(-1);
+                    adjust_volume(&ui_state, -1);
                     volume_down_repeat = platform_millis() + VOLUME_REPEAT_DELAY;
                 }
                 continue;
@@ -348,11 +357,11 @@ void app_run(void) {
         // --- Control tick + inline render (when no render task) ---
         uint64_t now = platform_millis();
         if (volume_up_held && now >= volume_up_repeat) {
-            adjust_volume(1);
+            adjust_volume(&ui_state, 1);
             volume_up_repeat = now + VOLUME_REPEAT_INTERVAL;
         }
         if (volume_down_held && now >= volume_down_repeat) {
-            adjust_volume(-1);
+            adjust_volume(&ui_state, -1);
             volume_down_repeat = now + VOLUME_REPEAT_INTERVAL;
         }
         if (now >= next_ctrl) {

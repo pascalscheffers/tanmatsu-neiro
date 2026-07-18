@@ -1721,3 +1721,13 @@ root cause was the I2S slot-format mismatch, fixed and device-verified in WO-12a
 - Host sink gain reads atomically after synth rendering, preserving engine output. PROFILE now
   reports the live device codec volume. `make format`, `make host`, `make test`, `make build`,
   and `make size` pass; flash is 1,055,572 B, DIRAM 241,474 B (41.89%), image 1,185,830 B.
+
+## 2026-07-18 — AMP-page logical listening volume
+
+- The audio-volume seam is now logical 0–100: device 100 maps (rounded) to codec 90 while
+  PROFILE retains the actual codec setting; host applies `pct / 100.0`. Side-button updates
+  refresh a session-only, non-selectable AMP `Volume` bar before `Master Gain` without touching
+  parameter, preset, MIDI, or NVS data.
+- Verify: `make format`, `make host`, `make test`, `make build`, and `make size` pass;
+  membrane check has no new portable-layer violations. Flash 1,056,278 B; DIRAM
+  241,474/576,464 B (41.89%); image 1,186,536 B.

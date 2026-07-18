@@ -198,7 +198,9 @@ static size_t                   s_block       = 0;
 
 // Physical loudness belongs at the codec, leaving MASTER_GAIN at a meaningful
 // unity default and reducing unnecessary limiter drive (ADR 0021 amendment).
+// The public value is logical 0–100; codec writes cap at the safe 90% ceiling.
 // This is control-thread-only session state; I2C writes stay in its setter.
+static uint32_t s_volume_pct       = 100u;
 static uint32_t s_codec_volume_pct = 90u;
 
 static float   s_left[MAX_BLOCK];
@@ -460,7 +462,7 @@ bool platform_audio_start(const platform_audio_config_t* cfg, platform_audio_ren
     bsp_audio_set_rate(cfg->sample_rate);
     i2s_channel_enable(s_i2s);
 
-    if (!platform_audio_volume_set(s_codec_volume_pct)) {
+    if (!platform_audio_volume_set(s_volume_pct)) {
         ESP_LOGE(TAG, "codec volume set failed");
         return false;
     }
@@ -507,13 +509,15 @@ void platform_audio_stop(void) {
 }
 
 uint32_t platform_audio_volume_get(void) {
-    return s_codec_volume_pct;
+    return s_volume_pct;
 }
 
 bool platform_audio_volume_set(uint32_t pct) {
-    if (pct > 90u) pct = 90u;
-    if (bsp_audio_set_volume((float)pct) != ESP_OK) return false;
-    s_codec_volume_pct = pct;
+    if (pct > 100u) pct = 100u;
+    uint32_t codec_pct = (pct * 90u + 50u) / 100u;
+    if (bsp_audio_set_volume((float)codec_pct) != ESP_OK) return false;
+    s_volume_pct       = pct;
+    s_codec_volume_pct = codec_pct;
     return true;
 }
 

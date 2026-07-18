@@ -117,7 +117,8 @@ static const char* group_name(uint8_t g) {
 // ---------------------------------------------------------------------------
 enum ItemKind : uint8_t {
     ITEM_HEADER = 0,
-    ITEM_ROW    = 1
+    ITEM_ROW    = 1,
+    ITEM_VOLUME = 2
 };
 
 struct DrawItem {
@@ -133,9 +134,16 @@ static int       build_items(int page_index, DrawItem* items) {
     if (page_index < 0 || page_index >= kNumPages) return 0;
     const PageDef& pd = PAGE_TABLE[page_index];
     if (pd.kind != PAGE_PARAMS) return 0;
-    bool             multi = (pd.num_groups > 1);
-    int              n     = 0;
-    int              row_i = 0;
+    bool multi = (pd.num_groups > 1);
+    int  n     = 0;
+    int  row_i = 0;
+    if (pd.num_groups == 1 && pd.groups[0] == GROUP_AMP) {
+        items[n].kind         = ITEM_VOLUME;
+        items[n].header_label = nullptr;
+        items[n].row          = nullptr;
+        items[n].row_idx      = -1;
+        n++;
+    }
     const ParamDesc* group_rows[24];
     for (int g = 0; g < (int)pd.num_groups; g++) {
         if (n >= kMaxItems) break;
@@ -228,6 +236,7 @@ static void ui_apply_params(UIState* s, const char* name, int preset_idx, const 
 extern "C" void ui_state_init(UIState* s) {
     memset(s, 0, sizeof(*s));
     s->preset_idx = 0;
+    s->volume_pct = platform_audio_volume_get();
     strncpy(s->preset_name, "INIT", sizeof(s->preset_name) - 1);
     // page=0 (PRESET), row=0 — set by memset above.
 
@@ -648,9 +657,10 @@ static void draw_rows(pax_buf_t* fb, const UIState* s) {
         if (items[i].kind == ITEM_HEADER) {
             draw_section_header(fb, y, items[i].header_label);
         } else {
-            const ParamDesc* d   = items[i].row;
-            int              idx = items[i].row_idx;
-            bool             sel = (idx == s->row);
+            bool             volume = (items[i].kind == ITEM_VOLUME);
+            const ParamDesc* d      = items[i].row;
+            int              idx    = items[i].row_idx;
+            bool             sel    = !volume && (idx == s->row);
 
             if (sel) {
                 pax_simple_rect(fb, COL_SEL_BG, 0.0f, y, SCREEN_W, ROW_H - 1.0f);
@@ -665,49 +675,56 @@ static void draw_rows(pax_buf_t* fb, const UIState* s) {
 
             // Param name.
             pax_draw_text(fb, sel ? COL_TEXT : COL_DIM, pax_font_sky_mono, FONT_MD, NAME_X, mid_y - FONT_MD * 0.5f,
-                          d->name);
+                          volume ? "Volume" : d->name);
 
             // Value bar — cyan→magenta gradient fill.
-            float norm   = (d->id < UI_NORM_TABLE_SIZE) ? s->norms[d->id] : 0.0f;
+            float norm =
+                volume ? (float)s->volume_pct / 100.0f : ((d->id < UI_NORM_TABLE_SIZE) ? s->norms[d->id] : 0.0f);
             float bar_y  = mid_y - BAR_H * 0.5f;
             float filled = norm * BAR_W;
             pax_simple_rect(fb, COL_BAR_BG, BAR_X, bar_y, BAR_W, BAR_H);
             draw_gradient_bar(fb, BAR_X, bar_y, filled, BAR_H, sel);
 
             // Value text.
-            char  val_buf[24];
-            float phys = engine_get_param(d->id);
-            if (d->display_fmt) {
-                snprintf(val_buf, sizeof(val_buf), d->display_fmt, (double)phys);
+            char val_buf[24];
+            if (volume) {
+                snprintf(val_buf, sizeof(val_buf), "%u", (unsigned)s->volume_pct);
             } else {
-                snprintf(val_buf, sizeof(val_buf), "%.2f", (double)phys);
+                float phys = engine_get_param(d->id);
+                if (d->display_fmt) {
+                    snprintf(val_buf, sizeof(val_buf), d->display_fmt, (double)phys);
+                } else {
+                    snprintf(val_buf, sizeof(val_buf), "%.2f", (double)phys);
+                }
             }
             pax_draw_text(fb, sel ? COL_TEXT : COL_DIM, pax_font_sky_mono, FONT_MD, VAL_X, mid_y - FONT_MD * 0.5f,
                           val_buf);
 
             // Unit label.
-            const char* unit_str = nullptr;
-            switch (d->unit) {
-                case UNIT_HZ:
-                    unit_str = "Hz";
-                    break;
-                case UNIT_PCT:
-                    unit_str = "%";
-                    break;
-                case UNIT_DB:
-                    unit_str = "dB";
-                    break;
-                case UNIT_SEMI:
-                    unit_str = "st";
-                    break;
-                case UNIT_SEC:
-                    unit_str = "s";
-                    break;
-                case UNIT_MS:
-                    unit_str = "ms";
-                    break;
-                default:
-                    break;
+            const char* unit_str = volume ? "%" : nullptr;
+            if (!volume) {
+                switch (d->unit) {
+                    case UNIT_HZ:
+                        unit_str = "Hz";
+                        break;
+                    case UNIT_PCT:
+                        unit_str = "%";
+                        break;
+                    case UNIT_DB:
+                        unit_str = "dB";
+                        break;
+                    case UNIT_SEMI:
+                        unit_str = "st";
+                        break;
+                    case UNIT_SEC:
+                        unit_str = "s";
+                        break;
+                    case UNIT_MS:
+                        unit_str = "ms";
+                        break;
+                    default:
+                        break;
+                }
             }
             if (unit_str) {
                 pax_draw_text(fb, COL_DIM, pax_font_sky_mono, FONT_SM, VAL_X + 80.0f, mid_y - FONT_SM * 0.5f, unit_str);

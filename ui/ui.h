@@ -22,15 +22,16 @@ extern "C" {
 // Pages are defined by the static PAGE_TABLE in ui.cpp (explicit order,
 // multi-group pages supported). kNumPages is the compile-time page count.
 typedef struct {
-    int     page;                       // selected page index (0..kNumPages-1)
-    int     row;                        // selected row within the page
-    int     active_voices;              // set by app each frame
-    int     octave;                     // set by app each frame
-    uint8_t recorder_state;             // WAV_RECORDER_* state shown in status strip
-    uint8_t recorder_error;             // latched WAV_RECORDER_ERROR_* feedback
-    char    preset_name[33];            // displayed in the status strip
-    int     preset_idx;                 // factory index (0-based) or -1 for user preset
-    float   norms[UI_NORM_TABLE_SIZE];  // normalised [0,1] shadow per param ID
+    int      page;                       // selected page index (0..kNumPages-1)
+    int      row;                        // selected row within the page
+    int      active_voices;              // set by app each frame
+    int      octave;                     // set by app each frame
+    uint8_t  recorder_state;             // WAV_RECORDER_* state shown in status strip
+    uint8_t  recorder_error;             // latched WAV_RECORDER_ERROR_* feedback
+    char     preset_name[33];            // displayed in the status strip
+    int      preset_idx;                 // factory index (0-based) or -1 for user preset
+    float    norms[UI_NORM_TABLE_SIZE];  // normalised [0,1] shadow per param ID
+    uint32_t volume_pct;                 // session-only logical listening volume (0–100)
 
     // Audition-with-revert state (WO-3, preset browser page).
     // Snapshot is captured when entering page 0; restored on back/navigate-away
