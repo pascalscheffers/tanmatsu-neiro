@@ -54,6 +54,9 @@ set(HOST_SRCS
     "${REPO_ROOT}/engine/param_store.cpp"
     # Stage 2d: preset serialisation + factory bank.
     "${REPO_ROOT}/engine/preset.cpp"
+    # WO-13-fmt: PresetPatch value object + JSON bank codec (ADR 0027).
+    "${REPO_ROOT}/engine/bank_json.cpp"
+    "${REPO_ROOT}/dsp/vendor/cjson/cJSON.c"
     # DaisySP modules (header-only: whitenoise, dsp wrappers).
     "${DAISYSP}/Source/Synthesis/oscillator.cpp"
     "${DAISYSP}/Source/Filters/svf.cpp"
@@ -107,6 +110,9 @@ target_include_directories(tanmatsu-synth-host PRIVATE
     "${REPO_ROOT}/engine"
     "${REPO_ROOT}/ui"
     "${REPO_ROOT}/app"
+    # WO-13-fmt: vendored cJSON header (host/test builds only; device uses the
+    # ESP-IDF `json` component's copy — see dsp/vendor/cjson/cJSON.h).
+    "${REPO_ROOT}/dsp/vendor/cjson"
     # DaisySP Source root: resolves "Synthesis/oscillator.h", "Utility/dsp.h",
     # "Noise/whitenoise.h" etc. from our dsp/ wrappers and juno_voice.
     "${DAISYSP}/Source"

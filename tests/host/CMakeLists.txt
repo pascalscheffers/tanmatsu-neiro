@@ -36,6 +36,7 @@ add_executable(tanmatsu-tests
     test_arp.cpp
     test_arp_clock.cpp
     test_sustain.cpp
+    test_bank_json.cpp
     # mono+unison voice-cap regression tests.
     test_alloc_unison_mono.cpp
     # WO-3: preset browser state-machine tests (no PAX dependency).
@@ -58,6 +59,8 @@ add_executable(tanmatsu-tests
     "${REPO_ROOT}/engine/param_desc.cpp"
     "${REPO_ROOT}/engine/param_store.cpp"
     "${REPO_ROOT}/engine/preset.cpp"
+    "${REPO_ROOT}/engine/bank_json.cpp"
+    "${REPO_ROOT}/dsp/vendor/cjson/cJSON.c"
     "${REPO_ROOT}/engine/record_ring.cpp"
     "${REPO_ROOT}/control/wav_recorder.cpp"
     "${REPO_ROOT}/control/midi_in.c"
@@ -72,6 +75,8 @@ target_include_directories(tanmatsu-tests PRIVATE
     "${REPO_ROOT}/engine"
     # Platform layer (platform.h, used by ui_presets_state.h).
     "${REPO_ROOT}/platform"
+    # WO-13-fmt: vendored cJSON header (host/test builds only).
+    "${REPO_ROOT}/dsp/vendor/cjson"
     # PAX headers (types only; pax_buf_t used in ui.h).
     "${REPO_ROOT}/managed_components/robotman2412__pax-gfx/core/include"
     # DaisySP Source root: resolves "Synthesis/oscillator.h",

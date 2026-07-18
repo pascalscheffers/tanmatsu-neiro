@@ -36,6 +36,9 @@ Paths are relative to repo root. Dependencies live in `managed_components/` (ESP
   converts the rendered stereo block to PCM16 only while enabled, and the control writer drains it.
 - `engine/preset.{h,cpp}` — preset serialize/parse **by param id** (`preset_serialize`,
   `preset_parse`) + INIT and the factory bank (`preset_factory_count/name/params`). Spec 05 format.
+- `engine/bank_json.{h,cpp}` — fixed-capacity `PresetPatch` value object plus the control-path
+  cJSON bank parser/patch serializer (ADR 0027); never call from the audio thread. Host/tests use
+  the pinned cJSON copy in `dsp/vendor/cjson/`; device uses ESP-IDF's `json` component.
 - `engine/synth_config.h` — named constants (sample rate, block, `kNumVoices`, table sizes).
   No magic numbers in DSP — they live here.
 - `engine/bench.{c,h}` — Stage 0.5 CPU bench (built under `BENCH=1`).

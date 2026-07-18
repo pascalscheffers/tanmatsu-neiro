@@ -44,6 +44,8 @@ idf_component_register(
 		"../engine/param_store.cpp"
 		# Stage 2d: preset serialisation + factory bank.
 		"../engine/preset.cpp"
+		# WO-13-fmt: PresetPatch value object + JSON bank codec (ADR 0027).
+		"../engine/bank_json.cpp"
 		# DaisySP modules.
 		"${DAISYSP}/Source/Synthesis/oscillator.cpp"
 		"${DAISYSP}/Source/Filters/svf.cpp"
@@ -81,6 +83,7 @@ idf_component_register(
 		badge-bsp
 		tanmatsu-wifi
 		usb
+		json
 		${extra_requires}
 	INCLUDE_DIRS
 		"."

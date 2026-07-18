@@ -5,6 +5,54 @@ The **live** log: recent entries + open gates. Older history is in
 just above the "Open Opus gates" section** (which stays last). Lean — link to specs, don't
 restate. When this passes ~200 lines, rotate older entries into the archive.
 
+## 2026-07-18 — WO-13-fmt: PresetPatch value object + JSON bank codec (COMPLETE)
+
+Per ADR 0027. New self-contained module `engine/bank_json.{h,cpp}`: fixed-capacity
+`PresetPatch` (name/ids/vals/count + `Routing[]`/route_count, sized to `preset.h`'s
+`PRESET_NAME_LEN`/`PRESET_MAX_PARAMS`/`PRESET_MAX_ROUTINGS` caps — no heap) plus a cJSON
+codec (`bank_json_parse` for a whole bank array, `bank_json_parse_patch` for one object,
+`bank_json_serialize_patch` for round-trip/offline authoring). Schema matches ADR 0027:
+`params` keys resolve as either a numeric `ParamId` or the param's canonical name
+(`ParamDesc::name`, the full display name, e.g. "Osc Level" — NOT `short_name`); `routes[]`
+resolves `source`/`curve` by numeric enum id or name (`ModSource`/`ModCurve`), `dest` by
+numeric id, param name, or the literals `"pitch"`/`"pwm"` → `kModDestPitch`/`kModDestPwm`.
+Fail-closed/forward-compat throughout, mirroring `preset_parse`'s existing rules: unknown
+id/name or `FLAG_NO_PRESET` param silently skipped; unknown/`NONE` source or `depth==0`
+route dropped; params/routes capped at the shared caps (extras dropped, never overflowed);
+non-array root or malformed/truncated/trailing-garbage JSON → `-1`; non-finite or
+out-of-range numeric fields are skipped; empty array → `0`.
+
+**cJSON sourcing:** device build adds `json` to `main`'s `PRIV_REQUIRES` (ESP-IDF's own
+`json` component — no new firmware dependency). Host/test builds have no ESP-IDF, so
+`dsp/vendor/cjson/{cJSON.c,cJSON.h}` vendors the *same* file ESP-IDF ships (v1.7.18, MIT,
+copied verbatim from `esp-idf/components/json/cJSON/`, pinned to ESP-IDF commit
+`fcae32885b0296b32044cb99ecbdc50d98dddb83`, noted in a `cJSON.h` header comment) so both
+sides compile the identical `#include "cJSON.h"` API — no version drift risk. Spec 02's
+dependency ledger already carried the cJSON row from ADR 0027's landing; no edit needed.
+
+Module is control-path only (heap allocation happens inside cJSON during parse/serialize);
+header explicitly documents never calling it from `engine::process()`. Not yet wired to any
+caller — `FactoryPreset`/`preset.cpp` and all UI/engine call sites are untouched and still
+build exactly as before; that rewire is WO-13-neiro-bank.
+
+15 new tests in `tests/host/test_bank_json.cpp` (registered in `tests/host/CMakeLists.txt`
++ `main.cpp`): minimal parse, id-keyed vs name-keyed equivalence, unknown/`FLAG_NO_PRESET`
+skip, routes by name/number incl. `pitch`/`pwm` sentinels, `depth==0`/`NONE`-source drop,
+multi-patch count, non-array/truncated/trailing-garbage JSON → `-1`, numeric bounds,
+empty array → `0`, param/route capacity caps, serialize→parse round-trip (incl. a route),
+`FLAG_NO_PRESET` never serialized, too-small buffer → `-1`.
+
+`make format` / `make host` / `make test` (all green, incl. new suite) / `make build` /
+`make size` all pass. Device: app.bin 43% flash free, DIRAM 41.9% used (334,938 B free) —
+essentially unchanged from the WO-13d baseline (module compiles but nothing calls it yet,
+so the linker keeps it near-dead-weight). Membrane clean — `bank_json.cpp` has no direct
+malloc/printf/ESP_LOG (cJSON's internal heap use is documented, not hidden) and is not
+referenced from `synth.cpp`/`juno_voice.cpp`.
+
+Next: **WO-13-neiro-bank** — move the 12 hardcoded `FactoryPreset` patches into a JSON
+bank (embedded via `EMBED_TXTFILES`), rewire UI/engine callers onto `bank_json_parse`, and
+retire the hardcoded C array.
+
 ## 2026-07-18 — WO-13d: direct Juno panel modulation semantics (COMPLETE)
 
 Per ADR 0026: two new preset-eligible OSC params, `DCO_LFO_DEPTH` (0x18, LFO1 → DCO
