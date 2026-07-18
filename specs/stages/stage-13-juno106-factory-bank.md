@@ -1,11 +1,12 @@
 # Stage 13 — Original Juno-106 factory bank and fidelity pass
 
-> **Status: implementation-ready plan.** Execute in order as fresh worker jobs. The user
-> ratified the two decisions that would otherwise be gates on 2026-07-18: (1) when the
+> **Status: implementation-ready through WO-13f; source gate before WO-13g.** Execute in
+> order as fresh worker jobs. The user ratified two decisions on 2026-07-18: (1) when the
 > existing Neiro Juno model conflicts with the original Juno-106 control/signal model,
-> prefer the Juno-106 unless doing so would break a platform invariant; (2) GPL-3.0-derived
-> factory data and implementation references are allowed. The preset wire format, stable
-> parameter IDs, and factory-routing representation are not compatibility constraints yet.
+> prefer the Juno-106 unless doing so would break a platform invariant; (2) Neiro remains
+> MIT, so no GPL-covered code, data, generated output, or adapted implementation enters the
+> repository. The preset wire format, stable parameter IDs, and factory-routing
+> representation are not compatibility constraints yet.
 
 ## Goal
 
@@ -20,7 +21,8 @@ data says:
 - independent saw and pulse switches, including saw + pulse together;
 - the fixed square sub-oscillator one octave below the DCO;
 - Juno DCO range, PWM mode, DCO-LFO, VCF-LFO, VCF-envelope and shared-envelope semantics;
-- the four-position Juno-106 HPF: bass boost, flat, about 236 Hz, about 754 Hz;
+- the four-position Juno-106 HPF: bass boost, flat, and two independently
+  circuit-derived cut positions;
 - one shared, free-running LFO (already ratified by ADR 0018);
 - Chorus Off/I/II and the original VCA ENV/GATE switch.
 
@@ -29,19 +31,24 @@ must load extension-only state at neutral defaults: poly mode, unison 1, arp off
 no LFO2 routes, unity master gain, and no general-matrix routes unless a source control
 cannot be expressed directly.
 
-## Ratified source and licensing
+## MIT constraint and source gate
 
-- Upstream: `kayrockscreenprinting/ultramaster_kr106`, GPL-3.0, commit
-  `bc15caee5843ab238a25d0969e68d57db2b1615f`.
-- Import only `tools/preset-gen/Factory_Patches.pat`: 128 lines, each containing 16
-  seven-bit slider bytes, two switch bytes, and a patch name.
-- Expected source SHA-256:
-  `f543f19833c5f2ef76485a1e3deb3caa7d75695b02b249a83121656da035fb7a`.
-- KR-106's decoder, curve tables, and circuit notes may be consulted and selectively
-  adapted, but do not vendor JUCE, plugin code, UI assets, or the KR-106 DSP wholesale.
-- The imported dataset and any adapted implementation carry clear GPL-3.0-only notices.
-  The combined distributed firmware is GPL-3.0-covered; existing original MIT files need
-  not have their individual notices erased. WO-13a records the precise repository policy.
+- Protocol reference: Roland's `JUNO-106 Owner's Manual`, MIDI Implementation section,
+  including the APR message `F0 41 30 0n pp [16 sliders] [sw1] [sw2] F7`.
+- The protocol and control meanings may be independently implemented from Roland's
+  published documentation. Do not copy a third-party decoder merely because it implements
+  the same format.
+- The 128-patch payload must come from a source with explicit MIT/CC0/public-domain terms,
+  an explicit redistribution grant, or a documented legal determination that an
+  independently captured hardware dump is uncopyrightable parameter data. "Free download"
+  and "available on GitHub" are not sufficient licenses.
+- KR-106 may identify questions worth independently measuring, but workers must not read or
+  use its GPL source, bank file, generated headers, curve tables, circuit-derived constants,
+  or code comments. No translation or clean-up of GPL code is permitted.
+- Until the source criterion above is met and its bytes, hash, and provenance are pinned in
+  this document, WO-13g and later are blocked. WO-13a–13f remain executable.
+- Preserve Neiro's MIT license. Any proposed source whose terms would cover the combined
+  firmware is rejected rather than accepted through a license change.
 
 ## Source record contract
 
@@ -72,14 +79,15 @@ single Juno envelope drives both destinations. All source bytes are 0–127.
 | 13e-i | pure four-position Juno HPF block | high | 13a |
 | 13e-ii | place HPF in each Juno voice before the VCF | medium | 13e-i |
 | 13f | clean in-memory patch object and disposable wire v3 | high | 13b–13d |
-| 13g | vendor and deterministically generate the compact bank | medium | 13a |
+| 13g | vendor and deterministically generate the compact bank | medium | 13a + source gate |
 | 13h | decode raw Juno records through calibrated curves | high | 13d–13g |
 | 13i | expose 128 originals + 12 Neiro patches through one provider | high | 13f–13h |
 | 13j | browser labels, documentation, exhaustive smoke verification | medium | 13i |
 | 13k | host/device sonic calibration and final acceptance | high | 13j |
 
-No additional Opus gates are open. A worker must still stop on an unlisted licensing,
-persisted-data, CPU-budget, or material sonic choice not resolved by this document.
+The permissive factory-bank provenance gate below is open; no other Opus gates are open. A
+worker must still stop on an unlisted licensing, persisted-data, CPU-budget, or material sonic
+choice not resolved by this document.
 
 ## WO-13a — Ratify the compatibility and licensing reset
 
@@ -97,18 +105,19 @@ Decision/Consequences; ADR 0009 Frozen shape; ADR 0020 Decision/Future follow-up
 
 **Implementation:** write ADR 0026 as the narrow superseding decision. It supersedes ADR
 0002 only where the Juno model's mutually-exclusive hybrid oscillator conflicts with
-independent Juno wave switches; ADR 0004 only for this pinned GPL dataset and derived
-fidelity code; ADR 0009 only for hardwired Juno panel modulation and the pre-canon routing
-wire shape; and ADR 0020 by changing the Juno sub to square. Record that current preset
-versions/IDs may be replaced cleanly and old NVS user blobs may fail closed to the default
-factory patch. Add the GPL component to spec 02's dependency ledger and update spec 05's
-patch contract without pretending GPL applies to unrelated source files individually.
+independent Juno wave switches; reaffirms ADR 0004 and explicitly forbids GPL-derived bank
+data or implementation; supersedes ADR 0009 only for hardwired Juno panel modulation and
+the pre-canon routing wire shape; and supersedes ADR 0020 by changing the Juno sub to square.
+Record that current preset versions/IDs may be replaced cleanly and old NVS user blobs may
+fail closed to the default factory patch. Update spec 02's dependency/source ledger with the
+MIT source gate and update spec 05's patch contract.
 
 **Acceptance:** cross-references and decision index are correct; `git diff --check` is
 clean; one atomic docs commit; tight MEMORY entry names WO-13b next.
 
-**Split-if:** licensing review finds a linked dependency incompatible with GPL-3.0-only.
-Stop with the exact dependency and license; do not weaken or omit notices.
+**Split-if:** any planned source or implementation would impose copyleft or lacks clear
+redistribution terms. Stop with the exact dependency and license; do not weaken the MIT
+constraint or omit notices.
 
 ## WO-13b — Split preset code before adding the bank
 
@@ -202,31 +211,37 @@ split only that ownership wiring into a follow-up, keeping this work-order's con
 
 ## WO-13e-i — Pure Juno-106 four-position HPF
 
-**Touch list (7):** `dsp/juno106_hpf.h`, `dsp/juno106_hpf.cpp`,
+**Touch list (8):** `dsp/juno106_hpf.h`, `dsp/juno106_hpf.cpp`,
 `tests/host/test_juno106_hpf.cpp`, `main/CMakeLists.txt`, `host/CMakeLists.txt`,
-`tests/host/CMakeLists.txt`, `specs/MEMORY.md`.
+`tests/host/CMakeLists.txt`, `specs/notes/juno106-hpf-analysis.md`,
+`specs/MEMORY.md`.
 
-**Read list (5):** this work-order; ADR 0026 HPF section; KR-106 pinned
-`Source/DSP/KR106_HPF.h:J106 and BassBoostFilter`; KR-106 pinned
-`Source/DSP/KR106_DSP.h:HPF`; `dsp/dcblock.h` denormal style.
+**Read list (5):** this work-order; ADR 0026 HPF section; the Roland Juno-106 service
+schematic HPF section pinned by ADR 0026; `dsp/dcblock.h` denormal style;
+`dsp/filter.h` pure-DSP conventions.
 
-**Reuse:** KR-106's circuit-derived targets: position 0 bass boost, position 1 flat,
-position 2 one-pole 236 Hz HPF, position 3 one-pole 754 Hz HPF. Adapt only the minimum pure
-DSP; retain GPL notice and upstream pin.
+**Reuse:** the published component topology, standard RC/biquad equations, and existing
+permissive pure-DSP conventions. Independently calculate and record the two cut frequencies
+and bass-boost transfer function before coding. Copy no third-party implementation or
+precomputed coefficient table.
 
-**Don't read:** other KR-106 files, voice/engine sources, DaisySP vendor, UI, or platform.
+**Don't read:** KR-106 or other GPL implementations, voice/engine sources, DaisySP vendor,
+UI, or platform.
 
-**Implementation:** create a fixed-state, allocation-free block with click-safe mode changes
-and software denormal protection. Position 0 uses the pinned circuit-derived bass-boost
-biquad; position 1 is unity apart from required numerical/DC hygiene; positions 2/3 are
-first-order, not the existing two-pole SVF. Expose init, set-position and process only.
+**Implementation:** first record the schematic nodes, component values, equations and
+calculated responses in the analysis note. Then create a fixed-state, allocation-free block
+with click-safe mode changes and software denormal protection. Position 0 uses the
+independently derived bass-boost biquad; position 1 is unity apart from required numerical/DC
+hygiene; positions 2/3 are first-order, not the existing two-pole SVF. Expose init,
+set-position and process only.
 
 **Acceptance:** response tests prove the two cutoffs within tolerance, flat unity, expected
 bass-boost shape, finite silence, bounded switch transient, and no denormals; all standard
-builds/format/size/membrane checks pass; atomic GPL-attributed DSP commit and MEMORY.
+builds/format/size/membrane checks pass; atomic MIT DSP commit and MEMORY.
 
-**Split-if:** the upstream bass-boost implementation needs more than two additional state
-elements per voice or its license provenance is ambiguous. Stop before substituting a shelf.
+**Split-if:** the schematic is unavailable/ambiguous, the derivation cannot be reproduced
+from the note, or the filter needs more than two additional state elements per voice. Stop
+before borrowing an external implementation or substituting an arbitrary shelf.
 
 ## WO-13e-ii — Wire HPF before the VCF
 
@@ -277,66 +292,90 @@ commit and MEMORY.
 **Split-if:** changing the public API forces edits outside the touch list. Stop with callers
 enumerated; the orchestrator will issue a bounded caller-migration job.
 
+## 🛑 OPUS GATE — Permissive factory-bank provenance
+
+**Why Opus:** licensing/data provenance.
+
+**Decision:** identify the exact 128-patch APR dump and establish explicit
+MIT/CC0/public-domain redistribution terms, a direct grant, or a documented legal
+determination for an independently captured hardware dump. Pin its source and SHA-256 here
+before WO-13g is dispatched.
+
+**Recommendation:** ask the maintainer of an existing original-data dump for a CC0 or MIT
+grant covering the raw 128 records; otherwise obtain a hardware/tape capture independently
+and have its redistribution status reviewed. Do not use the GPL KR-106 file or an unlicensed
+"free download."
+
+**Sonnet action:** STOP. WO-13a–13f are not blocked; WO-13g onward are blocked.
+
 ## WO-13g — Vendor and generate the compact source bank
 
-**Touch list (8):** `third_party/kr106/Factory_Patches.pat`,
-`third_party/kr106/LICENSE`, `third_party/kr106/README.md`,
+**Touch list (8):** `third_party/juno106-factory/factory-bank.syx`,
+`third_party/juno106-factory/LICENSE`, `third_party/juno106-factory/SOURCE.md`,
 `tools/gen_juno106_factory.py`, `engine/factory_juno106_data.inc`,
 `tests/host/test_juno106_factory_source.cpp`, `tests/host/CMakeLists.txt`,
 `specs/MEMORY.md`.
 
-**Read list (4):** this work-order; pinned upstream `tools/preset-gen/Factory_Patches.pat`;
-pinned upstream `LICENSE`; `tests/host/CMakeLists.txt:test registration style`.
+**Read list (4):** this work-order and resolved source gate; the ratified source bank and
+license; Roland Owner's Manual `MIDI Implementation: APR`; `tests/host/CMakeLists.txt:test
+registration style`.
 
 **Reuse:** Python standard library only and the source record contract above.
 
-**Don't read:** KR-106 generator/plugin/DSP sources, engine preset code, UI, or platform.
+**Don't read:** KR-106 or any other GPL bank/generator/plugin/DSP source, engine preset code,
+UI, or platform.
 
-**Implementation:** vendor the exact source file and license with pin/hash/provenance README.
-Write a deterministic generator that rejects anything except exactly 128 records, the exact
-`A11..A88,B11..B88` slot sequence, 18 seven-bit bytes per row, unique bounded names, and the
-expected source SHA-256. Generate a compact include containing names plus `uint8_t[18]`
-records; no floats and no generator dependency at firmware runtime. `--check` must prove the
-checked-in output is current.
+**Implementation:** vendor the exact APR SysEx bank, its permissive license/grant, and a
+SOURCE note containing origin, capture method if known, SHA-256, and authorization. Write a
+deterministic generator that rejects anything except exactly 128 Roland APR messages with
+patch numbers 0–127 exactly once, 16 seven-bit sliders and two seven-bit switch bytes. Map
+patch numbers to canonical labels `A11..A88,B11..B88`; do not import descriptive names unless
+their own permissive grant is recorded. Generate a compact include containing slot labels
+plus `uint8_t[18]` records; no floats and no generator dependency at firmware runtime.
+`--check` must prove the checked-in output is current.
 
 **Acceptance:** source hash matches; generator self-test and `--check` pass; generated data
 is exactly 2,304 parameter bytes plus names/struct overhead; standard builds/tests/format/
 size checks pass once the test is registered; atomic vendor commit and MEMORY.
 
-**Split-if:** upstream at the pinned commit does not match the hash or exact 128-slot shape.
-Stop; do not silently use `Source/KR106_Presets_JUCE.h` or a newer commit.
+**Split-if:** the ratified source does not match its hash/authorization or exact 128-message
+shape. Stop; do not silently substitute a GPL or merely downloadable bank.
 
 ## WO-13h — Decode Juno records with calibrated curves
 
-**Touch list (7):** `engine/juno106_patch.h`, `engine/juno106_patch.cpp`,
+**Touch list (8):** `engine/juno106_patch.h`, `engine/juno106_patch.cpp`,
 `tests/host/test_juno106_patch.cpp`, `main/CMakeLists.txt`, `host/CMakeLists.txt`,
-`tests/host/CMakeLists.txt`, `specs/MEMORY.md`.
+`tests/host/CMakeLists.txt`, `specs/notes/juno106-control-curves.md`,
+`specs/MEMORY.md`.
 
 **Read list (5):** this work-order and Source record contract;
-`engine/preset.h:PresetPatch`; `engine/param_desc.cpp:Juno rows`; pinned KR-106
-`tools/preset-gen/gen_presets.py:read_pat_patches`; pinned KR-106 parameter-curve helpers
-named by ADR 0026.
+`engine/preset.h:PresetPatch`; `engine/param_desc.cpp:Juno rows`; Roland Owner's Manual
+`MIDI Implementation`; Roland's published Juno-106 control ranges pinned by ADR 0026.
 
 **Reuse:** parameter descriptors for ordinary normalized mapping, shared-envelope duplication,
 direct Juno panel params from 13c/13d, and fixed-capacity `PresetPatch`.
 
-**Don't read:** generated JUCE/iPlug preset headers, KR-106 voice/filter/chorus code, UI,
-platform, or unrelated tests.
+**Don't read:** KR-106 or other GPL decoders/curves/generated headers/DSP, UI, platform, or
+unrelated tests.
 
 **Implementation:** decode one raw record into a complete neutral-initialized `PresetPatch`.
 Use small named conversion functions for the Juno-106 slider curves; do not scatter `/127`
-or magic times/frequencies. At minimum calibrate LFO rate/delay, DCO/VCF modulation depths,
-VCF cutoff, ADSR times, and VCA level from the pinned reference. Map all switches exactly.
-Duplicate A/D/S/R to both envelopes. Set master gain to unity and emit zero matrix routes.
+or magic times/frequencies. Independently document each mapping and its published range or
+measurement basis in the control-curves note. At minimum cover LFO rate/delay, DCO/VCF
+modulation depths, VCF cutoff, ADSR times, and VCA level. Where no authoritative curve is
+available, use the simplest monotonic mapping through Neiro's parameter descriptor and mark
+it for hardware calibration rather than borrowing a third-party table. Map all switches
+exactly. Duplicate A/D/S/R to both envelopes. Set master gain to unity and emit zero matrix
+routes.
 
 **Acceptance:** exhaustive tests cover all 128 records and every switch combination present;
 selected patches assert exact decoded controls; all values are within their descriptor ranges;
 no record produces NaN/Inf; decoder allocates nothing; all standard verification passes;
-atomic GPL-attributed decoder commit and MEMORY.
+atomic MIT decoder commit and MEMORY.
 
 **Split-if:** faithful VCF/envelope conversion requires replacing the DSP algorithm rather
 than mapping its controls. Stop with the mismatch and an isolated follow-up proposal; do not
-copy the whole KR-106 voice engine into this job.
+copy any third-party voice engine into this job.
 
 ## WO-13i — Unified factory provider
 
@@ -354,8 +393,9 @@ the current Neiro bank provider.
 **Don't read:** DSP/voice code, UI drawing/state, KR-106 sources, or platform.
 
 **Implementation:** expose 140 factory entries: original 128 first, current 12 afterward.
-Original names are slot-qualified (`A11 Brass`, etc.) so duplicates stay unambiguous. Decode
-only the selected original patch on request. Delegate later indices to the Neiro provider.
+Original entries use canonical slot labels (`A11`, etc.); add descriptive names only if the
+resolved source grant explicitly covers them. Decode only the selected original patch on
+request. Delegate later indices to the Neiro provider.
 Keep boot default resolution by name; preserve the current default unless ADR 0026 names a
 different one. Do not cache 128 expanded patches or allocate.
 
@@ -405,15 +445,16 @@ correct first and return the grid as a separate UX proposal.
 `specs/09-build-and-run.md:device listen/profile procedure`.
 
 **Reuse:** host render path, existing finite/peak/DC test helpers, `make size`, PROFILE build,
-and the pinned KR-106 factory MIDI/A-B procedure as a listening reference only.
+and independently captured hardware or permissively licensed reference recordings.
 
-**Don't read:** additional KR-106 implementation, UI, platform internals, managed components,
-or unrelated stages.
+**Don't read:** KR-106 or other GPL implementation/data, UI, platform internals, managed
+components, or unrelated stages.
 
 **Implementation:** add an offline renderer that walks all 128 originals with a fixed note/
 chord probe. Automated tests require finite output, bounded peak/DC, actual signal when the
 patch sources demand it, silence only when the decoded source legitimately has no audible
-generator, and deterministic re-render. Render a small named calibration set spanning brass,
+generator, and deterministic re-render. Select a small slot-identified calibration set,
+using independently documented patch charts or reference recordings, that spans brass,
 strings, EP, bass, noise/FX, saw+pulse, PWM, negative VCF ENV, all HPF positions and both
 chorus modes. Record parameter and broad spectral/envelope comparisons; do not use brittle
 sample-exact comparison against another synth.
@@ -434,7 +475,7 @@ focused fidelity stage; do not hand-tune 128 individual patches to hide a model 
 - The browser exposes all original 128 patches in canonical A/B slot order, followed by the
   12 existing Neiro patches and User.
 - Original data remains compact, source-pinned, hash-verified, reproducibly generated and
-  properly licensed.
+  licensed under MIT-compatible terms documented in the repository.
 - Every source byte/switch has a documented mapping and exhaustive decode coverage.
 - Saw+pulse, square sub, direct panel modulation, shared ADSR mapping and four HPF positions
   are live DSP behavior, not inert metadata.
