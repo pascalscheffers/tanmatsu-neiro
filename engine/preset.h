@@ -26,8 +26,8 @@
 #include "mod_matrix.h"
 
 static constexpr int     PRESET_NAME_LEN       = 32;
-// v2 max: 42 (header) + 49*6 (preset-eligible params) + 2 (routing count) +
-// 16*8 (16 routing slots) = 466
+// v2 max: 42 (header) + 51*6 (preset-eligible params) + 2 (routing count) +
+// 16*8 (16 routing slots) = 476
 // 512 gives headroom for future params without a format-version bump.
 static constexpr size_t  PRESET_BLOB_MAX       = 512;
 static constexpr uint8_t PRESET_FORMAT_VERSION = 2;
@@ -39,7 +39,7 @@ static constexpr int PRESET_MAX_ROUTINGS = kMaxRoutes;
 // Maximum number of params a preset can carry — buffers passed to
 // preset_factory_params()/preset_parse() must hold at least this many, or trailing
 // params (PLAY_MODE, UNISON, CHORUS_MODE, ARP_*, …) are silently dropped and the
-// patch loads at table defaults. Must cover all preset-eligible rows (currently 49); the
+// patch loads at table defaults. Must cover all preset-eligible rows (currently 51); the
 // 512-byte blob format tops out near 78 params, so 96 is safe with headroom.
 static constexpr int PRESET_MAX_PARAMS = 96;
 

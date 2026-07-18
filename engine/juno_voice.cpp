@@ -129,6 +129,13 @@ void JunoVoice::set_param(int id, float value) {
         case ParamId::OSC_RANGE:
             p_osc_range_semi_ = value;
             break;
+        // WO-13d: direct panel modulation — LFO1 -> DCO pitch depth, PWM mode.
+        case ParamId::DCO_LFO_DEPTH:
+            p_dco_lfo_depth_ = value;
+            break;
+        case ParamId::PWM_MODE:
+            p_pwm_mode_ = (int)value;
+            break;
 
         // --- FILTER ---
         case ParamId::FILTER_CUTOFF:
@@ -276,7 +283,13 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
     // The pitch_bend mod-matrix SOURCE (msrc.pitch_bend) remains available for patches
     // but the direct path is primary. Both can coexist without double-counting because
     // the matrix source is only used when a patch route maps it — which is additive.
-    float range_semi   = p_osc_range_semi_ + p_pitch_offset_ + p_pitch_bend_ * kPitchBendRangeSemis;
+    // WO-13d: DCO_LFO_DEPTH is a direct panel path — LFO1 applied straight to
+    // pitch, independent of the mod matrix. kDcoLfoRange bounds the max swing
+    // to +-2 semitones at depth=1 with a fully-swung LFO (block-rate, matches
+    // the VCF_LFO_DEPTH panel-mod style already used for cutoff above).
+    static constexpr float kDcoLfoRange = 2.0f;
+    float                  range_semi   = p_osc_range_semi_ + p_pitch_offset_ + p_pitch_bend_ * kPitchBendRangeSemis +
+                       lfo1_value_ * p_dco_lfo_depth_ * kDcoLfoRange;
     float base_freq    = daisysp::mtof((float)midi_note_ + range_semi);
     float mod_freq_end = daisysp::mtof((float)midi_note_ + range_semi + mout.pitch_semi);
 
@@ -307,7 +320,21 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
     // PWM: apply once per block (block-rate, ~750 Hz @ 64/48k — ample for a slow LFO sweep).
     // Clamp [0.05, 0.95] to avoid degenerate silent/full-duty pulse at the extremes.
     // Only affects osc_pulse_ (osc_saw_ ignores pw; osc_sub_ is fixed at 0.5).
-    float pw = p_osc_pwm_ + mout.pwm_mod;
+    // WO-13d: PWM_MODE selects the direct panel interpretation of OSC_PWM —
+    // LFO mode reads it as a modulation amount swung around the hardware-neutral
+    // 50% center by the shared LFO1; Manual mode reads it as the fixed width.
+    // Mod-matrix pwm_mod (kModDestPwm) remains an optional additive extension on top.
+    float pw;
+    if (p_pwm_mode_ == 0) {
+        // LFO mode: OSC_PWM in [0,1] is a depth around center 0.5. kPwmLfoRange
+        // bounds full-amount/full-swing to +-0.45 (keeps pw within the sane
+        // pulse range even before the final safety clamp below).
+        static constexpr float kPwmLfoRange = 0.45f;
+        pw                                  = 0.5f + lfo1_value_ * p_osc_pwm_ * kPwmLfoRange + mout.pwm_mod;
+    } else {
+        // Manual mode: OSC_PWM is the fixed pulse width directly.
+        pw = p_osc_pwm_ + mout.pwm_mod;
+    }
     if (pw < 0.05f) pw = 0.05f;
     if (pw > 0.95f) pw = 0.95f;
     osc_pulse_.set_pw(pw);

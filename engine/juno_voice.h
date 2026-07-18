@@ -117,6 +117,10 @@ private:
     int   p_osc_saw_on_       = 1;
     int   p_osc_pulse_on_     = 0;
     float p_osc_range_semi_   = 0.0f;  // DCO range offset in semitones
+    // WO-13d (ADR 0026): direct panel modulation — LFO1 -> DCO pitch depth, and
+    // PWM interpretation mode (0=LFO amount-around-center, 1=Manual fixed width).
+    float p_dco_lfo_depth_    = 0.0f;
+    int   p_pwm_mode_         = 1;  // default Manual
     float p_cutoff_           = 2000.0f;
     float p_res_              = 0.30f;
     float p_vcf_env_depth_    = 0.35f;   // ENV2 → VCF mod depth

@@ -26,6 +26,8 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <cmath>
+#include <vector>
 #include "dsp/lfo.h"
 #include "juno_model.h"
 #include "juno_voice.h"
@@ -693,6 +695,157 @@ void test_panic_silences_voices() {
     test_pass();
 }
 
+/* --- WO-13d: direct Juno panel modulation semantics ---------------------- */
+
+/* DCO_LFO_DEPTH=0 must be neutral: render output is identical regardless of
+ * the injected LFO1 raw value (no pitch modulation leaks through at zero
+ * depth). */
+void test_dco_lfo_depth_zero_is_neutral() {
+    printf("--- WO-13d: direct panel modulation (DCO LFO, PWM mode) ---\n");
+    test_begin("DCO_LFO_DEPTH=0: render output identical for any LFO1 raw value");
+
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+
+    auto render_with = [&](float lfo1_raw) {
+        JunoVoice v;
+        v.init(kSampleRate);
+        v.set_param((int)ParamId::OSC_SAW_ON, 1.0f);
+        v.set_param((int)ParamId::OSC_PULSE_ON, 0.0f);
+        v.set_param((int)ParamId::DCO_LFO_DEPTH, 0.0f);
+        v.set_param((int)ParamId::LFO1_DEPTH, 1.0f);
+        v.set_param((int)ParamId::LFO1_DELAY, 0.0f);
+        v.note_on(69, 127, expr);
+        v.set_lfo_inputs(lfo1_raw, 0.0f);
+        // One-block cache latency (ADR 0018): a priming render lets lfo1_value_
+        // catch up to the injected raw before the measured block reads it.
+        std::vector<float> primer(64, 0.0f);
+        v.render(primer.data(), primer.size());
+        std::vector<float> buf(64, 0.0f);
+        v.render(buf.data(), buf.size());
+        return buf;
+    };
+
+    std::vector<float> buf_pos = render_with(1.0f);
+    std::vector<float> buf_neg = render_with(-1.0f);
+    for (size_t i = 0; i < buf_pos.size(); i++) {
+        TEST_ASSERT(fabsf(buf_pos[i] - buf_neg[i]) < 1e-6f,
+                    "DCO_LFO_DEPTH=0 must not let LFO1 raw affect pitch/output");
+    }
+    test_pass();
+}
+
+/* DCO_LFO_DEPTH at max (1.0) with a fully-swung LFO must stay bounded (finite,
+ * no runaway pitch/NaN) and must audibly differ from the depth=0 case. */
+void test_dco_lfo_depth_max_is_bounded_and_distinct() {
+    test_begin("DCO_LFO_DEPTH=1.0: output stays finite and differs from depth=0");
+
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+
+    auto render_with_depth = [&](float depth) {
+        JunoVoice v;
+        v.init(kSampleRate);
+        v.set_param((int)ParamId::OSC_SAW_ON, 1.0f);
+        v.set_param((int)ParamId::OSC_PULSE_ON, 0.0f);
+        v.set_param((int)ParamId::DCO_LFO_DEPTH, depth);
+        v.set_param((int)ParamId::LFO1_DEPTH, 1.0f);
+        v.set_param((int)ParamId::LFO1_DELAY, 0.0f);
+        v.note_on(69, 127, expr);
+        v.set_lfo_inputs(1.0f, 0.0f);
+        // One-block cache latency (ADR 0018): prime lfo1_value_ before measuring.
+        std::vector<float> primer(64, 0.0f);
+        v.render(primer.data(), primer.size());
+        std::vector<float> buf(64, 0.0f);
+        v.render(buf.data(), buf.size());
+        return buf;
+    };
+
+    std::vector<float> buf_zero = render_with_depth(0.0f);
+    std::vector<float> buf_max  = render_with_depth(1.0f);
+
+    bool differs = false;
+    for (size_t i = 0; i < buf_max.size(); i++) {
+        TEST_ASSERT(std::isfinite(buf_max[i]), "DCO_LFO_DEPTH=1.0 output must stay finite (bounded)");
+        if (fabsf(buf_max[i] - buf_zero[i]) > 1e-6f) differs = true;
+    }
+    TEST_ASSERT(differs, "DCO_LFO_DEPTH=1.0 must audibly differ from depth=0");
+    test_pass();
+}
+
+/* PWM_MODE=Manual (1, default): OSC_PWM is the fixed pulse width — the shared
+ * LFO1 must NOT move it, so render output is identical regardless of the
+ * injected LFO1 raw value. */
+void test_pwm_mode_manual_ignores_lfo() {
+    test_begin("PWM_MODE=Manual: OSC_PWM fixed width, unaffected by LFO1");
+
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+
+    auto render_with = [&](float lfo1_raw) {
+        JunoVoice v;
+        v.init(kSampleRate);
+        v.set_param((int)ParamId::OSC_SAW_ON, 0.0f);
+        v.set_param((int)ParamId::OSC_PULSE_ON, 1.0f);
+        v.set_param((int)ParamId::OSC_PWM, 0.30f);
+        v.set_param((int)ParamId::PWM_MODE, 1.0f);  // Manual
+        v.set_param((int)ParamId::LFO1_DEPTH, 1.0f);
+        v.set_param((int)ParamId::LFO1_DELAY, 0.0f);
+        v.note_on(69, 127, expr);
+        v.set_lfo_inputs(lfo1_raw, 0.0f);
+        // One-block cache latency (ADR 0018): a priming render lets lfo1_value_
+        // catch up to the injected raw before the measured block reads it.
+        std::vector<float> primer(64, 0.0f);
+        v.render(primer.data(), primer.size());
+        std::vector<float> buf(64, 0.0f);
+        v.render(buf.data(), buf.size());
+        return buf;
+    };
+
+    std::vector<float> buf_pos = render_with(1.0f);
+    std::vector<float> buf_neg = render_with(-1.0f);
+    for (size_t i = 0; i < buf_pos.size(); i++) {
+        TEST_ASSERT(fabsf(buf_pos[i] - buf_neg[i]) < 1e-6f, "Manual PWM mode must ignore LFO1 raw entirely");
+    }
+    test_pass();
+}
+
+/* PWM_MODE=LFO (0): OSC_PWM is a modulation amount around the hardware-neutral
+ * 50% center — the shared LFO1 must audibly move the duty cycle, so a
+ * positive vs negative LFO1 raw swing must produce distinct output. */
+void test_pwm_mode_lfo_is_distinct_from_manual() {
+    test_begin("PWM_MODE=LFO: OSC_PWM as amount around center, audibly modulated by LFO1");
+
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+
+    auto render_with = [&](float lfo1_raw) {
+        JunoVoice v;
+        v.init(kSampleRate);
+        v.set_param((int)ParamId::OSC_SAW_ON, 0.0f);
+        v.set_param((int)ParamId::OSC_PULSE_ON, 1.0f);
+        v.set_param((int)ParamId::OSC_PWM, 0.80f);  // large amount around center
+        v.set_param((int)ParamId::PWM_MODE, 0.0f);  // LFO
+        v.set_param((int)ParamId::LFO1_DEPTH, 1.0f);
+        v.set_param((int)ParamId::LFO1_DELAY, 0.0f);
+        v.note_on(69, 127, expr);
+        v.set_lfo_inputs(lfo1_raw, 0.0f);
+        // One-block cache latency (ADR 0018): a priming render lets lfo1_value_
+        // catch up to the injected raw before the measured block reads it.
+        std::vector<float> primer(64, 0.0f);
+        v.render(primer.data(), primer.size());
+        std::vector<float> buf(64, 0.0f);
+        v.render(buf.data(), buf.size());
+        return buf;
+    };
+
+    std::vector<float> buf_pos = render_with(1.0f);
+    std::vector<float> buf_neg = render_with(-1.0f);
+    bool               differs = false;
+    for (size_t i = 0; i < buf_pos.size(); i++) {
+        TEST_ASSERT(std::isfinite(buf_pos[i]) && std::isfinite(buf_neg[i]), "PWM LFO mode output must stay finite");
+        if (fabsf(buf_pos[i] - buf_neg[i]) > 1e-6f) differs = true;
+    }
+    TEST_ASSERT(differs, "PWM_MODE=LFO must audibly move the duty cycle with LFO1");
+    test_pass();
+}
+
 /* Entry point declared in main.cpp */
 void test_mod_sources_suite() {
     test_env2_independent_from_env1();
@@ -712,4 +865,9 @@ void test_mod_sources_suite() {
     test_mod_wheel_hardwired_cutoff();
     test_engine_cc_to_param();
     test_panic_silences_voices();
+    // WO-13d: direct Juno panel modulation semantics.
+    test_dco_lfo_depth_zero_is_neutral();
+    test_dco_lfo_depth_max_is_bounded_and_distinct();
+    test_pwm_mode_manual_ignores_lfo();
+    test_pwm_mode_lfo_is_distinct_from_manual();
 }

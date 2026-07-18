@@ -5,6 +5,44 @@ The **live** log: recent entries + open gates. Older history is in
 just above the "Open Opus gates" section** (which stays last). Lean — link to specs, don't
 restate. When this passes ~200 lines, rotate older entries into the archive.
 
+## 2026-07-18 — WO-13d: direct Juno panel modulation semantics (COMPLETE)
+
+Per ADR 0026: two new preset-eligible OSC params, `DCO_LFO_DEPTH` (0x18, LFO1 → DCO
+pitch, direct panel path, ±2 semitones at depth=1) and `PWM_MODE` (0x19, 0=LFO/1=Manual,
+default Manual). In LFO mode `OSC_PWM` is read as a modulation amount swung around the
+hardware-neutral 50% center by LFO1 (±0.45 range); in Manual mode it's the fixed pulse
+width — matches prior static-PWM behavior when `PWM_MODE=1`. Both new params and the
+existing VCF ENV/LFO/key-track controls are now authoritative direct panel paths in
+`JunoVoice::render()` (same one-block-latency cached-LFO pattern as `VCF_LFO_DEPTH`); the
+mod matrix remains an optional additive extension on top (`kModDestPitch`/`kModDestPwm`
+generic names kept).
+
+Necessary side-effect (outside the 7-file touch list, required by the acceptance
+criterion "no factory patch requires a route merely to express a panel control" and the
+implementation instruction to remove INIT's unconditional LFO→PWM/ENV2→cutoff matrix
+defaults — unsatisfiable without touching preset data): `engine/preset.cpp` — removed the
+4 static `Routing` arrays (`k_clean_106_routings`, `k_pwm_strings_routings`,
+`k_vibrato_lead_routings`, `k_chip_vibrato_routings`), all 12 factory presets now carry
+`nullptr, 0` routings and gained `DCO_LFO_DEPTH`/`PWM_MODE` values (count 50→52) chosen to
+preserve each patch's prior sonic character (e.g. 106 Strings → `PWM_MODE=LFO` +
+`OSC_PWM=0.75`; Solo Lead/8-Bit Lead/Chip Arp → small `DCO_LFO_DEPTH` for vibrato).
+`engine/preset.h` doc comments updated for the new param count. `tests/host/test_preset.cpp`:
+replaced the now-inverted `test_factory_init_has_clean_106_routings` with
+`test_factory_init_has_no_redundant_routings` (asserts INIT carries zero matrix routes).
+
+New tests in `tests/host/test_mod_sources.cpp`: `DCO_LFO_DEPTH=0` neutral / `=1` finite and
+distinct; `PWM_MODE=Manual` ignores LFO1 / `PWM_MODE=LFO` is audibly distinct. Each uses a
+discarded priming `render()` call before the measured one, to let the cached `lfo1_value_`
+catch up to the injected raw (one-block latency, same as the existing LFO-injection test).
+
+`make format` / `make host` / `make test` / `make build` / `make size` all green. Membrane
+clean (`git diff --check`, no malloc/new/printf/ESP_LOG in the audio-path diff). Device
+app.bin 43% flash free; DIRAM 41.9% used, 334938 B free — no split-if triggered (shared LFO
+rate/depth ownership untouched, `synth.cpp` not touched).
+
+Next: WO-13-fmt / WO-13-neiro-bank (JSON factory bank format, replaces hardcoded
+`preset.cpp` array).
+
 ## 2026-07-18 — WO-13c: independent saw/pulse DCO switches + square sub (COMPLETE)
 
 Per ADR 0026 (supersedes ADR 0002's mutually-exclusive select and ADR 0020's saw sub, Juno

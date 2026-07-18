@@ -267,34 +267,17 @@ static void test_v1_blob_back_compat(void) {
     test_pass();
 }
 
-static void test_factory_init_has_clean_106_routings(void) {
-    test_begin("factory INIT preset carries Clean 106 routings (ADR 0009)");
+static void test_factory_init_has_no_redundant_routings(void) {
+    // WO-13d (ADR 0026): ENV2->cutoff, LFO1->PWM, and LFO1->pitch are now direct
+    // Juno panel paths (VCF_ENV_DEPTH, PWM_MODE/OSC_PWM, DCO_LFO_DEPTH). The
+    // factory INIT patch must not carry matrix routes that would double-apply
+    // those same panel controls (this test superseded the old
+    // "clean_106_routings" expectation from ADR 0009/Stage 3b-ii).
+    test_begin("factory INIT preset carries no redundant panel-duplicating routings");
 
     Routing r[PRESET_MAX_ROUTINGS];
     int     count = preset_factory_routings(0, r, PRESET_MAX_ROUTINGS);
-
-    // Must have at least 2 routings (ENV2→cutoff, LFO1→PWM).
-    TEST_ASSERT(count >= 2, "INIT must have at least 2 routings");
-
-    // Find ENV2→FILTER_CUTOFF +0.35 LIN
-    bool found_env2_cutoff = false;
-    for (int i = 0; i < count; i++) {
-        if (r[i].source == (uint8_t)ModSource::ENV2 && r[i].dest_param_id == (uint16_t)ParamId::FILTER_CUTOFF &&
-            fabsf(r[i].depth - 0.35f) < 1e-5f && r[i].curve == (uint8_t)ModCurve::LIN) {
-            found_env2_cutoff = true;
-        }
-    }
-    TEST_ASSERT(found_env2_cutoff, "INIT missing ENV2→cutoff +0.35 LIN routing");
-
-    // Find LFO1→PWM dest (0xFFFD) +0.20 LIN
-    bool found_lfo1_pwm = false;
-    for (int i = 0; i < count; i++) {
-        if (r[i].source == (uint8_t)ModSource::LFO1 && r[i].dest_param_id == 0xFFFDu &&
-            fabsf(r[i].depth - 0.20f) < 1e-5f && r[i].curve == (uint8_t)ModCurve::LIN) {
-            found_lfo1_pwm = true;
-        }
-    }
-    TEST_ASSERT(found_lfo1_pwm, "INIT missing LFO1→PWM +0.20 LIN routing");
+    TEST_ASSERT(count == 0, "INIT should have zero matrix routings post-WO-13d");
     test_pass();
 }
 
@@ -418,7 +401,7 @@ void test_preset_suite(void) {
     // Stage 3b-ii routing tests:
     test_routing_roundtrip();
     test_v1_blob_back_compat();
-    test_factory_init_has_clean_106_routings();
+    test_factory_init_has_no_redundant_routings();
     test_factory_routings_oob_returns_minus1();
     test_serialize_parse_with_zero_routings();
     test_record_row_is_session_only_and_on_perform_page();

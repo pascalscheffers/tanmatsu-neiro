@@ -47,6 +47,14 @@ const ParamDesc JUNO_PARAM_TABLE[] = {
      FLAG_PER_VOICE},
     {ParamId::OSC_PULSE_ON, GROUP_OSC, "OSC Pulse", "Pulse", 0.0f, 1.0f, 0.0f, CURVE_STEPPED, UNIT_NONE, "%.0f", 0xFF,
      0.0f, FLAG_PER_VOICE},
+    // WO-13d: direct panel modulation controls (ADR 0026 modulation section).
+    // DCO_LFO_DEPTH: LFO1 -> DCO pitch, applied directly in render() (not via matrix).
+    {ParamId::DCO_LFO_DEPTH, GROUP_OSC, "DCO LFO Depth", "DcoLFO", 0.0f, 1.0f, 0.0f, CURVE_LIN, UNIT_PCT, "%.2f", 0xFF,
+     5.0f, FLAG_AUDIO_RATE | FLAG_PER_VOICE},
+    // PWM_MODE: 0=LFO (OSC_PWM read as amount around center), 1=Manual (OSC_PWM is
+    // the fixed width). Default Manual so existing static-PWM patches are unaffected.
+    {ParamId::PWM_MODE, GROUP_OSC, "PWM Mode", "PWMMode", 0.0f, 1.0f, 1.0f, CURVE_STEPPED, UNIT_NONE, "%.0f", 0xFF,
+     0.0f, FLAG_PER_VOICE},
 
     // --- FILTER ---
     // Launchkey 37 pots: cutoff=CC21, res=CC22 (was GM 74/71 — freed; controller sends 21-28).
