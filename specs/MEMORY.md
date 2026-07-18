@@ -5,6 +5,34 @@ The **live** log: recent entries + open gates. Older history is in
 just above the "Open Opus gates" section** (which stays last). Lean — link to specs, don't
 restate. When this passes ~200 lines, rotate older entries into the archive.
 
+## 2026-07-18 — WO-13-baseline: recorded 8-voice PROFILE baseline, dropped pool to 6 (COMPLETE)
+
+8-voice PROFILE baseline (FREEZE_DISPLAY=1, display quiescent), kept as the split-if
+reference for 13c/13e: `sizeof(JunoVoice)` = 652 B, all 8 voices pinned in internal SRAM
+(WO-12/ipc-collapse fix). Worst render block (active=8): voices=673us, instret=177622,
+ipc=0.73, vmax≈89us@v6, master=74us, setup=12us → per-voice ≈84us, worst block ≈760us of
+the 1333us/block budget (≈57%).
+
+Dropped `kNumVoices` 8→6 (`engine/synth_config.h`) to free ~168us/block headroom for
+Stage 13c/13e per-voice DSP. `kNoteOnStartIntervalBlocks` left at 2 — still sensible for a
+6-voice pool (max chord span now ≈16 ms first-to-last, down from ≈19 ms at 8). Updated the
+UNISON_COUNT doc comment in `engine/param_desc.cpp` (kNumVoices = 8 → 6); all other
+`kNumVoices` usages in `engine/voice_alloc.*`, `engine/synth.cpp`, and the host tests are
+symbolic and adapted automatically — verified via grep, no other hardcoded 8-voice pool
+assumption in engine/tests.
+
+Split-if noted, not fixed (outside touch list, non-blocking): `engine/bench.c`'s Section-3
+real-voice ramp still hardcodes `nv <= 8 /*kNumVoices*/` (dev bench only, not part of
+build/test/size gates) — ramps 2 voices past the new pool size. Leave for whoever next
+touches bench.c, or fold into 13c.
+
+`make format` / `make test` / `make host` / `make build` / `make size` all green.
+Device app.bin 0x121ea0 B (43% free of 0x200000); DIRAM 41.88% used — no meaningful
+flash/RAM delta expected from the voice-count change alone (pool sizing is host-side
+config, not yet reflected in a resized static array at this WO's scope).
+
+Next: WO-13c (per-voice DSP using the freed headroom).
+
 ## 2026-07-18 — RT ipc-collapse: pin voice state to internal SRAM (fix, device-verify pending)
 
 Followed up the ipc-collapse RT spike (worst blocks ipc 0.23 vs 0.71 at *constant* instret =

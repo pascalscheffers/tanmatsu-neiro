@@ -165,7 +165,7 @@ const ParamDesc JUNO_PARAM_TABLE[] = {
      0},
 
     // --- Stage 3d-ii: unison (global, not per-voice) ---
-    // UNISON_COUNT: number of voices stacked per note (1 = off, up to kNumVoices = 8).
+    // UNISON_COUNT: number of voices stacked per note (1 = off, up to kNumVoices = 6).
     //   Stepped int. U=1 is identical to the existing poly/mono path (no change).
     //   Effective polyphony = floor(kNumVoices / UNISON_COUNT). Pool exhaustion falls
     //   back to the normal steal policy; no allocation beyond the fixed pool.

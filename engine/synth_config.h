@@ -3,7 +3,7 @@
 // always kNumVoices. Runtime fat/thin mode is Stage 3+.
 #pragma once
 
-static constexpr int kNumVoices = 8;
+static constexpr int kNumVoices = 6;
 
 // Pitch-bend wheel range, applied directly to voice pitch (Stage 5c). Fixed ±2
 // semitones (standard wheel range); not a patch param in v1. RPN bend-range ignored.
