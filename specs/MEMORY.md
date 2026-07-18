@@ -5,6 +5,38 @@ The **live** log: recent entries + open gates. Older history is in
 just above the "Open Opus gates" section** (which stays last). Lean — link to specs, don't
 restate. When this passes ~200 lines, rotate older entries into the archive.
 
+## 2026-07-18 — RT ipc-collapse: pin voice state to internal SRAM (fix, device-verify pending)
+
+Followed up the ipc-collapse RT spike (worst blocks ipc 0.23 vs 0.71 at *constant* instret =
+memory stall not compute). Mechanism was already **proven** by the 2026-07-16 FREEZE_DISPLAY
+falsifier (this file ~L1125): core-0's ~1.15 MB framebuffer blit saturates the shared MSPI bus
+and stalls core-1 audio render; freeze the display and every collapse + overrun vanishes. A
+latent perf-headroom issue, **not** the crackle (that was I2S framing, `7868588`).
+
+Narrowed *which* audio access stalls: all audio code+rodata are already on-chip
+(`main/linker_audio.lf` `noflash` maps); static engine state is `.bss` (on-chip DRAM). The one
+remaining PSRAM data dep was the `JunoVoice` pool — `JunoModel::make_voice` used plain `new`,
+which under `CONFIG_SPIRAM` only *prefers* internal (`SPIRAM_MALLOC_ALWAYSINTERNAL`) with **PSRAM
+fallback**. A PSRAM voice = per-sample state reads contending the blit → the exact signature, and
+an RT-rule-4 violation.
+
+- **`engine/juno_model.cpp`** (commit `4522a89`): pin voices with
+  `heap_caps_malloc(sizeof(JunoVoice), MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT)` + placement `new`
+  (voices live for the process lifetime, never freed — no matching delete). `assert(mem)` fails
+  loud at init (335 KB internal free, 8 voices ≈ a few KB — won't fire). Host build keeps plain
+  `new`. Behind `#ifdef ESP_PLATFORM` (consistent with `synth.cpp`'s `esp_attr.h`).
+- **SYNTH_PROFILE probe:** one-shot `[voice]` log reports where the *default* allocator would put
+  a voice (`def_internal=0` ⇒ voices WERE in PSRAM = hypothesis confirmed) — proves it in one run.
+
+`make host`/`make test` (207, 0 fail) ✅ `make build` ✅ `make build PROFILE=1` ✅ `make format` ✅.
+
+**Pascal, device-verify:** `make PROFILE=1 build install run` + `make sniff`. (1) Read the
+`[voice]` line — `def_internal=0` confirms the PSRAM-voice theory. (2) Smash 6–8 on Juno EP with
+display **live**; the `[PROFILE] worst` ipc should stop collapsing and `over`→~0. If
+`def_internal=1`, voices were already internal ⇒ this pin is insurance and the real lever is
+cutting the blit's MSPI footprint (dirty-rect / partial present — the fix named in the 07-16
+entry). See memory [[ipc-collapse-rt-spikes]].
+
 ## 2026-07-16 — Render DC root cause: variable-duty pulse (RESOLVED)
 
 The master blocker follow-up is closed: the negative bias is expected from DaisySP's
