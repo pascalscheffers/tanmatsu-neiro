@@ -1,21 +1,45 @@
 # Stage 13 — Original Juno-106 factory bank and fidelity pass
 
-> **Status: implementation-ready through WO-13g-i; source gate before WO-13g-ii.** Execute in
-> order as fresh worker jobs. The user ratified three decisions on 2026-07-18: (1) when the
-> existing Neiro Juno model conflicts with the original Juno-106 control/signal model,
-> prefer the Juno-106 unless doing so would break a platform invariant; (2) Neiro remains
-> MIT, so no GPL-covered code, data, generated output, or adapted implementation enters the
-> repository; (3) protocol constants are derived from primary documentation and waveform
-> measurements, with GPL implementations restricted to post-freeze validation. The preset
-> wire format, stable parameter IDs, and factory-routing
-> representation are not compatibility constraints yet.
+> **Status: reworked 2026-07-18 (JSON banks + 6-voice). Implementation-ready through WO-13g-i;
+> source gate before WO-13g-ii.** Execute in order as fresh worker jobs. The user ratified the
+> original three decisions on 2026-07-18: (1) when the existing Neiro Juno model conflicts with
+> the original Juno-106 control/signal model, prefer the Juno-106 unless doing so would break a
+> platform invariant; (2) Neiro remains MIT, so no GPL-covered code, data, generated output, or
+> adapted implementation enters the repository; (3) protocol constants are derived from primary
+> documentation and waveform measurements, with GPL implementations restricted to post-freeze
+> validation. The preset wire format, stable parameter IDs, and factory-routing representation
+> are not compatibility constraints.
+>
+> **Rework decisions (2026-07-18, same day):**
+> - **License: grant likely, proceed.** Build WO-13g-i now; only WO-13g-ii onward stay gated on
+>   the redistribution grant.
+> - **WO-13g-i is Opus-led.** The clean-room tape-transport reverse-engineering is R&D, not a
+>   closed work-order: Opus derives the transport and authors `specs/notes/juno106-tape-format.md`
+>   first, then dispatches a worker to implement the decoder against that note.
+> - **Modern JSON bank format.** The preset/bank format is **JSON (parsed with cJSON, the ESP-IDF
+>   `json` component — no new firmware dependency)**. *All* patches are JSON: the 128 originals and
+>   the Neiro bank are JSON banks **embedded in firmware flash**; user banks are `.json` files on
+>   **SD/AppFS**. The old compact-binary runtime pipeline (disposable wire v3 blob, `uint8_t[18]`
+>   `.inc`, runtime record decoder, decode-on-request provider) is **replaced**: the tape is
+>   decoded **once, offline**, into a JSON bank that ships embedded and is parsed at load. The
+>   clean-room tape decoder (13g-i) and curve mapper (13h) survive as **offline build tooling that
+>   emits JSON**, not runtime firmware code.
+> - **The 12 Neiro factory patches are no longer hardcoded `FactoryPreset` data.** They are
+>   re-homed as a **Neiro JSON bank** embedded in flash; a proper **user bank** is introduced.
+> - **6-voice polyphony.** Drop `kNumVoices` 8→6 (authentic Juno-106, frees the budget the added
+>   per-voice DSP needs). A PROFILE baseline job runs before WO-13c to give split-if a real number.
+> - **ADRs:** WO-13a writes **ADR 0026** (Juno fidelity) and **ADR 0027** (JSON bank format,
+>   embedded/SD storage, 6-voice).
 
 ## Goal
 
 Ship all 128 original Juno-106 factory patches as Neiro's first factory bank, in original
-slot order `A11`–`A88`, then `B11`–`B88`. Preserve the current 12 Neiro-designed patches
-after that bank. A factory patch must decode from the original compact 18-byte payload at
-load time; do not expand 128 patches into duplicated float arrays in flash.
+slot order `A11`–`A88`, then `B11`–`B88`, followed by the current 12 Neiro-designed patches
+re-homed as a Neiro bank. All patches ship as **JSON banks embedded in firmware flash**,
+decoded from the original 18-byte Juno records **once, offline**, into JSON at build time — do
+not carry a runtime record decoder or expand patches into duplicated float arrays in flash. The
+12 Neiro patches move out of hardcoded `FactoryPreset` data into the Neiro JSON bank, and a
+user bank (`.json` files on SD/AppFS) is introduced.
 
 This is also the minimum fidelity pass needed for those patches to mean what their source
 data says:
@@ -118,19 +142,20 @@ single Juno envelope drives both destinations. All source bytes are 0–127.
 
 | Work-order | Deliverable | Effort | Depends on |
 |---|---|---|---|
-| 13a | ratify licensing, fidelity, and compatibility reset | medium | — |
-| 13b | split the oversized preset module without behavior change | medium | 13a |
-| 13c | faithful DCO controls, dual waveform mix, and square sub | high | 13a |
+| 13a | ratify licensing, fidelity, JSON-bank format, and 6-voice reset (ADR 0026 + 0027) | medium | — |
+| 13-baseline | measure 8-voice PROFILE worst block + `sizeof(JunoVoice)`, then set `kNumVoices=6` | low | 13a |
+| 13c | faithful DCO controls, dual waveform mix, and square sub | high | 13a, 13-baseline |
 | 13d | direct Juno panel modulation semantics | high | 13c |
 | 13e-i | pure four-position Juno HPF block | high | 13a |
 | 13e-ii | place HPF in each Juno voice before the VCF | medium | 13e-i |
-| 13f | clean in-memory patch object and disposable wire v3 | high | 13b–13d |
-| 13g-i | independently document and decode the tape transport | high | 13a |
-| 13g-ii | vendor the licensed WAVs and generate the compact bank | medium | 13g-i + source gate |
-| 13h | decode raw Juno records through calibrated curves | high | 13d–13g-ii |
-| 13i | expose 128 originals + 12 Neiro patches through one provider | high | 13f–13h |
+| 13-fmt | `PresetPatch` value object + JSON bank codec (cJSON), replacing the binary format | high | 13a |
+| 13-neiro-bank | serialize the 12 Neiro patches to an embedded JSON bank; drop hardcoded data | medium | 13-fmt, 13c–13e |
+| 13g-i | **Opus-led**: document then decode the tape transport (offline tool) | high | 13a |
+| 13g-ii | vendor licensed WAVs; offline-generate the 128-patch JSON bank | medium | 13g-i + source gate |
+| 13h | offline: decode raw Juno records through calibrated curves into JSON | high | 13d, 13-fmt, 13g-ii |
+| 13i | expose 128 originals + Neiro bank + user banks through one provider | high | 13-neiro-bank, 13h |
 | 13j | browser labels, documentation, exhaustive smoke verification | medium | 13i |
-| 13k | host/device sonic calibration and final acceptance | high | 13j |
+| 13k | host/device sonic calibration and final acceptance at 6 voices | high | 13j |
 
 The permissive factory-bank provenance gate below is open; no other Opus gates are open. A
 worker must still stop on an unlisted licensing, persisted-data, CPU-budget, or material sonic
@@ -138,9 +163,10 @@ choice not resolved by this document.
 
 ## WO-13a — Ratify the compatibility and licensing reset
 
-**Touch list (5):** `specs/decisions/0026-juno106-factory-bank-and-fidelity.md`,
+**Touch list (7):** `specs/decisions/0026-juno106-factory-bank-and-fidelity.md`,
+`specs/decisions/0027-json-bank-format-and-6-voice.md`,
 `specs/decisions/README.md`, `specs/02-synth-architecture.md`,
-`specs/05-data-model.md`, `specs/MEMORY.md`.
+`specs/05-data-model.md`, `specs/09-build-and-run.md`, `specs/MEMORY.md`.
 
 **Read list (5):** this stage through Source record contract; ADR 0002 Decision; ADR 0004
 Decision/Consequences; ADR 0009 Frozen shape; ADR 0020 Decision/Future follow-up.
@@ -150,48 +176,74 @@ Decision/Consequences; ADR 0009 Frozen shape; ADR 0020 Decision/Future follow-up
 **Don't read:** implementation sources, vendor trees, other stage docs, or
 `MEMORY-archive.md`.
 
-**Implementation:** write ADR 0026 as the narrow superseding decision. It supersedes ADR
+**Implementation:** write **ADR 0026** as the narrow superseding decision. It supersedes ADR
 0002 only where the Juno model's mutually-exclusive hybrid oscillator conflicts with
 independent Juno wave switches; reaffirms ADR 0004 and explicitly forbids GPL-derived bank
 data or implementation; supersedes ADR 0009 only for hardwired Juno panel modulation and
 the pre-canon routing wire shape; and supersedes ADR 0020 by changing the Juno sub to square.
-Record that current preset versions/IDs may be replaced cleanly and old NVS user blobs may
-fail closed to the default factory patch. Update spec 02's dependency/source ledger with the
-MIT source gate and update spec 05's patch contract.
 
-**Acceptance:** cross-references and decision index are correct; `git diff --check` is
-clean; one atomic docs commit; tight MEMORY entry names WO-13b next.
+Write **ADR 0027** for the bank/format reset: the preset/bank format is **JSON parsed with
+cJSON (ESP-IDF `json` component — no new firmware dependency)**; all patches are JSON; the 128
+originals and the Neiro bank ship as JSON banks **embedded in flash** (via `EMBED_TXTFILES`),
+user banks are `.json` files on **SD/AppFS**; the 128 originals are decoded from the 18-byte
+Juno records **once, offline** into JSON (no runtime record decoder); the 12 Neiro patches move
+out of hardcoded `FactoryPreset` data into the Neiro JSON bank; polyphony drops to **6 voices**.
+It supersedes spec 05's binary preset format. Record that old NVS/preset blobs may fail closed
+to the default factory patch. Update spec 02's dependency/source ledger with the MIT source gate
+and cJSON row, spec 05's patch contract (JSON schema), and note the 6-voice PROFILE step in
+spec 09.
+
+**Acceptance:** cross-references and both decision-index rows (0026, 0027) are correct;
+`git diff --check` is clean; one atomic docs commit; tight MEMORY entry names WO-13-baseline next.
 
 **Split-if:** any planned source or implementation would impose copyleft or lacks clear
 redistribution terms. Stop with the exact dependency and license; do not weaken the MIT
 constraint or omit notices.
 
-## WO-13b — Split preset code before adding the bank
+## WO-13-baseline — PROFILE baseline, then drop to 6 voices
 
-**Touch list (8):** `engine/preset.h`, `engine/preset.cpp`,
-`engine/factory_neiro_presets.h`, `engine/factory_neiro_presets.cpp`,
-`main/CMakeLists.txt`, `host/CMakeLists.txt`, `tests/host/CMakeLists.txt`,
-`specs/MEMORY.md`.
+**Touch list (4):** `engine/synth_config.h`, `engine/param_desc.cpp` (UNISON docs referencing
+`kNumVoices = 8`), `specs/MEMORY.md`, and any test asserting an 8-voice pool.
 
-**Read list (4):** this work-order; `engine/preset.cpp:factory bank and public factory
-functions`; `engine/preset.h:factory API`; the three CMake source lists.
+**Read list (3):** this work-order; `engine/synth_config.h:kNumVoices/kNoteOnStartIntervalBlocks`;
+`specs/09-build-and-run.md:PROFILE worst-block procedure`.
 
-**Reuse:** the current 12 `FactoryPreset` definitions and the existing public factory API.
+**Reuse:** the existing `PROFILE=1` worst-block instrumentation and `make size`.
 
-**Don't read:** voice/DSP sources, UI, KR-106 sources, unrelated tests, or other stages.
+**Don't read:** DSP internals, KR-106, UI, unrelated stages.
 
-**Implementation:** move only the current Neiro-authored factory data and its named routing
-tables into the new module. Keep names, order, default-by-name behavior, physical values and
-routings bit-for-bit. `preset.cpp` remains the facade/codec; no format or sound change in
-this job. Do not duplicate `FactoryPreset` definitions across modules. Keep each resulting
-source below about 500 lines, splitting data-only include fragments if needed.
+**Implementation:** first record the **current 8-voice** PROFILE worst render block,
+`sizeof(JunoVoice)`, and audio-side DIRAM in MEMORY as the split-if reference for WO-13c/13e.
+Take the reading with the display quiescent (the display-blit ipc-collapse, [[ipc-collapse-rt-spikes]],
+otherwise masks it). Then set `kNumVoices = 6` (authentic Juno-106); revisit
+`kNoteOnStartIntervalBlocks` for the smaller pool and update the UNISON doc comments. This is a
+config + docs change; no DSP algorithm change.
 
-**Acceptance:** existing preset tests, `make format`, `make test`, `make host`, `make build`,
-`make size`, membrane grep and `git diff --check` pass; factory count/names/values/routings
-are unchanged; atomic refactor commit and MEMORY entry.
+**Acceptance:** baseline numbers recorded; `kNumVoices == 6`; `make format`/`make test`/
+`make host`/`make build`/`make size` and membrane grep pass; UNISON and note-on-interval
+comments are true; atomic commit and MEMORY entry naming WO-13c next.
 
-**Split-if:** moving the data requires a public API change or pushes either new source over
-500 lines. Stop and return the smallest proposed private seam.
+**Split-if:** dropping to 6 voices needs a change outside the touch list (e.g. a fixed-8
+assumption in the allocator or a preset). Stop with the exact site.
+
+## WO-13-fmt and WO-13-neiro-bank — JSON bank format (replaces the old WO-13b/13f)
+
+The old "split the preset module" (13b) and "disposable wire v3 blob" (13f) work-orders are
+**superseded** by the JSON-bank rework. Two jobs replace them; both are authored in full before
+dispatch, against ADR 0027:
+
+- **WO-13-fmt** — introduce a fixed-capacity `PresetPatch` value object and a **JSON bank codec
+  on cJSON** (`engine/bank_json.{h,cpp}`), with `preset.cpp` as the JSON facade. Bank schema: a
+  JSON array of patches `{ "name": str, "params": { id-or-name: value, ... }, "routes": [ ... ] }`.
+  Reuse fixed `PRESET_MAX_PARAMS`/`PRESET_MAX_ROUTINGS`; parse off the audio thread; no heap in
+  the audio path. Device uses the ESP-IDF `json` component; the host build gets a small cJSON
+  shim. Fail closed on malformed/unknown-ID/truncated JSON.
+- **WO-13-neiro-bank** — serialize the current 12 Neiro patches to an embedded JSON bank
+  (`EMBED_TXTFILES`) and **delete the hardcoded `FactoryPreset` data**. Boot default resolves by
+  name from a bank (preserve INIT semantics). Add user-bank load from a `.json` file on SD/AppFS.
+
+Full touch/read/reuse/acceptance/split-if for these two are finalized when the fidelity front
+half (13c–13e) lands, since the param IDs they serialize change there.
 
 ## WO-13c — Faithful DCO wave switches and sub oscillator
 
@@ -313,33 +365,20 @@ all builds/tests/format/size/membrane checks pass; atomic commit and MEMORY.
 **Split-if:** voice-state growth threatens internal SRAM or HPF processing materially breaks
 the measured audio budget. Stop with `sizeof(JunoVoice)`, DIRAM and PROFILE deltas.
 
-## WO-13f — In-memory patch object and disposable wire v3
+## WO-13f — SUPERSEDED (folded into WO-13-fmt / WO-13-neiro-bank)
 
-**Touch list (5):** `engine/preset.h`, `engine/preset.cpp`,
-`tests/host/test_preset.cpp`, `ui/ui_presets_state.cpp`, `specs/MEMORY.md`.
-
-**Read list (5):** this work-order; `engine/preset.h:format/API`; `engine/preset.cpp:codec and
-factory facade`; `ui/ui_presets_state.cpp:audition_factory/user`; `tests/host/test_preset.cpp`.
-
-**Reuse:** fixed `PRESET_MAX_PARAMS`, `PRESET_MAX_ROUTINGS`, ID/value serialization, and
-lock-free engine setters.
-
-**Don't read:** DSP/voice code, platform backends, KR-106 sources, or unrelated tests.
-
-**Implementation:** introduce one fixed-capacity `PresetPatch` value object containing name,
-physical param entries and optional additive routes. Refactor factory and user load paths to
-use it, eliminating parallel output-array plumbing at call sites. Define the simplest v3
-field-by-field user blob around this object; v1/v2 compatibility is not required. Invalid or
-old NVS data fails closed and boot continues with the named default factory patch. No heap.
-
-**Acceptance:** round-trip, truncation, unknown-ID, invalid-old-version, route bounds, default
-fallback and factory-audition tests pass; all standard verification passes; atomic refactor
-commit and MEMORY.
-
-**Split-if:** changing the public API forces edits outside the touch list. Stop with callers
-enumerated; the orchestrator will issue a bounded caller-migration job.
+The disposable binary wire v3 blob is replaced by the JSON bank format (ADR 0027). The
+`PresetPatch` value object and the codec now live in **WO-13-fmt**, and the user-blob / boot-
+default behavior in **WO-13-neiro-bank** (JSON, fail-closed to the named default). See those
+sections above; the `ui/ui_presets_state.cpp` audition wiring stays in WO-13j.
 
 ## WO-13g-i — Clean-room tape transport decoder
+
+**Ownership: Opus-led.** The transport reverse-engineering is R&D, not a closed job. Opus
+derives conditioning/symbol-decision/pilot/framing/checksum from the two candidate waveforms and
+writes `specs/notes/juno106-tape-format.md` (every constant tagged Roland-fact or our
+measurement) *first*; only then is a worker dispatched to implement the decoder against that
+frozen note. The worker touch/read lists below apply to that implementation job.
 
 **Touch list (4):** `tools/decode_juno106_tape.py`,
 `tests/tools/test_decode_juno106_tape.py`, `specs/notes/juno106-tape-format.md`,
@@ -402,6 +441,17 @@ explicit grant. Do not treat public download access as a license, and do not sub
 GPL KR-106 bank or GPL-decoder output.
 
 **Sonnet action:** STOP. WO-13a–13g-i are not blocked; WO-13g-ii onward are blocked.
+
+> **JSON-rework note (ADR 0027) — applies to WO-13g-ii, 13h, 13i below.** These sections were
+> written for the compact-binary runtime pipeline and are superseded in representation, not
+> intent: the tape is decoded **once, offline**, through the calibrated curves (13h) into a
+> **JSON bank** (`third_party/juno106-factory/bank.json`-style, embedded via `EMBED_TXTFILES`),
+> not a `uint8_t[18]` `.inc` with a runtime decoder. So `engine/factory_juno106_data.inc` becomes
+> an embedded JSON bank; `engine/juno106_patch.*` becomes offline tooling (a Python step in
+> `tools/`) that emits `PresetPatch`-shaped JSON; the runtime path is a single cJSON parse. The
+> unified provider (13i) exposes the originals JSON bank, the Neiro JSON bank, and user banks. The
+> clean-room decode + curve provenance + hash/checksum discipline is unchanged. Final
+> touch/read/acceptance are settled at dispatch, after the source gate resolves and 13-fmt lands.
 
 ## WO-13g-ii — Vendor licensed tapes and generate the compact bank
 
@@ -574,13 +624,16 @@ focused fidelity stage; do not hand-tune 128 individual patches to hide a model 
 ## Definition of done
 
 - The browser exposes all original 128 patches in canonical A/B slot order, followed by the
-  12 existing Neiro patches and User.
-- Original data remains compact, source-pinned, hash-verified, reproducibly generated and
-  licensed under MIT-compatible terms documented in the repository.
+  12 existing Neiro patches (now a JSON bank) and user banks.
+- All patches ship as JSON banks (cJSON): the 128 originals + Neiro bank embedded in flash, user
+  banks as `.json` on SD/AppFS. The originals are source-pinned, hash-verified, reproducibly
+  decoded offline into JSON, and licensed under MIT-compatible terms documented in the repository.
+- Polyphony is 6 voices; the eight-voice PROFILE baseline and the six-voice worst block are both
+  recorded.
 - Every source byte/switch has a documented mapping and exhaustive decode coverage.
 - Saw+pulse, square sub, direct panel modulation, shared ADSR mapping and four HPF positions
   are live DSP behavior, not inert metadata.
-- No runtime allocation/blocking/logging enters the audio path; eight voices remain within
+- No runtime allocation/blocking/logging enters the audio path; six voices remain within
   measured CPU and internal-RAM budgets.
 - Host/test/device builds are green, README/specs are true, and final device audition finds
   no bank-wide mapping defect.
