@@ -66,7 +66,6 @@ idf_component_register(
 		"../ui/ui_focus.cpp"
 		"../ui/ui_dirty.cpp"
 		"../platform/device/platform_device.c"
-		"../platform/device/sd_profile.c"
 		"../platform/device/midi_usb_device.c"
 		"../platform/device/midi_usb_host.c"
 		${BENCH_SRCS}
