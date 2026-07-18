@@ -196,6 +196,10 @@ static platform_audio_render_fn s_render      = NULL;
 static void*                    s_render_user = NULL;
 static size_t                   s_block       = 0;
 
+// Physical loudness belongs at the codec, leaving MASTER_GAIN at a meaningful
+// unity default and reducing unnecessary limiter drive (ADR 0021 amendment).
+static const uint32_t kCodecVolumePct = 88u;
+
 static float   s_left[MAX_BLOCK];
 static float   s_right[MAX_BLOCK];
 static int16_t s_interleaved[MAX_BLOCK * 2];
@@ -455,7 +459,7 @@ bool platform_audio_start(const platform_audio_config_t* cfg, platform_audio_ren
     bsp_audio_set_rate(cfg->sample_rate);
     i2s_channel_enable(s_i2s);
 
-    bsp_audio_set_volume(80.0f);
+    bsp_audio_set_volume((float)kCodecVolumePct);
     bsp_audio_set_amplifier(true);  // headphone detection still routes correctly
 
     s_render      = render;
@@ -883,12 +887,13 @@ void platform_audio_i2s_profile_read(platform_audio_i2s_profile_t* out) {
     uint64_t write_sum = s_i2s_write_sum;
     uint32_t calls     = s_i2s_write_calls;
     *out               = (platform_audio_i2s_profile_t){
-                      .write_avg_cyc  = calls ? (uint32_t)(write_sum / calls) : 0u,
-                      .write_max_cyc  = s_i2s_write_max,
-                      .period_max_cyc = s_i2s_period_max,
-                      .write_calls    = calls,
-                      .write_errors   = s_i2s_write_errors,
-                      .short_writes   = s_i2s_short_writes,
+                      .codec_volume_pct = kCodecVolumePct,
+                      .write_avg_cyc    = calls ? (uint32_t)(write_sum / calls) : 0u,
+                      .write_max_cyc    = s_i2s_write_max,
+                      .period_max_cyc   = s_i2s_period_max,
+                      .write_calls      = calls,
+                      .write_errors     = s_i2s_write_errors,
+                      .short_writes     = s_i2s_short_writes,
     };
     s_i2s_write_sum    = 0;
     s_i2s_write_max    = 0;

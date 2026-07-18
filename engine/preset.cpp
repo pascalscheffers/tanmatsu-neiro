@@ -113,7 +113,7 @@ static const FactoryPreset
                  ParamId::ARP_LATCH},
                 {0.70f,  0.30f,  0.05f,  0.50f,  0.0f,   0.0f,   2000.0f, 0.30f,  0.0f, 20.0f, 0.35f, 0.0f, 0.50f, 0.0f,
                  0.010f, 0.100f, 0.700f, 0.300f, 0.005f, 0.200f, 0.000f,  0.200f, 1.0f, 0.5f,  0.0f,  0.0f, 0.5f,  0.5f,
-                 0.0f,   0.0f,   0.500f, 0.700f, 0.400f, 1.0f,   0.500f,  0.0f,   1.0f, 0.0f,  0.0f, /* poly, no glide
+                 0.0f,   0.0f,   0.500f, 0.700f, 0.400f, 1.0f,   1.000f,  0.0f,   1.0f, 0.0f,  0.0f, /* poly, no glide
                                                                                                       */
                  1.0f,   7.0f,   120.0f, 0.0f,   0.0f,   3.0f,   1.0f,    0.5f,   0.0f, 0.0f},
                 /* arp: off, up, 1/16, 1 oct, gate 0.5, no swing/latch */ /* U=1 (no unison), 7 cents ready (table
@@ -141,7 +141,7 @@ static const FactoryPreset
                 {0.85f,  0.60f, 0.00f,  0.50f, 0.0f,   -12.0f,              /* bass: 1 oct down */
                  800.0f, 0.50f, 0.0f,   20.0f, 0.50f,  0.0f,   0.30f, 0.0f, /* stronger env mod for bass filter sweep */
                  0.002f, 0.15f, 0.50f,  0.08f, 0.002f, 0.10f,  0.00f, 0.08f, 0.5f, 0.3f, 0.0f, 0.0f,  0.5f,
-                 0.3f,   0.0f,  0.0f,   0.30f, 0.40f,  0.30f,  1.0f,  0.60f, 0.0f, 1.0f, 1.0f, 0.06f, /* mono+retrigger,
+                 0.3f,   0.0f,  0.0f,   0.30f, 0.40f,  0.30f,  1.0f,  1.00f, 0.0f, 1.0f, 1.0f, 0.06f, /* mono+retrigger,
                                                                                                          60 ms glide */
                  1.0f,   0.0f,  120.0f, 0.0f,  0.0f,   3.0f,   1.0f,  0.5f,  0.0f, 0.0f},
                 /* arp: off, up, 1/16, 1 oct, gate 0.5, no swing/latch */ /* U=1 (no unison — bass lines stay tight);
@@ -171,7 +171,7 @@ static const FactoryPreset
                  1.50f,   0.50f, 0.80f,  0.00f, 0.80f, 0.3f,  0.6f,  0.0f, 0.3f, /* LFO1 delay 0.3s for gentle vibrato
                                                                                     fade-in */
                  0.2f,    0.4f,  1.0f,   0.0f,  0.40f, 0.90f, 0.55f, 2.0f,       /* Chorus II for wider stereo spread */
-                 0.50f,   0.0f,  1.0f,   0.0f,  0.0f,                            /* poly, no glide */
+                 1.00f,   0.0f,  1.0f,   0.0f,  0.0f,                            /* poly, no glide */
                  2.0f,    7.0f,  120.0f, 0.0f,  0.0f,  3.0f,  1.0f,  0.5f, 0.0f,  0.0f},
                 /* arp: off, up, 1/16, 1 oct, gate 0.5, no swing/latch */ /* U=2, 7 cents spread — fat pad shimmer; 120
                                                                              BPM */
@@ -199,7 +199,7 @@ static const FactoryPreset
                                                                                                low end */
                  0.30f, 0.0f,  0.70f,  0.0f,  0.005f, 0.20f, 0.65f,   0.12f, 0.003f, 0.15f, 0.00f,
                  0.10f, 5.0f,  0.4f,   0.0f,  0.0f,   3.0f,  0.2f,    0.0f,  0.0f,   1.00f, 0.50f,
-                 0.30f, 1.0f,  0.50f,  0.0f,  1.0f,   2.0f,  0.08f, /* mono+legato, 80 ms glide for expressive phrasing
+                 0.30f, 1.0f,  1.00f,  0.0f,  1.0f,   2.0f,  0.08f, /* mono+legato, 80 ms glide for expressive phrasing
                                                                      */
                  2.0f,  10.0f, 120.0f, 0.0f,  0.0f,   3.0f,  1.0f,    0.5f,  0.0f,   0.0f},
                 /* arp: off, up, 1/16, 1 oct, gate 0.5, no swing/latch */ /* U=2, 10 cents — thicker lead without
@@ -237,8 +237,8 @@ static const FactoryPreset
                  0.40f, 0.50f, 0.0f, 0.0f, 0.5f, 0.5f, 0.0f, 0.0f,
                  /* CHORUS: Chorus II (2=fast/wide) for lush spread */
                  0.50f, 0.80f, 0.40f, 2.0f,
-                 /* AMP: normal gain, env mode, full VCA */
-                 0.50f, 0.0f, 1.0f,
+                 /* AMP: unity gain, env mode, full VCA */
+                 1.00f, 0.0f, 1.0f,
                  /* PLAY: poly, no glide */
                  0.0f, 0.0f, 1.0f, 0.0f,
                  /* CLOCK + ARP: 120 BPM, arp off */
@@ -276,8 +276,8 @@ static const FactoryPreset
                  0.50f, 0.30f, 0.0f, 0.0f, 0.5f, 0.5f, 0.0f, 0.0f,
                  /* CHORUS: Chorus I (1=slow/lush) moderate depth */
                  0.50f, 0.60f, 0.40f, 1.0f,
-                 /* AMP: normal gain, env mode, full VCA */
-                 0.50f, 0.0f, 1.0f,
+                 /* AMP: unity gain, env mode, full VCA */
+                 1.00f, 0.0f, 1.0f,
                  /* PLAY: poly, no glide */
                  0.0f, 0.0f, 1.0f, 0.0f,
                  /* CLOCK + ARP: 120 BPM, arp off */
@@ -315,8 +315,8 @@ static const FactoryPreset
                  1.0f, 0.5f, 0.0f, 0.0f, 0.5f, 0.5f, 0.0f, 0.0f,
                  /* CHORUS: Chorus I (1) light depth */
                  0.50f, 0.50f, 0.40f, 1.0f,
-                 /* AMP: normal gain, env mode, full VCA */
-                 0.50f, 0.0f, 1.0f,
+                 /* AMP: unity gain, env mode, full VCA */
+                 1.00f, 0.0f, 1.0f,
                  /* PLAY: poly, no glide */
                  0.0f, 0.0f, 1.0f, 0.0f,
                  /* CLOCK + ARP: 120 BPM, arp off */
@@ -354,8 +354,8 @@ static const FactoryPreset
                  5.0f, 0.40f, 0.0f, 0.40f, 0.5f, 0.5f, 0.0f, 0.0f,
                  /* CHORUS: Chorus I (1) subtle width */
                  0.50f, 0.50f, 0.40f, 1.0f,
-                 /* AMP: normal gain, env mode, full VCA */
-                 0.50f, 0.0f, 1.0f,
+                 /* AMP: unity gain, env mode, full VCA */
+                 1.00f, 0.0f, 1.0f,
                  /* PLAY: mono+legato, 80 ms glide; unison 2 voices, 10 cents */
                  2.0f, 0.08f, 2.0f, 10.0f,
                  /* CLOCK + ARP: 120 BPM, arp off */
@@ -396,8 +396,8 @@ static const FactoryPreset
                  0.5f, 0.5f, 0.0f, 0.0f,
                  /* CHORUS: off (authentic chip sound — no chorus) */
                  0.50f, 0.70f, 0.40f, 0.0f,
-                 /* AMP: normal gain, gate mode (instant on/off), full VCA */
-                 0.50f, 1.0f, 1.0f,
+                 /* AMP: unity gain, gate mode (instant on/off), full VCA */
+                 1.00f, 1.0f, 1.0f,
                  /* PLAY: mono+retrigger, no glide */
                  1.0f, 0.0f, 1.0f, 0.0f,
                  /* CLOCK + ARP: 120 BPM, arp off */
@@ -438,8 +438,8 @@ static const FactoryPreset
                  0.5f, 0.5f, 0.0f, 0.0f,
                  /* CHORUS: off */
                  0.50f, 0.70f, 0.40f, 0.0f,
-                 /* AMP: normal gain, gate mode (instant on/off), full VCA */
-                 0.50f, 1.0f, 1.0f,
+                 /* AMP: unity gain, gate mode (instant on/off), full VCA */
+                 1.00f, 1.0f, 1.0f,
                  /* PLAY: poly (arp holds chord across all voices), no glide */
                  0.0f, 0.0f, 1.0f, 0.0f,
                  /* CLOCK + ARP: 130 BPM, arp ON, up, 1/16, 2 oct, gate 0.5 */
@@ -478,8 +478,8 @@ static const FactoryPreset
                  1.0f, 0.50f, 0.0f, 0.0f, 0.5f, 0.5f, 0.0f, 0.0f,
                  /* CHORUS: off (chip bass is dry) */
                  0.50f, 0.70f, 0.40f, 0.0f,
-                 /* AMP: normal gain, envelope mode (for punch), full VCA */
-                 0.50f, 0.0f, 1.0f,
+                 /* AMP: unity gain, envelope mode (for punch), full VCA */
+                 1.00f, 0.0f, 1.0f,
                  /* PLAY: mono+retrigger, no glide */
                  1.0f, 0.0f, 1.0f, 0.0f,
                  /* CLOCK + ARP: 120 BPM, arp off */
@@ -518,8 +518,8 @@ static const FactoryPreset
                  1.0f, 0.50f, 0.0f, 0.0f, 0.5f, 0.5f, 0.0f, 0.0f,
                  /* CHORUS: off */
                  0.50f, 0.70f, 0.40f, 0.0f,
-                 /* AMP: normal gain, envelope mode (for percussive shape), full VCA */
-                 0.50f, 0.0f, 1.0f,
+                 /* AMP: unity gain, envelope mode (for percussive shape), full VCA */
+                 1.00f, 0.0f, 1.0f,
                  /* PLAY: mono+retrigger, no glide */
                  1.0f, 0.0f, 1.0f, 0.0f,
                  /* CLOCK + ARP: 120 BPM, arp off */

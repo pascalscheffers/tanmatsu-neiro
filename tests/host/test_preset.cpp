@@ -70,6 +70,25 @@ static void test_factory_oob_returns_minus1(void) {
     test_pass();
 }
 
+static void test_factory_master_gain_is_unity(void) {
+    test_begin("all factory presets use unity master gain");
+    for (int preset = 0; preset < preset_factory_count(); preset++) {
+        uint16_t ids[64];
+        float    vals[64];
+        int      n     = preset_factory_params(preset, ids, vals, 64);
+        bool     found = false;
+        for (int i = 0; i < n; i++) {
+            if (ids[i] == ParamId::MASTER_GAIN) {
+                TEST_ASSERT(fabsf(vals[i] - 1.0f) < 1e-5f, "factory preset master gain must be unity");
+                found = true;
+                break;
+            }
+        }
+        TEST_ASSERT(found, "factory preset is missing master gain");
+    }
+    test_pass();
+}
+
 // ---------------------------------------------------------------------------
 // Param serialise / parse tests (updated for v2 signature)
 // ---------------------------------------------------------------------------
@@ -389,6 +408,7 @@ void test_preset_suite(void) {
     test_factory_init_name();
     test_factory_params_count();
     test_factory_oob_returns_minus1();
+    test_factory_master_gain_is_unity();
     test_serialize_parse_roundtrip();
     test_serialize_bad_buf_too_small();
     test_parse_bad_magic();

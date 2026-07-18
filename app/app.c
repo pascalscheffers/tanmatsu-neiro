@@ -222,8 +222,7 @@ void app_run(void) {
     bool     running         = true;
     uint64_t next_ctrl       = 0;
 #ifdef SYNTH_PROFILE
-    uint64_t next_prof        = 0;
-    uint32_t codec_volume_pct = 80u;
+    uint64_t next_prof = 0;
 #endif
 
     // SINGLE-PRODUCER INVARIANT: all engine_note_on/off calls happen on this one
@@ -372,7 +371,7 @@ void app_run(void) {
             platform_audio_i2s_profile_t i2s;
             platform_audio_i2s_profile_read(&i2s);
             printf("[PROFILE] i2s codec=%u%% period-max=%uus write=%u/%uus calls=%u errors=%u short=%u\n",
-                   (unsigned)codec_volume_pct, (unsigned)(i2s.period_max_cyc / div),
+                   (unsigned)i2s.codec_volume_pct, (unsigned)(i2s.period_max_cyc / div),
                    (unsigned)(i2s.write_avg_cyc / div), (unsigned)(i2s.write_max_cyc / div), (unsigned)i2s.write_calls,
                    (unsigned)i2s.write_errors, (unsigned)i2s.short_writes);
             float pk_mono, pk_postgain, min_gr, pk_out;

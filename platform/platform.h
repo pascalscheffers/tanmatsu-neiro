@@ -155,6 +155,7 @@ void platform_sleep_ms(uint32_t ms);
 void platform_audio_profile_read(uint32_t* out_avg_cyc, uint32_t* out_max_cyc, uint32_t* out_over, uint32_t* out_count);
 
 typedef struct {
+    uint32_t codec_volume_pct;
     uint32_t write_avg_cyc;
     uint32_t write_max_cyc;
     uint32_t period_max_cyc;
@@ -163,8 +164,8 @@ typedef struct {
     uint32_t short_writes;
 } platform_audio_i2s_profile_t;
 
-// Snapshot and reset downstream I2S timing/error counters. Returns zeros
-// outside SYNTH_PROFILE and on host.
+// Snapshot and reset downstream codec-volume/I2S timing/error counters.
+// Returns zeros outside SYNTH_PROFILE and on host.
 void platform_audio_i2s_profile_read(platform_audio_i2s_profile_t* out);
 
 // ---------------------------------------------------------------------------

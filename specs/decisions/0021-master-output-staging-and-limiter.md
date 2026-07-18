@@ -1,9 +1,34 @@
 # ADR 0021 — Master output: fix CC7 gain staging + add a master-bus limiter
 
-**Status:** accepted (2026-06-29). **Amends ADR 0016** (master-output soft-clip): the
+**Status:** accepted (2026-06-29), output landing amended (2026-07-18). **Amends ADR 0016** (master-output soft-clip): the
 soft-clip is retained but **demoted** from "ceiling" to *transient safety net* behind a
 real limiter. Companion to **ADR 0015** (how we spend CPU) and **ADR 0012** (denormals,
 no hardware FTZ).
+
+## 2026-07-18 amendment — unity DSP gain, louder codec
+
+After the I2S framing crackle was fixed, an on-device A/B recorded the same playing
+session at master gains 0.5 and 2.0. The 2.0 region was pleasantly loud but deliberately
+hot: PROFILE measured pre-limiter peaks 2.35–2.47, minimum gain reduction 0.49–0.51
+(about 6 dB), and final peaks 1.00. The SD master measured −7.4 LUFS and only six
+integer-rail samples, so the limiter/soft-clip chain was working, but raising DSP gain
+further would buy compression rather than clean output level.
+
+Pascal chose the cleaner staging:
+
+- `MASTER_GAIN` defaults to **1.0 (unity)** and every factory preset lands at unity.
+  The 0.0–2.0 range remains available; 2.0 is an intentional hot/limited setting.
+- Device codec volume rises from **80% to 88%**. The badge BSP maps this to ES8156
+  register 158 rather than 144, approximately +7 dB at the DAC volume stage while
+  remaining well below the BSP's 100% setting.
+- The PROFILE I2S snapshot reports the actual device-backend codec setting instead of
+  duplicating a constant in `app.c`.
+
+This separates roles: master gain is a meaningful DSP trim/drive control; codec volume
+sets physical device loudness. Existing user-saved presets retain their serialized gain.
+The first device follow-up is a new SD take plus speaker/headphone listening at the new
+landing; SD analysis verifies limiter use, while only listening/line capture can reveal
+downstream analog distortion.
 
 ## Context
 
@@ -51,7 +76,7 @@ audio atomics that already carry mod-wheel / pitch-bend / aftertouch in `engine/
 - The output gain in `synth_render` becomes `MASTER_GAIN · channel_vol · unison_gain(U)`.
 - `engine/param_desc.cpp` removes CC7 (→ `0xFF`) from both `MASTER_GAIN` and `VCA_LEVEL`.
   `MASTER_GAIN` stays a **manual** headroom/output-trim knob (range `0.0–2.0` kept,
-  default 0.5 = −6 dB); it is no longer reachable by MIDI. This also clears the dead
+  default 1.0 = unity per the 2026-07-18 amendment); it is no longer reachable by MIDI. This also clears the dead
   CC7→`VCA_LEVEL` shadow.
 
 A MIDI file's volume automation now only ever *attenuates* (unity max), exactly like

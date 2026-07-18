@@ -265,9 +265,9 @@ static void test_juno_table() {
         // Filter cutoff default = 2000 Hz.
         const float cutoff = ps.get(ParamId::FILTER_CUTOFF);
         TEST_ASSERT(fabsf(cutoff - 2000.0f) < 1.0f, "Filter cutoff default should be 2000 Hz");
-        // Master gain default = 0.5.
+        // Master gain default = unity.
         const float gain = ps.get(ParamId::MASTER_GAIN);
-        TEST_ASSERT(fabsf(gain - 0.5f) < 1e-5f, "Master gain default should be 0.5");
+        TEST_ASSERT(fabsf(gain - 1.0f) < 1e-5f, "Master gain default should be unity");
         test_pass();
     }
 

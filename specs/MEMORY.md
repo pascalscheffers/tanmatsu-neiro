@@ -1585,6 +1585,26 @@ gone (or reduced to H2's mild flat-top saturation) and overall level down ≈6 d
 should show no non-periodic full-scale wrap discontinuities. If crackle persists
 unchanged, H1 is falsified — revert this patch and run WO-12c instead.
 
+## 2026-07-18 — Unity master + 88% codec output landing
+
+Implemented Pascal's post-capture staging decision; ADR 0021 carries the evidence and amendment.
+
+- `MASTER_GAIN` now defaults to 1.0, and all 12 factory presets explicitly load unity
+  (including the default Solo Lead). The 0–2 range remains; 2.0 is intentional hot/limited drive.
+- Device codec output is 88% instead of 80% (ES8156 register 158 vs 144, approximately +7 dB).
+  Physical loudness moves downstream instead of needlessly driving the limiter. PROFILE obtains
+  `codec=88%` from the device I2S snapshot, removing the duplicate app-side constant.
+- Host regressions cover the table default and every factory preset. Existing serialized user
+  presets keep their saved master gain.
+- Verify: `make format` ✅, `make test` ✅ (all pass), `make host` ✅, `make build` ✅,
+  `make PROFILE=1 build` ✅. PROFILE total image 1,190,760 B. The first sandboxed device build
+  attempt was denied macOS `sysctl` process-list access; the required unsandboxed builds passed.
+
+**NEXT (Pascal):** install the PROFILE build, listen on speaker + headphones, and make a fresh SD
+take with representative single notes and dense chords. Retain `sniff.log`; compare `postg`, `gr`,
+and `out` with the gain-2.0 baseline, then analyze the new WAV for LUFS, peaks, crest factor, and
+rail samples. Raise codec output further only if the analog outputs remain clean and comfortable.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
