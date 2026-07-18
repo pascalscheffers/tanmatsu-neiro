@@ -30,12 +30,22 @@ an RT-rule-4 violation.
 
 `make host`/`make test` (207, 0 fail) ✅ `make build` ✅ `make build PROFILE=1` ✅ `make format` ✅.
 
-**Pascal, device-verify:** `make PROFILE=1 build install run` + `make sniff`. (1) Read the
-`[voice]` line — `def_internal=0` confirms the PSRAM-voice theory. (2) Smash 6–8 on Juno EP with
-display **live**; the `[PROFILE] worst` ipc should stop collapsing and `over`→~0. If
-`def_internal=1`, voices were already internal ⇒ this pin is insurance and the real lever is
-cutting the blit's MSPI footprint (dirty-rect / partial present — the fix named in the 07-16
-entry). See memory [[ipc-collapse-rt-spikes]].
+**Device result (2026-07-18):** `[voice]` line `sizeof=652 pinned=0x4ff.. internal=1
+default=0x483.. def_internal=0` — voices WERE in PSRAM, now internal (RT-rule-4 fix correct,
+KEEP). **But the ipc collapse is UNCHANGED**: worst block `voices=2103us instret=175933 ipc=0.23
+active=8`, same as pre-fix. **Voice-data MSPI contention FALSIFIED as the cause.**
+
+Proven now: full instret + 3× cycles + no extra instructions = pure STALL cycles (not compute,
+not preemption). Idle blocks also stall (`active=0 instret=273 ipc=0.04 setup=279us`). The
+`voices` region runs only IRAM code on only on-chip data yet still stalls under blit ⇒ **no
+off-chip audio-side dep remains**. Coupling = the display DMA2D blit contending the shared
+memory/AXI crossbar (FREEZE_DISPLAY kills it; audio placement can't). **Lever = cut the blit
+footprint (dirty-rect / partial present), not the audio side.**
+
+**NEXT (decisive A/B before display refactor):** force the present region tiny / skip present for
+a run, re-read `[PROFILE] worst`. ipc recovers with blit size ⇒ DMA volume is the knob ⇒ build
+dirty-rect. Tiny blit still collapses ⇒ per-transaction DMA arbitration ⇒ fix is blit
+scheduling/priority. Do NOT re-chase voice placement. See memory [[ipc-collapse-rt-spikes]].
 
 ## 2026-07-16 — Render DC root cause: variable-duty pulse (RESOLVED)
 
