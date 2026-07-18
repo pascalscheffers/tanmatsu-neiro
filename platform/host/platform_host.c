@@ -401,11 +401,6 @@ void platform_audio_i2s_profile_read(platform_audio_i2s_profile_t* out) {
     *out = (platform_audio_i2s_profile_t){0};
 }
 
-bool platform_audio_profile_set_codec_volume(uint32_t percent) {
-    (void)percent;
-    return false;
-}
-
 // ---------------------------------------------------------------------------
 // Render task (input-latency fix) — host stubs
 // ---------------------------------------------------------------------------

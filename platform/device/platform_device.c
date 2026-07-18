@@ -551,8 +551,6 @@ static int scancode_to_key(bsp_input_scancode_t sc) {
             return ']';
         case BSP_INPUT_SCANCODE_EQUAL:
             return '=';
-        case BSP_INPUT_SCANCODE_SPACE:
-            return ' ';  // manual tap-freeze key under SYNTH_PROFILE (crackle forensics)
         default:
             return 0;
     }
@@ -900,14 +898,5 @@ void platform_audio_i2s_profile_read(platform_audio_i2s_profile_t* out) {
     s_i2s_short_writes = 0;
 #else
     *out = (platform_audio_i2s_profile_t){0};
-#endif
-}
-
-bool platform_audio_profile_set_codec_volume(uint32_t percent) {
-#ifdef SYNTH_PROFILE
-    return bsp_audio_set_volume((float)percent) == ESP_OK;
-#else
-    (void)percent;
-    return false;
 #endif
 }

@@ -167,10 +167,6 @@ typedef struct {
 // outside SYNTH_PROFILE and on host.
 void platform_audio_i2s_profile_read(platform_audio_i2s_profile_t* out);
 
-// PROFILE-only control-thread codec A/B seam. Returns true only when the
-// requested output percentage was applied; unsupported outside device PROFILE.
-bool platform_audio_profile_set_codec_volume(uint32_t percent);
-
 // ---------------------------------------------------------------------------
 // Storage (Stage 2d) — key/blob store
 // ---------------------------------------------------------------------------

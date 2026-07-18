@@ -119,125 +119,6 @@ static volatile float s_pk_postgain = 0.0f;
 static volatile float s_min_gr      = 1.0f;
 static volatile float s_pk_out      = 0.0f;
 
-// --- Audio RAM tap (crackle forensics; diagnostic only) ---------------------
-// Captures the last ~341 ms of rendered stereo output (post soft_clip, the
-// exact signal handed to the DAC) into a RAM ring; freezes one-shot when a
-// trigger fires, half the ring before the trigger and half after.
-//
-// 2026-07-16: amplitude theory FALSIFIED by a direct-line recording (step
-// discontinuities, zero clamp hits, zero flat-tops -- see MEMORY.md). The
-// auto trigger below no longer looks at post-gain peak; it looks at sample-
-// to-sample STEP SIZE in the final output -- proven not to fire for this
-// glitch (load-independent crackle, clean timing). The DMA-underrun
-// hypothesis is also falsified (see MEMORY.md); the companion i2s
-// write-timing starve counter that tested it has been removed.
-//
-// Manual on-demand freeze + re-arm (this round): a human reacting to an
-// audible crackle presses SPACE; engine_tap_freeze_now() sets a request
-// flag; tap_capture() below latches the trigger on the next block with only
-// a short post-trigger tail so the frozen ring is almost entirely
-// pre-keypress history. engine_tap_rearm() resets the ring after a dump so
-// the next press captures again with no reboot. See synth.h for the reader-
-// side contract and specs/MEMORY.md 2026-07-16 for the runbook.
-//
-// Ring doubled to 32768 frames (128 KiB, ~683 ms @ 48 kHz) so a human's
-// ~250 ms reaction time lands comfortably inside the pre-trigger history
-// window even after the manual short post-trigger tail.
-//
-// One-shot per freeze: once s_tap_frozen latches, tap_capture() below is a
-// no-op until engine_tap_rearm() resets it (no reboot required). Ring/
-// position statics are mutated only on the audio thread (single-writer
-// contract); s_tap_frozen is the sole cross-thread signal (release/acquire)
-// gating the control thread's read (and re-arm request) of the otherwise
-// plain, non-atomic ring/position statics.
-static constexpr uint32_t kTapFrames           = 32768;           // 512 blocks * 64 frames, ~683 ms @ 48 kHz
-static constexpr uint32_t kTapFramesMask       = kTapFrames - 1;  // power of two -> mask, not %
-static constexpr uint32_t kTapPostTrigFrames   = 16384;           // 256 blocks * 64 frames, half the ring (auto path)
-// Legit band-limited audio slews well under this; the observed glitch steps
-// were ~1.0 full-scale sample-to-sample. Tunable. (Auto path only.)
-static constexpr float    kTapStepThreshold    = 0.6f;
-// Manual freeze: a tiny post-trigger tail (~1.3 ms) so the frozen ring is
-// almost entirely PRE-keypress history -- the human already heard the
-// crackle by the time they hit SPACE, so the interesting audio is behind us.
-static constexpr uint32_t kTapManualPostFrames = 64;
-
-static int16_t           s_tap_ring[kTapFrames * 2];  // interleaved L,R, 128 KiB
-static uint32_t          s_tap_write_pos      = 0;    // next slot to write == oldest valid frame once frozen
-static int32_t           s_tap_trig_pos       = -1;   // physical frame index of the trigger, -1 = not yet armed-fired
-static uint32_t          s_tap_post_remaining = 0;    // frames left to capture after trigger
-static std::atomic<bool> s_tap_frozen{false};
-static float             s_tap_prev_l = 0.0f;  // audio-thread-only, plain (matches ring convention)
-static float             s_tap_prev_r = 0.0f;
-// Control-thread -> audio-thread requests (single-flag, relaxed atomics):
-// the control thread only ever sets these; all statics above are still
-// mutated exclusively on the audio thread inside tap_capture().
-static std::atomic<bool> s_tap_freeze_req{false};  // "freeze now" (manual trigger)
-static std::atomic<bool> s_tap_rearm_req{false};   // "reset and unfreeze" (after a dump)
-
-// Convert one output frame to s16 and store it in the ring; latch the
-// trigger and, kTapPostTrigFrames later, freeze. Inlined into the step-6 hot
-// loop (both the stereo-chorus and mono paths below) -- branch-light: two
-// clamp+scale conversions, one index increment/mask, one compare. No
-// allocation, no locks, no calls beyond this TU (matches unison_gain()'s
-// static-inline convention above; the compiler inlines it at -O2).
-// `pk` (post-gain peak) is no longer used for triggering -- see the
-// discontinuity comment above -- kept in the signature for call-site
-// stability.
-static inline void tap_capture(float l, float r, float pk) {
-    (void)pk;
-    if (s_tap_frozen.load(std::memory_order_relaxed)) {
-        // Rearm check runs while frozen (audio-thread-only mutation of the
-        // ring/position statics, matching the single-writer contract) --
-        // but capture itself still short-circuits below once frozen and not
-        // re-arming this block.
-        if (s_tap_rearm_req.load(std::memory_order_relaxed)) {
-            s_tap_write_pos      = 0;
-            s_tap_trig_pos       = -1;
-            s_tap_post_remaining = 0;
-            s_tap_prev_l         = 0.0f;
-            s_tap_prev_r         = 0.0f;
-            s_tap_rearm_req.store(false, std::memory_order_relaxed);
-            s_tap_frozen.store(false, std::memory_order_release);  // last: unblocks capture next call
-        }
-        return;
-    }
-    float step   = fmaxf(fabsf(l - s_tap_prev_l), fabsf(r - s_tap_prev_r));
-    s_tap_prev_l = l;
-    s_tap_prev_r = r;
-    int32_t li   = (int32_t)(l * 32767.0f);
-    int32_t ri   = (int32_t)(r * 32767.0f);
-    if (li > 32767)
-        li = 32767;
-    else if (li < -32768)
-        li = -32768;
-    if (ri > 32767)
-        ri = 32767;
-    else if (ri < -32768)
-        ri = -32768;
-    uint32_t pos            = s_tap_write_pos;
-    s_tap_ring[pos * 2]     = (int16_t)li;
-    s_tap_ring[pos * 2 + 1] = (int16_t)ri;
-    s_tap_write_pos         = (pos + 1) & kTapFramesMask;
-    if (s_tap_trig_pos < 0) {
-        // Manual (human-in-the-loop) freeze takes priority over the auto
-        // step-discontinuity trigger -- checked first each block once armed.
-        if (s_tap_freeze_req.load(std::memory_order_relaxed)) {
-            s_tap_trig_pos       = (int32_t)pos;
-            s_tap_post_remaining = kTapManualPostFrames;
-            s_tap_freeze_req.store(false, std::memory_order_relaxed);
-        } else if (step > kTapStepThreshold) {
-            // Auto path kept intact (harmless): still fires if a genuine
-            // step discontinuity happens to occur before a manual request.
-            s_tap_trig_pos       = (int32_t)pos;
-            s_tap_post_remaining = kTapPostTrigFrames;
-        }
-    } else if (s_tap_post_remaining > 0) {
-        if (--s_tap_post_remaining == 0) {
-            s_tap_frozen.store(true, std::memory_order_release);
-        }
-    }
-}
-
 // Per-region CPU sub-timers (cycles). Split the whole-block audio cost into four
 // regions so a profile says WHERE the time goes — crucially both AVG and MAX per
 // region, because the smash-crackle spike is one rare block/window (avg=646 but
@@ -666,7 +547,6 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
                 if (postgain > s_pk_postgain) s_pk_postgain = postgain;
                 if (gr < s_min_gr) s_min_gr = gr;
                 if (out_abs > s_pk_out) s_pk_out = out_abs;
-                tap_capture(left[i], right[i], postgain);
             }
 #endif
         } else {
@@ -685,7 +565,6 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
                 if (fabsf(m) > s_pk_postgain) s_pk_postgain = fabsf(m);
                 if (gr < s_min_gr) s_min_gr = gr;
                 if (out_abs > s_pk_out) s_pk_out = out_abs;
-                tap_capture(v, v, fabsf(m));
             }
 #endif
         }
@@ -950,55 +829,5 @@ void engine_profile_read_cpu(EngineCpuProfile* out) {
     out->worst_voices_cyc = out->worst_voices_instret = out->worst_active = 0;
     out->worst_vmax_cyc = out->worst_vmax_idx = 0;
     out->worst_drain_cyc = out->worst_setup_cyc = out->worst_master_cyc = 0;
-#endif
-}
-
-// --- Audio RAM tap reader (SYNTH_PROFILE only; crackle forensics) ----------
-// See the tap_capture()/statics block above for the writer and synth.h for
-// the full dump-order contract.
-
-bool engine_tap_frozen(void) {
-#ifdef SYNTH_PROFILE
-    return s_tap_frozen.load(std::memory_order_acquire);
-#else
-    return false;
-#endif
-}
-
-const int16_t* engine_tap_data(uint32_t* out_frames, uint32_t* out_trig_frame, uint32_t* out_start_offset) {
-#ifdef SYNTH_PROFILE
-    // The acquire load in engine_tap_frozen() (called by the caller before
-    // this) is what makes it safe to read the plain (non-atomic)
-    // s_tap_write_pos/s_tap_trig_pos here: they were last written before the
-    // release store that set s_tap_frozen, and the writer never touches them
-    // again once frozen.
-    *out_frames        = kTapFrames;
-    uint32_t start     = s_tap_write_pos;  // oldest valid frame once frozen (see header contract)
-    *out_start_offset  = start;
-    uint32_t trig_phys = (s_tap_trig_pos >= 0) ? (uint32_t)s_tap_trig_pos : 0u;  // trigger always latches before freeze
-    *out_trig_frame    = (trig_phys + kTapFrames - start) & kTapFramesMask;      // physical -> logical (0 = oldest)
-    return s_tap_ring;
-#else
-    *out_frames       = 0;
-    *out_trig_frame   = 0;
-    *out_start_offset = 0;
-    return NULL;
-#endif
-}
-
-// Control thread: request an immediate manual freeze / a re-arm after a
-// dump. Single-flag requests only -- the audio thread (tap_capture()) does
-// all the actual ring/position mutation, preserving the single-writer
-// contract. See synth.h for the full contract.
-
-void engine_tap_freeze_now(void) {
-#ifdef SYNTH_PROFILE
-    s_tap_freeze_req.store(true, std::memory_order_relaxed);
-#endif
-}
-
-void engine_tap_rearm(void) {
-#ifdef SYNTH_PROFILE
-    s_tap_rearm_req.store(true, std::memory_order_relaxed);
 #endif
 }

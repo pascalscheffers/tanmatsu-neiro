@@ -78,96 +78,6 @@ static void bench_wait_for_key(void) {
 }
 #endif
 
-#ifdef SYNTH_PROFILE
-// Audio RAM tap dump (crackle forensics; see engine/synth.h and
-// specs/MEMORY.md 2026-07-10). One-time, control-thread-only work: not
-// real-time, so a plain bitwise CRC-32 and table-free base64 are fine here
-// even though the same style would be forbidden in the audio path.
-
-// Standard CRC-32 (IEEE 802.3 / zlib) update, one byte at a time. Matches
-// Python's zlib.crc32/binascii.crc32 so tools/tap2wav.py can verify without
-// any custom polynomial code on the host side.
-static uint32_t tap_crc32_update(uint32_t crc, uint8_t byte) {
-    crc ^= byte;
-    for (int i = 0; i < 8; i++) {
-        crc = (crc & 1u) ? (crc >> 1) ^ 0xEDB88320u : (crc >> 1);
-    }
-    return crc;
-}
-
-// Standard base64 (RFC 4648, '=' padding). `out` must hold at least
-// 4*ceil(n/3)+1 bytes; n <= 48 in this file's usage (63 is comfortably safe).
-static void tap_base64_encode(const uint8_t* in, uint32_t n, char* out) {
-    static const char tbl[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    uint32_t          oi    = 0, i;
-    for (i = 0; i + 3 <= n; i += 3) {
-        uint32_t v = ((uint32_t)in[i] << 16) | ((uint32_t)in[i + 1] << 8) | in[i + 2];
-        out[oi++]  = tbl[(v >> 18) & 0x3F];
-        out[oi++]  = tbl[(v >> 12) & 0x3F];
-        out[oi++]  = tbl[(v >> 6) & 0x3F];
-        out[oi++]  = tbl[v & 0x3F];
-    }
-    uint32_t rem = n - i;
-    if (rem == 1) {
-        uint32_t v = (uint32_t)in[i] << 16;
-        out[oi++]  = tbl[(v >> 18) & 0x3F];
-        out[oi++]  = tbl[(v >> 12) & 0x3F];
-        out[oi++]  = '=';
-        out[oi++]  = '=';
-    } else if (rem == 2) {
-        uint32_t v = ((uint32_t)in[i] << 16) | ((uint32_t)in[i + 1] << 8);
-        out[oi++]  = tbl[(v >> 18) & 0x3F];
-        out[oi++]  = tbl[(v >> 12) & 0x3F];
-        out[oi++]  = tbl[(v >> 6) & 0x3F];
-        out[oi++]  = '=';
-    }
-    out[oi] = '\0';
-}
-
-// Print the tap ring exactly once (guarded by a static bool at the call
-// site), as [TAP] hdr / d.../ end lines. Unrolls the two physical spans
-// (oldest->newest, per the header contract) via modular byte-offset math --
-// no second ring-sized buffer needed. 48 raw bytes per base64 line, a
-// platform_sleep_ms(2) every 16 lines so the dump does not starve other
-// control-thread work (16, not 32: the USB-Serial-JTAG console was dropping
-// ~6% of lines at 32).
-//
-// Each data line is stamped with its byte OFFSET into the logical buffer
-// ([TAP] d <off> <b64>). tap2wav.py places each chunk at its offset, so a
-// serial-dropped line leaves a zero gap at the correct position instead of
-// shifting every later sample earlier -- alignment survives drops, which is
-// what a sample-accurate diff against a line-out recording requires.
-static void tap_dump(void) {
-    uint32_t       frames, trig_frame, start_offset;
-    const int16_t* ring = engine_tap_data(&frames, &trig_frame, &start_offset);
-    if (ring == NULL) return;
-
-    printf("[TAP] hdr sr=48000 ch=2 fmt=s16le frames=%u trig_frame=%u\n", (unsigned)frames, (unsigned)trig_frame);
-
-    const uint8_t* bytes       = (const uint8_t*)ring;
-    uint32_t       total_bytes = frames * 2u * (uint32_t)sizeof(int16_t);  // 2 ch, interleaved
-    uint32_t       start_bytes = start_offset * 2u * (uint32_t)sizeof(int16_t);
-    uint32_t       crc         = 0xFFFFFFFFu;
-    uint32_t       lines_out   = 0;
-    for (uint32_t off = 0; off < total_bytes; off += 48u) {
-        uint8_t  chunk[48];
-        uint32_t n = (total_bytes - off < 48u) ? (total_bytes - off) : 48u;
-        for (uint32_t k = 0; k < n; k++) {
-            uint32_t physical = (start_bytes + off + k) % total_bytes;  // unroll: two spans, one modulo
-            chunk[k]          = bytes[physical];
-            crc               = tap_crc32_update(crc, chunk[k]);
-        }
-        char b64[65];
-        tap_base64_encode(chunk, n, b64);
-        printf("[TAP] d %u %s\n", (unsigned)off, b64);
-        lines_out++;
-        if ((lines_out % 16u) == 0u) platform_sleep_ms(2u);
-    }
-    crc ^= 0xFFFFFFFFu;
-    printf("[TAP] end crc32=%08x\n", (unsigned)crc);
-}
-#endif
-
 // ---------------------------------------------------------------------------
 // Render callback — called by the platform render task (device) or inline
 // from the control loop (host). Reads UIState written by the control loop and
@@ -328,29 +238,6 @@ void app_run(void) {
         platform_event_t ev;
         while (platform_poll_event(&ev)) {
             if (ev.type == PLATFORM_EV_QUIT) running = false;
-#ifdef SYNTH_PROFILE
-            // Manual on-demand tap freeze (crackle forensics, 2026-07-16): SPACE
-            // is unused by musical typing (control/keyboard.c) and the UI, so it's
-            // free to repurpose here. Diagnostic-only -- intercepted before
-            // keyboard/UI dispatch so it never also triggers musical/UI behavior.
-            if (ev.type == PLATFORM_EV_KEY && ev.pressed && ev.key == 32 /* SPACE */ &&
-                (ev.mods & PLATFORM_MOD_SHIFT) != 0) {
-                uint32_t requested_pct = codec_volume_pct == 80u ? 40u : 80u;
-                if (platform_audio_profile_set_codec_volume(requested_pct)) {
-                    codec_volume_pct = requested_pct;
-                    printf("[PROFILE] codec volume=%u%% ok\n", (unsigned)codec_volume_pct);
-                } else {
-                    printf("[PROFILE] codec volume=%u%% failed (still %u%%)\n", (unsigned)requested_pct,
-                           (unsigned)codec_volume_pct);
-                }
-                continue;
-            }
-            if (ev.type == PLATFORM_EV_KEY && ev.pressed && ev.key == 32 /* SPACE */) {
-                engine_tap_freeze_now();
-                printf("[TAP] freeze requested\n");
-                continue;
-            }
-#endif
             keyboard_handle_event(&ev);
             int  prev_page     = ui_state.page;
             bool prev_keyguide = ui_state.show_keyguide;
@@ -514,21 +401,6 @@ void app_run(void) {
                 (unsigned)cp.worst_vmax_idx, (unsigned)(cp.worst_drain_cyc / div), (unsigned)(cp.worst_setup_cyc / div),
                 (unsigned)(cp.worst_master_cyc / div));
             next_prof = now + 1000u;
-
-            // Audio RAM tap (crackle forensics): dump once per freeze. make
-            // PROFILE=1 build install run; make sniff; play until the crackle
-            // is audible; tap SPACE (manual freeze -- mostly pre-keypress
-            // history); wait for "[TAP] end"; then python3 tools/tap2wav.py
-            // sniff.log -o tap.wav.
-            static bool s_tap_dumped = false;
-            if (!s_tap_dumped && engine_tap_frozen()) {
-                s_tap_dumped = true;
-                tap_dump();
-                // Re-arm loop: reset the tap so the next SPACE press captures
-                // again with no reboot required.
-                engine_tap_rearm();
-                s_tap_dumped = false;
-            }
         }
 #endif
         platform_sleep_ms(POLL_MS);
