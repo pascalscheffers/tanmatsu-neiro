@@ -1,11 +1,13 @@
 # Stage 13 — Original Juno-106 factory bank and fidelity pass
 
-> **Status: implementation-ready through WO-13f; source gate before WO-13g.** Execute in
-> order as fresh worker jobs. The user ratified two decisions on 2026-07-18: (1) when the
+> **Status: implementation-ready through WO-13g-i; source gate before WO-13g-ii.** Execute in
+> order as fresh worker jobs. The user ratified three decisions on 2026-07-18: (1) when the
 > existing Neiro Juno model conflicts with the original Juno-106 control/signal model,
 > prefer the Juno-106 unless doing so would break a platform invariant; (2) Neiro remains
 > MIT, so no GPL-covered code, data, generated output, or adapted implementation enters the
-> repository. The preset wire format, stable parameter IDs, and factory-routing
+> repository; (3) protocol constants are derived from primary documentation and waveform
+> measurements, with GPL implementations restricted to post-freeze validation. The preset
+> wire format, stable parameter IDs, and factory-routing
 > representation are not compatibility constraints yet.
 
 ## Goal
@@ -38,6 +40,17 @@ cannot be expressed directly.
 - The protocol and control meanings may be independently implemented from Roland's
   published documentation. Do not copy a third-party decoder merely because it implements
   the same format.
+- Numerical protocol facts and interface constants may be used only when their derivation is
+  recorded from Roland documentation or independently measured from the tape waveform.
+  Do not copy a GPL implementation's identifiers, comments, tables, control flow, selection
+  or arrangement of constants, or implementation-tuning values. Decoder thresholds, filter
+  lengths and tolerances are our own measured choices, not borrowed heuristics.
+- Legal basis for that boundary: [EU Directive 2009/24/EC](https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=celex%3A32009L0024)
+  Article 1(2) excludes the ideas and principles underlying program elements and interfaces
+  from software copyright, and Article 5(3) permits a lawful user to observe, study and test a
+  program to determine those ideas and principles. This plan still uses the narrower clean-room
+  rule above; it is an engineering provenance policy, not a claim that arbitrary snippets are
+  safe to copy.
 - The 128-patch payload must come from a source with explicit MIT/CC0/public-domain terms,
   an explicit redistribution grant, or a documented legal determination that an
   independently captured hardware dump is uncopyrightable parameter data. "Free download"
@@ -45,10 +58,43 @@ cannot be expressed directly.
 - KR-106 may identify questions worth independently measuring, but workers must not read or
   use its GPL source, bank file, generated headers, curve tables, circuit-derived constants,
   or code comments. No translation or clean-up of GPL code is permitted.
+- A GPL implementation may be run only after the clean-room decoder is frozen, as an external
+  validation oracle. Its source is outside every worker read list; its decoded bytes are not
+  source input or committed output. Oracle comparison reports only pass/fail, record count and
+  independently computed hashes. It is never linked, invoked by the build, or shipped. The GNU
+  GPL FAQ says program output is not generally covered unless it copies protected program
+  content ([GNU GPL FAQ](https://www.gnu.org/licenses/gpl-faq.en.html#WhatCaseIsOutputGPL));
+  Neiro deliberately applies the stricter no-GPL-generated-bank policy anyway.
 - Until the source criterion above is met and its bytes, hash, and provenance are pinned in
-  this document, WO-13g and later are blocked. WO-13a–13f remain executable.
+  this document, WO-13g-ii and later are blocked. WO-13a–13g-i remain executable.
 - Preserve Neiro's MIT license. Any proposed source whose terms would cover the combined
   firmware is rejected rather than accepted through a license change.
+
+## Candidate tape evidence (not yet licensed source)
+
+Edy Hinzen's [Juno-106 Connection](http://www.hinzen.de/midi/juno-106/) identifies these two
+hardware `TAPE SAVE` recordings. They are useful local evidence and clean-room acceptance
+inputs, but the page gives no explicit redistribution license. Do not commit either WAV or
+decoded records until the provenance gate is resolved.
+
+| Local file | Site label | PCM shape | Duration | SHA-256 |
+|---|---|---|---:|---|
+| `junot020.wav` | factory bank A | mono unsigned PCM8, 11,025 Hz | 4.755 s | `0c5d2e93dc98a88ebc66920aa8b1ff805aefeb17771219b9e7b4b06f6b8b8bc3` |
+| `junot040.wav` | factory bank B | mono unsigned PCM8, 11,025 Hz | 4.792 s | `542b2c62242ded92d7f0957574cf64c3a9b279a24363df9aaddbb0c9dc35b4d9` |
+
+Both candidates have independently been shown to contain 64 checksum-valid records with
+valid header, byte framing and tail, yielding exactly 128 records in `A11`–`A88`, then
+`B11`–`B88` order. Treat that only as the expected clean-room result: the implementation must
+derive the transport from the waveform and published Juno record shape, then reproduce the
+result without copying the validating implementation or its output.
+
+Source hierarchy for all work below:
+
+1. Roland owner/service documentation for control meanings and APR record shape.
+2. The two original tape waveforms for independently measured transport timing, framing and
+   checksum behavior.
+3. Our checked-in analysis notes and synthetic tests for implementation choices.
+4. A third-party/GPL decoder only as post-freeze pass/fail validation, never as design input.
 
 ## Source record contract
 
@@ -79,8 +125,9 @@ single Juno envelope drives both destinations. All source bytes are 0–127.
 | 13e-i | pure four-position Juno HPF block | high | 13a |
 | 13e-ii | place HPF in each Juno voice before the VCF | medium | 13e-i |
 | 13f | clean in-memory patch object and disposable wire v3 | high | 13b–13d |
-| 13g | vendor and deterministically generate the compact bank | medium | 13a + source gate |
-| 13h | decode raw Juno records through calibrated curves | high | 13d–13g |
+| 13g-i | independently document and decode the tape transport | high | 13a |
+| 13g-ii | vendor the licensed WAVs and generate the compact bank | medium | 13g-i + source gate |
+| 13h | decode raw Juno records through calibrated curves | high | 13d–13g-ii |
 | 13i | expose 128 originals + 12 Neiro patches through one provider | high | 13f–13h |
 | 13j | browser labels, documentation, exhaustive smoke verification | medium | 13i |
 | 13k | host/device sonic calibration and final acceptance | high | 13j |
@@ -292,54 +339,108 @@ commit and MEMORY.
 **Split-if:** changing the public API forces edits outside the touch list. Stop with callers
 enumerated; the orchestrator will issue a bounded caller-migration job.
 
+## WO-13g-i — Clean-room tape transport decoder
+
+**Touch list (4):** `tools/decode_juno106_tape.py`,
+`tests/tools/test_decode_juno106_tape.py`, `specs/notes/juno106-tape-format.md`,
+`specs/MEMORY.md`.
+
+**Read list (5):** this work-order and Candidate tape evidence; Roland Owner's Manual
+`Tape Interface` and `MIDI Implementation: APR`; the two local candidate WAV headers and
+waveforms; `tools/sniff-console.py:argparse/main CLI style`; `specs/08-embedded-practices.md:golden
+tests`.
+
+**Reuse:** Python standard library `wave`, `struct`, `hashlib` and `argparse`; the Source
+record contract above; local candidate hashes as identity checks. This is an offline authoring
+tool only and adds no firmware dependency.
+
+**Don't read:** KR-106, the Java librarian, or any other third-party tape decoder, source,
+decompilation, constants, comments, decoded bytes or generated bank; engine/DSP/UI sources;
+unrelated WAVs. Do not search the web for decoder implementations.
+
+**Implementation:** analyze the candidate waveforms first and record a reproducible transport
+description: conditioning, symbol decision, pilot/sync acquisition, bit order, byte framing,
+record boundary, checksum and tail. For every numeric constant, record whether it is a Roland
+protocol fact or our own waveform measurement, including the measurement method and tolerance.
+Then implement a streaming, sample-rate-aware decoder which emits only canonical 18-byte
+records plus bank/slot metadata. It must tolerate DC offset and moderate gain/sample-rate
+changes without encoding assumptions about these exact PCM8 containers. Keep checksum and
+framing validation mandatory; never guess or repair payload bytes silently.
+
+Tests use a small independently constructed synthetic symbol fixture and mutations for bad
+pilot, invalid symbol length, byte framing, truncation and checksum. The uncommitted local
+candidate WAVs are an additional acceptance run, not test fixtures. Freeze the implementation
+and commit it before any GPL oracle is run. After freeze, an orchestrator may compare only
+record count and whole-bank SHA-256 against an external decoder; do not feed its records back
+into implementation or tests.
+
+**Acceptance:** each exact candidate hash decodes deterministically to 64 records; combined
+slots are exactly `A11`–`A88`,`B11`–`B88`; all records are 18 bytes and seven-bit clean;
+header, framing, checksum and tail validation pass; resampled/gain/DC-offset variants decode
+identically; every corrupt synthetic case fails closed with a precise error. Stdlib-only tests,
+`git diff --check`, `make test`, `make host` and `make build` pass; one atomic MIT tooling/docs
+commit and tight MEMORY entry. Record the two independently decoded whole-bank hashes in the
+analysis note only after this acceptance is green.
+
+**Split-if:** the transport cannot be derived reproducibly from the two waveforms and Roland
+record shape, or a proposed constant is known only from GPL code. Stop with the missing fact;
+do not inspect or translate a third-party decoder to fill the gap.
+
 ## 🛑 OPUS GATE — Permissive factory-bank provenance
 
 **Why Opus:** licensing/data provenance.
 
-**Decision:** identify the exact 128-patch APR dump and establish explicit
-MIT/CC0/public-domain redistribution terms, a direct grant, or a documented legal
-determination for an independently captured hardware dump. Pin its source and SHA-256 here
-before WO-13g is dispatched.
+**Decision:** establish an explicit MIT/CC0/public-domain redistribution grant for the exact
+Hinzen `junot020.wav` and `junot040.wav` captures (hashes above), obtain equivalent independent
+hardware captures with such a grant, or record a documented legal determination covering
+redistribution of the exact waveforms and decoded parameter records. Pin the grant/source and
+SHA-256 here before WO-13g-ii is dispatched.
 
-**Recommendation:** ask the maintainer of an existing original-data dump for a CC0 or MIT
-grant covering the raw 128 records; otherwise obtain a hardware/tape capture independently
-and have its redistribution status reviewed. Do not use the GPL KR-106 file or an unlicensed
-"free download."
+**Recommendation:** first ask Edy Hinzen for a CC0 or MIT grant covering the two WAVs and their
+decoded 128 parameter records. Otherwise obtain a new Juno-106 hardware/tape capture under an
+explicit grant. Do not treat public download access as a license, and do not substitute the
+GPL KR-106 bank or GPL-decoder output.
 
-**Sonnet action:** STOP. WO-13a–13f are not blocked; WO-13g onward are blocked.
+**Sonnet action:** STOP. WO-13a–13g-i are not blocked; WO-13g-ii onward are blocked.
 
-## WO-13g — Vendor and generate the compact source bank
+## WO-13g-ii — Vendor licensed tapes and generate the compact bank
 
-**Touch list (8):** `third_party/juno106-factory/factory-bank.syx`,
+**Touch list (8):** `third_party/juno106-factory/bank-a.wav`,
+`third_party/juno106-factory/bank-b.wav`,
 `third_party/juno106-factory/LICENSE`, `third_party/juno106-factory/SOURCE.md`,
-`tools/gen_juno106_factory.py`, `engine/factory_juno106_data.inc`,
+`engine/factory_juno106_data.inc`,
 `tests/host/test_juno106_factory_source.cpp`, `tests/host/CMakeLists.txt`,
 `specs/MEMORY.md`.
 
-**Read list (4):** this work-order and resolved source gate; the ratified source bank and
-license; Roland Owner's Manual `MIDI Implementation: APR`; `tests/host/CMakeLists.txt:test
-registration style`.
+**Read list (5):** this work-order and resolved source gate; the ratified WAVs and license;
+`tools/decode_juno106_tape.py:CLI/output contract`; WO-13g-i's independently decoded bank
+hashes; `tests/host/CMakeLists.txt:test registration style`.
 
-**Reuse:** Python standard library only and the source record contract above.
+**Reuse:** the frozen clean-room tape decoder, Python standard library, source record contract,
+candidate identity hashes and resolved redistribution grant.
 
-**Don't read:** KR-106 or any other GPL bank/generator/plugin/DSP source, engine preset code,
-UI, or platform.
+**Don't read:** KR-106 or any other GPL bank/decoder/generator/plugin/DSP source or decoded
+output, engine preset code, UI, or platform.
 
-**Implementation:** vendor the exact APR SysEx bank, its permissive license/grant, and a
-SOURCE note containing origin, capture method if known, SHA-256, and authorization. Write a
-deterministic generator that rejects anything except exactly 128 Roland APR messages with
-patch numbers 0–127 exactly once, 16 seven-bit sliders and two seven-bit switch bytes. Map
-patch numbers to canonical labels `A11..A88,B11..B88`; do not import descriptive names unless
-their own permissive grant is recorded. Generate a compact include containing slot labels
-plus `uint8_t[18]` records; no floats and no generator dependency at firmware runtime.
-`--check` must prove the checked-in output is current.
+**Implementation:** vendor the exact two licensed WAVs, grant/license, and a SOURCE note with
+the site/capture origin, both SHA-256 values, authorization text/date, PCM facts and the
+clean-room decoder version. Extend the decoder's existing CLI only if needed to generate one
+deterministic compact include from bank A then B; any such edit must be added to this touch
+list before dispatch. Reject any hash mismatch, decode warning, checksum error, non-64 bank,
+non-18-byte record or non-seven-bit value. Map records to canonical labels
+`A11..A88,B11..B88`; do not import descriptive names unless separately granted. The include
+contains only slot labels and `uint8_t[18]` records—no floats or runtime decoder. `--check`
+must prove the checked-in output is current from both WAVs.
 
-**Acceptance:** source hash matches; generator self-test and `--check` pass; generated data
-is exactly 2,304 parameter bytes plus names/struct overhead; standard builds/tests/format/
-size checks pass once the test is registered; atomic vendor commit and MEMORY.
+**Acceptance:** source hashes and resolved grant match; decoding reproduces WO-13g-i's frozen
+whole-bank hashes; `--check` passes; generated data is exactly 2,304 parameter bytes plus
+names/struct overhead; source test deliberately rejects a payload-symbol corruption that
+breaks framing/checksum; standard builds/tests/format/size checks pass; atomic vendor commit and
+MEMORY.
 
-**Split-if:** the ratified source does not match its hash/authorization or exact 128-message
-shape. Stop; do not silently substitute a GPL or merely downloadable bank.
+**Split-if:** the ratified source does not match its hash/authorization, the frozen decoder,
+or exact 2×64-record shape. Stop; do not silently substitute GPL output or a merely
+downloadable bank.
 
 ## WO-13h — Decode Juno records with calibrated curves
 
