@@ -65,6 +65,10 @@ void JunoVoice::note_on(uint8_t pitch, uint8_t velocity, NoteExpression expr) {
 
 void JunoVoice::note_off() {
     gate_ = false;
+    // Deliver the falling edge now: an already-idle voice will no longer be rendered,
+    // but DaisySP still needs gate=false before the slot can retrigger.
+    env_.process(false);
+    env2_.process(false);
 }
 
 // Stage 5c: inject channel-wide MIDI expression (called once per block by synth_render,

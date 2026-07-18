@@ -239,6 +239,37 @@ void test_voice_set_param_cutoff() {
     test_pass();
 }
 
+/* --- 7. Zero-sustain idle voice retriggers after note_off ---------------- */
+void test_voice_zero_sustain_retrigger() {
+    test_begin("zero-sustain idle voice retriggers after note_off");
+
+    JunoVoice v;
+    v.init(kSampleRate);
+    v.set_param((int)ParamId::ENV_DECAY, 0.01f);
+    v.set_param((int)ParamId::ENV_SUSTAIN, 0.0f);
+
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+    v.note_on(69, 127, expr);
+
+    float buf[64];
+    // Fixed-duration render is well beyond attack + short decay, leaving the
+    // DaisySP envelope idle while JunoVoice remains active via its held gate.
+    for (int b = 0; b < 200; b++) {
+        memset(buf, 0, sizeof(buf));
+        v.render(buf, 64);
+    }
+    TEST_ASSERT(v.is_active(), "held gate must keep an idle-envelope voice active");
+
+    v.note_off();
+    TEST_ASSERT(!v.is_active(), "note_off must deactivate the already-idle voice");
+
+    v.note_on(69, 127, expr);
+    memset(buf, 0, sizeof(buf));
+    v.render(buf, 64);
+    TEST_ASSERT(rms(buf, 64) > 0.001f, "reused zero-sustain voice must retrigger");
+    test_pass();
+}
+
 /* Entry points declared in main.cpp */
 void test_voice_suite() {
     test_voice_adsr_shape();
@@ -247,4 +278,5 @@ void test_voice_suite() {
     test_filter_lp_attenuation();
     test_voice_set_param_zero_levels();
     test_voice_set_param_cutoff();
+    test_voice_zero_sustain_retrigger();
 }

@@ -1684,6 +1684,15 @@ step noise.
   ESP/NVS dependency crosses the platform membrane. Flash 1,056,834 B; DIRAM
   241,474/576,464 B (41.89%); image 1,187,092 B.
 
+## 2026-07-18 — Juno zero-sustain voice reuse fix
+
+Fixed poisoned Juno voice slots when a held zero-sustain envelope reached IDLE: `note_off()`
+made the voice inactive before DaisySP observed the falling gate, so reuse had no rising edge
+and stayed silent. `JunoVoice::note_off()` now synchronously advances both envelopes once with
+`gate=false`; a host regression covers idle-while-held release and same-slot retrigger.
+
+**Verify:** `make format` ✅ `make test` ✅ `make host` ✅ `make build` ✅.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
