@@ -9,10 +9,13 @@ static constexpr int kNumVoices = 8;
 // semitones (standard wheel range); not a patch param in v1. RPN bend-range ignored.
 static constexpr float kPitchBendRangeSemis = 2.0f;
 
-// Stage 8 onset-crackle diagnostic: minimum distance between direct-path
-// (arp-off) note starts. At 64 frames / 48 kHz, 12 blocks = 16 ms; an 8-note
-// chord therefore spans 7 * 16 ms = 112 ms from first start to last. This is a
-// deliberately conservative device A/B. Tighten only after PROFILE shows the
-// onset blocks staying below the 1333 us deadline. Note-offs ahead of a
-// deferred note-on are still drained immediately (see synth.cpp).
-static constexpr int kNoteOnStartIntervalBlocks = 12;
+// Minimum distance between direct-path (arp-off) note starts. The gate still
+// admits at most ONE note-on per render block — that cap is a real deadline fix
+// (two fresh voices in one block spiked to ~2.5 ms vs the 1333 us budget). The
+// cross-block cooldown below is the tunable part: the WO-12a I2S-framing fix
+// removed the audible onset crackle that motivated the old conservative 12-block
+// (16 ms) spacing, so it is reduced to 2 blocks (~2.67 ms; an 8-note chord now
+// spans 7 * 2.67 ms ≈ 19 ms first-to-last, down from 112 ms). Note-offs ahead of
+// a deferred note-on are still drained immediately (see synth.cpp). Confirm onset
+// `over=0` on a PROFILE device run; raise again only if onsets miss the deadline.
+static constexpr int kNoteOnStartIntervalBlocks = 2;

@@ -87,7 +87,7 @@ void test_note_cap_suite() {
     }
 
     {
-        test_begin("chord: 8 starts spaced twelve blocks apart, none dropped");
+        test_begin("chord: 8 starts spaced kNoteOnStartIntervalBlocks apart, none dropped");
         CommandQueue<16> q;
         for (uint8_t p = 60; p < 68; p++) TEST_ASSERT(q.push(on(p)), "push note-on");
 
@@ -111,7 +111,7 @@ void test_note_cap_suite() {
         for (int i = 1; i < 8; i++) {
             TEST_ASSERT(starts[i] - starts[i - 1] == kNoteOnStartIntervalBlocks, "start interval is exact");
         }
-        TEST_ASSERT(starts[7] == 7 * kNoteOnStartIntervalBlocks, "eighth note starts after 84 blocks");
+        TEST_ASSERT(starts[7] == 7 * kNoteOnStartIntervalBlocks, "eighth note starts after 7 intervals");
         test_pass();
     }
 
