@@ -19,11 +19,11 @@ Pascal chose the cleaner staging:
 - `MASTER_GAIN` defaults to **1.0 (unity)** and every factory preset lands at unity.
   The 0.0–2.0 range remains available; 2.0 is an intentional hot/limited setting.
 - Device codec volume first rose from **80% to 88%**, then to **100% for an explicit
-  device trial** after the 88% analog-loop capture still peaked at −3.25 dBFS. The
-  badge BSP maps 100% to ES8156 register 180 (versus 158 at 88% and 144 at 80%).
-  This is not yet the final landing: the nominal 88→100 step is about +11 dB, so the
-  next identical line capture is expected to reveal whether the codec/output or Apple
-  input clips and may send the setting back down.
+  device trial** after the 88% analog-loop capture peaked at −3.25 dBFS. The 100%
+  capture rejected that setting: it contained 22,897 rail samples, 56,797 samples
+  above −1 dBFS, and a +0.8 dB true peak. The final candidate is therefore **90%**
+  (ES8156 register 162): approximately +2 dB over 88%, projecting the original
+  analog-loop peak to about −1.25 dBFS without the 100% trial's overload.
 - The PROFILE I2S snapshot reports the actual device-backend codec setting instead of
   duplicating a constant in `app.c`.
 

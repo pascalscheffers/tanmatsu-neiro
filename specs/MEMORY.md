@@ -1632,6 +1632,21 @@ the new WAV and PROFILE log. Check by ear at safe headphone/speaker level. Compa
 rail/flat-top count, LUFS, and limiter `postg/gr/out`; reduce codec volume if the analog
 capture clips or the physical outputs distort.
 
+## 2026-07-18 — Codec 100% rejected; land at 90%
+
+The external analog-loop `test100.wav` confirms 100% is excessive: −6.6 LUFS integrated,
+0 dBFS sample peak / +0.8 dBTP, −9.73 dBFS RMS, and crest reduced to 9.73 dB. It contains
+56,797 samples above −1 dBFS and 22,897 exact rail samples. This proves severe clipping at
+least at the Apple ADC and may hide earlier codec/output overload.
+
+Set the device codec to 90% (BSP register 162). This is approximately +2 dB over the clean
+88% capture (register 158), projecting its −3.25 dBFS peak to about −1.25 dBFS. PROFILE now
+reports `codec=90%`. ADR 0021 records the 88→100→90 measurement path.
+
+**NEXT (Pascal):** flash and repeat the analog-loop capture once at 90%. Acceptance: no rail
+samples/flat tops, true peak below 0 dBTP, and clean speaker/headphone listening. If the repeated
+performance peaks materially higher, return to the already-clean 88% landing.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
