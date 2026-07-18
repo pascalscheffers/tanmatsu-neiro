@@ -1712,3 +1712,12 @@ root cause was the I2S slot-format mismatch, fixed and device-verified in WO-12a
   `make size` (non-PROFILE): flash 1,054,744 B (.text 769,836 / .rodata 284,384),
   DIRAM 241,474/576,464 (41.89%), total image 1,185,002 B — in line with pre-existing
   Stage 11p numbers, confirming this was pure removal with no new cost.
+
+## 2026-07-18 — Side buttons control codec volume
+
+- ADR 0025 is implemented: volume side buttons (and host media-volume keys) adjust
+  session-only 0–90% codec/sink volume in 5-point steps, with 250 ms hold then 150 ms repeat.
+  They bypass musical typing and UI handling; device I2C writes remain on the control thread.
+- Host sink gain reads atomically after synth rendering, preserving engine output. PROFILE now
+  reports the live device codec volume. `make format`, `make host`, `make test`, `make build`,
+  and `make size` pass; flash is 1,055,572 B, DIRAM 241,474 B (41.89%), image 1,185,830 B.

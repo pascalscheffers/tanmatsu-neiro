@@ -26,6 +26,7 @@ Reuse-first and dedup-first by design: vetted MIT DSP (DaisySP), and a single pa
 - **Controller follow** — 8 hardware pots (CC 21–28) map to key parameters; turning a knob jumps the screen to that parameter's page and tracks the value live.
 - **Presets** — factory bank + save-your-own.
 - **Musical typing** — make sound standalone with nothing plugged in.
+- **Side volume buttons** — session-only codec volume from 0–90%, independent of patch gain.
 - **SD recording** — capture the stereo master as 48 kHz/16-bit PCM WAV without blocking audio.
 
 Delay, reverb, a step sequencer, and an SMF player are designed-for and on the roadmap — see [`specs/06-feature-scope-and-roadmap.md`](specs/06-feature-scope-and-roadmap.md).
@@ -59,6 +60,7 @@ Note input comes from a USB MIDI keyboard, a DAW over USB-C, or the badge's own 
 | `Z` / `X` | Octave down / up |
 | `←` / `→` | Previous / next parameter page |
 | `↑` / `↓` | Select parameter row on the page |
+| Side volume + / − | Adjust listening volume in 5% steps (hold to repeat; 0–90%, session-only) |
 | ✕ (F1, X button) | Nudge selected value **down** — tap = fine step; hold = ramps to full range in ~2 s |
 | △ (F2, triangle) | Nudge selected value **up** — same hold-to-ramp behaviour |
 | □ (F3, square) | **Back** — return to the PRESET page; on the PRESET page, cancel an in-progress audition |

@@ -41,6 +41,10 @@
 #define POLL_MS   1u
 #define RENDER_MS 16u
 
+#define VOLUME_STEP_PCT        5u
+#define VOLUME_REPEAT_DELAY    250u
+#define VOLUME_REPEAT_INTERVAL 150u
+
 // Voice-meter debounce (Stage 8 diag, 2026-07-07). The active-voice count churns
 // rapidly while smashing a chord; blitting the status band on every change starves
 // core-1 audio's PSRAM access -> block-budget overrun -> crackle (device A/B: with
@@ -85,6 +89,22 @@ static void bench_wait_for_key(void) {
 // exclusively — the control loop must never call ui_draw or platform_present.
 // ---------------------------------------------------------------------------
 static uint32_t s_last_drawn_seq = 0;
+
+static void adjust_volume(int direction) {
+    uint32_t current = platform_audio_volume_get();
+    uint32_t next    = current;
+    if (direction > 0) {
+        if (next <= 90u - VOLUME_STEP_PCT)
+            next += VOLUME_STEP_PCT;
+        else
+            next = 90u;
+    } else if (next >= VOLUME_STEP_PCT) {
+        next -= VOLUME_STEP_PCT;
+    } else {
+        next = 0u;
+    }
+    platform_audio_volume_set(next);
+}
 
 static void render_cb(void* arg) {
     UIState*   s  = (UIState*)arg;
@@ -218,9 +238,13 @@ void app_run(void) {
     // Start a dedicated render task on device (core 0, RENDER_PRIO 2); on host
     // SDL requires main-thread rendering so this returns false and we render
     // inline in the control loop below.
-    bool     has_render_task = platform_render_task_start(render_cb, &ui_state, RENDER_MS);
-    bool     running         = true;
-    uint64_t next_ctrl       = 0;
+    bool     has_render_task    = platform_render_task_start(render_cb, &ui_state, RENDER_MS);
+    bool     running            = true;
+    uint64_t next_ctrl          = 0;
+    bool     volume_up_held     = false;
+    bool     volume_down_held   = false;
+    uint64_t volume_up_repeat   = 0;
+    uint64_t volume_down_repeat = 0;
 #ifdef SYNTH_PROFILE
     uint64_t next_prof = 0;
 #endif
@@ -237,6 +261,22 @@ void app_run(void) {
         platform_event_t ev;
         while (platform_poll_event(&ev)) {
             if (ev.type == PLATFORM_EV_QUIT) running = false;
+            if (ev.type == PLATFORM_EV_KEY && ev.key == PLATFORM_KEY_VOLUME_UP) {
+                volume_up_held = ev.pressed;
+                if (ev.pressed) {
+                    adjust_volume(1);
+                    volume_up_repeat = platform_millis() + VOLUME_REPEAT_DELAY;
+                }
+                continue;
+            }
+            if (ev.type == PLATFORM_EV_KEY && ev.key == PLATFORM_KEY_VOLUME_DOWN) {
+                volume_down_held = ev.pressed;
+                if (ev.pressed) {
+                    adjust_volume(-1);
+                    volume_down_repeat = platform_millis() + VOLUME_REPEAT_DELAY;
+                }
+                continue;
+            }
             keyboard_handle_event(&ev);
             int  prev_page     = ui_state.page;
             bool prev_keyguide = ui_state.show_keyguide;
@@ -307,6 +347,14 @@ void app_run(void) {
 
         // --- Control tick + inline render (when no render task) ---
         uint64_t now = platform_millis();
+        if (volume_up_held && now >= volume_up_repeat) {
+            adjust_volume(1);
+            volume_up_repeat = now + VOLUME_REPEAT_INTERVAL;
+        }
+        if (volume_down_held && now >= volume_down_repeat) {
+            adjust_volume(-1);
+            volume_down_repeat = now + VOLUME_REPEAT_INTERVAL;
+        }
         if (now >= next_ctrl) {
             int v                  = engine_active_voices();
             int o                  = keyboard_octave();

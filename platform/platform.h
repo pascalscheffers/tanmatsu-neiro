@@ -45,10 +45,12 @@ typedef enum {
 } platform_event_type_t;
 
 // Navigation key codes — above the ASCII range (> 0x7F), no conflict.
-#define PLATFORM_KEY_UP    0x0100
-#define PLATFORM_KEY_DOWN  0x0101
-#define PLATFORM_KEY_LEFT  0x0102
-#define PLATFORM_KEY_RIGHT 0x0103
+#define PLATFORM_KEY_UP          0x0100
+#define PLATFORM_KEY_DOWN        0x0101
+#define PLATFORM_KEY_LEFT        0x0102
+#define PLATFORM_KEY_RIGHT       0x0103
+#define PLATFORM_KEY_VOLUME_UP   0x0104
+#define PLATFORM_KEY_VOLUME_DOWN 0x0105
 
 // Shape-button key codes (the six buttons above the number row on the badge,
 // left-to-right: F1=X, F2=triangle, F3=square, F4=circle, F5=three-lobe,
@@ -102,6 +104,12 @@ bool platform_audio_start(const platform_audio_config_t* cfg, platform_audio_ren
 
 // Stop the audio sink; no further render calls occur after this returns.
 void platform_audio_stop(void);
+
+// Session-only physical output volume, expressed as 0–90 percent. Call these
+// only from the control thread; the setter clamps its input and returns false
+// if the platform could not apply it.
+uint32_t platform_audio_volume_get(void);
+bool     platform_audio_volume_set(uint32_t pct);
 
 // End this app and hand control back to the system shell: on device, reboot
 // into the launcher (badge AppFS); on host, exit the process. Does not return.

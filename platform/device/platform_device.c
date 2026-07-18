@@ -198,7 +198,8 @@ static size_t                   s_block       = 0;
 
 // Physical loudness belongs at the codec, leaving MASTER_GAIN at a meaningful
 // unity default and reducing unnecessary limiter drive (ADR 0021 amendment).
-static const uint32_t kCodecVolumePct = 90u;
+// This is control-thread-only session state; I2C writes stay in its setter.
+static uint32_t s_codec_volume_pct = 90u;
 
 static float   s_left[MAX_BLOCK];
 static float   s_right[MAX_BLOCK];
@@ -459,7 +460,10 @@ bool platform_audio_start(const platform_audio_config_t* cfg, platform_audio_ren
     bsp_audio_set_rate(cfg->sample_rate);
     i2s_channel_enable(s_i2s);
 
-    bsp_audio_set_volume((float)kCodecVolumePct);
+    if (!platform_audio_volume_set(s_codec_volume_pct)) {
+        ESP_LOGE(TAG, "codec volume set failed");
+        return false;
+    }
     bsp_audio_set_amplifier(true);  // headphone detection still routes correctly
 
     s_render      = render;
@@ -500,6 +504,17 @@ void platform_audio_stop(void) {
     }
     bsp_audio_set_amplifier(false);
     s_audio_task = NULL;
+}
+
+uint32_t platform_audio_volume_get(void) {
+    return s_codec_volume_pct;
+}
+
+bool platform_audio_volume_set(uint32_t pct) {
+    if (pct > 90u) pct = 90u;
+    if (bsp_audio_set_volume((float)pct) != ESP_OK) return false;
+    s_codec_volume_pct = pct;
+    return true;
 }
 
 // Translate a (release-bit-masked) BSP scancode to the key code the portable
@@ -616,6 +631,12 @@ bool platform_poll_event(platform_event_t* out) {
                 break;
             case BSP_INPUT_NAVIGATION_KEY_RIGHT:
                 mapped_key = PLATFORM_KEY_RIGHT;
+                break;
+            case BSP_INPUT_NAVIGATION_KEY_VOLUME_UP:
+                mapped_key = PLATFORM_KEY_VOLUME_UP;
+                break;
+            case BSP_INPUT_NAVIGATION_KEY_VOLUME_DOWN:
+                mapped_key = PLATFORM_KEY_VOLUME_DOWN;
                 break;
             case BSP_INPUT_NAVIGATION_KEY_F1:
                 mapped_key = PLATFORM_KEY_F1;
@@ -887,7 +908,7 @@ void platform_audio_i2s_profile_read(platform_audio_i2s_profile_t* out) {
     uint64_t write_sum = s_i2s_write_sum;
     uint32_t calls     = s_i2s_write_calls;
     *out               = (platform_audio_i2s_profile_t){
-                      .codec_volume_pct = kCodecVolumePct,
+                      .codec_volume_pct = s_codec_volume_pct,
                       .write_avg_cyc    = calls ? (uint32_t)(write_sum / calls) : 0u,
                       .write_max_cyc    = s_i2s_write_max,
                       .period_max_cyc   = s_i2s_period_max,
