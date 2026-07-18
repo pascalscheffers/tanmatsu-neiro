@@ -683,14 +683,14 @@ void platform_sleep_ms(uint32_t ms) {
 }
 
 // ---------------------------------------------------------------------------
-// Storage (Stage 2d) — NVS blob per key under namespace "synth_p"
+// Storage (Stage 2d) — NVS blob per key under namespace "neiro_synth"
 // ---------------------------------------------------------------------------
 // NVS is already initialised in platform_init() via nvs_flash_init().
 // Key names are limited to 15 characters; we truncate silently.
 // Blobs up to ~32 KB each; our presets are ~126 bytes — well within budget.
 #include "nvs.h"
 
-#define STORAGE_NVS_NS "synth_p"
+#define STORAGE_NVS_NS "neiro_synth"
 
 static void nvs_truncate_key(const char* key, char* out, size_t out_max) {
     size_t i;
