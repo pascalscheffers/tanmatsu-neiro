@@ -5,6 +5,38 @@ The **live** log: recent entries + open gates. Older history is in
 just above the "Open Opus gates" section** (which stays last). Lean — link to specs, don't
 restate. When this passes ~200 lines, rotate older entries into the archive.
 
+## 2026-07-18 — WO-13c: independent saw/pulse DCO switches + square sub (COMPLETE)
+
+Per ADR 0026 (supersedes ADR 0002's mutually-exclusive select and ADR 0020's saw sub, Juno
+model only): `OSC_WAVEFORM` retired (id 0x14 kept defined, no descriptor row, no `set_param`
+case, never reuse) in favor of two independent booleans, `OSC_SAW_ON` (0x16, default on) and
+`OSC_PULSE_ON` (0x17, default off), both preset-eligible and able to sound together (summed) —
+matches the real 106's DCO which runs saw+pulse simultaneously.
+
+`JunoVoice` gained `osc_saw_`/`osc_pulse_` (both `dsp::Osc`, replacing the single `osc_main_`);
+both always `process()` every sample regardless of gate state so toggling a switch mid-note
+never resets phase, only gates contribution. `osc_sub_` is now fixed `WAVE_POLYBLEP_SQUARE` at
+50% duty set once at `init()`, one octave below the DCO — no longer parameter-driven.
+`OSC_PWM` still block-rate-drives `osc_pulse_`'s duty, clamped [0.05, 0.95].
+
+Necessary side-effect (outside the original 8-file touch list, required to keep
+`preset_eligible_param_count()` parity): all 12 factory presets in `engine/preset.cpp`
+updated — `OSC_WAVEFORM` id split into the two new ids, `count` 49→50, values split
+per-preset (SAW presets → `1,0`; PULSE presets → `0,1`; the one TRI preset, "8-Bit Bass",
+approximated with pulse — triangle is retired from the Juno model per ADR 0026, noted inline).
+
+New tests in `tests/host/test_osc_waveform.cpp`: saw-only/pulse-only non-silent, both-on sums
+louder than either alone, toggling a switch mid-render doesn't reset phase, sub is square
+(distinct spectrum from saw). `tests/host/test_params.cpp` updated for the new param rows and
+asserts `OSC_WAVEFORM` has no table row.
+
+`make format` / `make test` / `make host` / `make build` / `make size` all green. Membrane
+clean (`git diff --check`, no malloc/new/printf/ESP_LOG in the audio-path diff). Device
+app.bin 0x121f60 B (43% free of 0x200000); DIRAM 41.89% used, 334984 B free — no split-if
+triggered, plenty of headroom for the extra oscillator.
+
+Next: WO-13d (direct panel modulation for saw/pulse, deferred by ADR 0026).
+
 ## 2026-07-18 — WO-13-baseline: recorded 8-voice PROFILE baseline, dropped pool to 6 (COMPLETE)
 
 8-voice PROFILE baseline (FREEZE_DISPLAY=1, display quiescent), kept as the split-if
