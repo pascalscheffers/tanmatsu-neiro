@@ -28,26 +28,42 @@ through one `param_set(id, value, source)` that applies the curve and feeds the 
 thread via the lock-free ring (ADR 0007). Audio-rate params are block-smoothed; the audio
 context only ever *reads* a resolved value array. Single-writer discipline, no locks.
 
-## Patch (one sound)
-```
-Patch {
-  model_id, format_version
-  values[]          : value per ParamDesc.id
-  routings[]        : modulation matrix (ADR 0009), fixed max count
-  macros[]          : macro→target(s) assignments (ADR-perf)
-  meta              : name, category/tags, author, init-flag
+## Patch (one sound) — JSON schema (ADR 0027, supersedes the earlier binary format below)
+The patch/preset wire format is **JSON, parsed with cJSON** (ESP-IDF `json` component):
+```json
+{
+  "name": "Clean 106",
+  "params": { "<id-or-name>": <value>, "...": "..." },
+  "routes": [ { "source": "LFO1", "dest": "PWM", "depth": 0.2, "curve": "LIN" } ]
 }
 ```
-- **Versioned.** A loader migrates older `format_version`s forward (defaults fill new
-  params) so the format survives feature growth. Unknown params are preserved where safe.
-- **INIT patch** is just a patch with defaults. **A/B compare** holds two patches and
-  swaps the active one. **Randomize/morph** generates or interpolates `values[]`/`routings[]`
-  within each ParamDesc's range+curve.
+- `params` keys are the stable `ParamDesc.id` (numeric or its canonical name — the loader
+  accepts either so factory banks stay human-readable); missing keys fill from
+  `ParamDesc.default`, so the format survives feature growth without a version field doing
+  the work. Unknown keys are preserved where safe (round-tripped, not dropped) so a newer
+  bank opened by older tooling doesn't lose data.
+- `routes` is the modulation matrix (ADR 0009) — `{ source, dest, depth, curve }` — up to the
+  fixed max-routings count; a Juno-model patch's *panel* modulation (ADR 0026) is not
+  represented here, it is implied by the Juno-specific `params` (DCO-LFO depth, PWM amount,
+  etc.) that the hardwired per-voice paths read directly.
+- **INIT patch** is just a patch object with all-default `params` and empty `routes`.
+  **A/B compare** holds two patch objects and swaps the active one. **Randomize/morph**
+  generates or interpolates `params`/`routes` within each ParamDesc's range+curve.
+- Macro→target assignments (ADR-perf) are a further top-level array once macros land;
+  not yet frozen here.
+
+### Superseded: binary preset format
+Earlier drafts of this spec described a compact binary wire format (`model_id,
+format_version`, a `values[]` array keyed by `ParamDesc.id`, byte-wise serialized
+`routings[]`). **ADR 0027 supersedes this in favor of JSON.** Old NVS/preset blobs written
+under the binary format may fail closed to the default factory patch on load — no migration
+path is provided.
 
 ## Preset storage & browser
-- Patches are small files under the storage base path (`/sd/presets/...` on device, a
-  local dir on host — ADR 0007). Factory bank ships read-only (baked in / on SD); user
-  banks are writable.
+- Patches are small JSON files under the storage base path (`/sd/presets/...` on device, a
+  local dir on host — ADR 0007). The 128 original Juno-106 patches and the Neiro factory
+  bank ship as **JSON banks embedded in firmware flash** (`EMBED_TXTFILES`, ADR 0027); user
+  banks are writable `.json` files on SD/AppFS.
 - Browser indexes by category/tag for search/filter. Index is rebuilt from files (or a
   small cached manifest); no database.
 

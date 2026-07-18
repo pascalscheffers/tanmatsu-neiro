@@ -161,6 +161,15 @@ waveform animation — over raw count: **ADR 0015**.
 | miniaudio | 0.11.22 | MIT-0 / public-domain | **host-only** audio sink; vendored `platform/host/miniaudio.h` |
 | SDL2 | system (brew `sdl2`) | Zlib | **host-only** window/present/input; never shipped to device |
 | RtMidi | system (brew `rtmidi`) | MIT-style (permissive) | **host-only** MIDI input via CoreMIDI/ALSA; never shipped to device (gate G6, Stage 5a) |
+| cJSON (ESP-IDF `json` component) | bundled with ESP-IDF v5.5.1 | MIT | preset/bank codec (ADR 0027) — no new firmware dependency, parses embedded + SD/AppFS JSON banks |
+
+**MIT source gate (Stage 13, ADR 0026):** the 128 original Juno-106 factory patches may only
+be committed once their source payload carries explicit MIT/CC0/public-domain terms, an
+explicit redistribution grant, or a documented legal determination that an independently
+captured hardware dump is uncopyrightable parameter data — see
+`specs/stages/stage-13-juno106-factory-bank.md` for the full gate and source hierarchy. No
+GPL-derived bank data, decoder implementation, or generated output may enter the repository at
+any point.
 
 ---
 

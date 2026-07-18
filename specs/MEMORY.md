@@ -1693,6 +1693,30 @@ and stayed silent. `JunoVoice::note_off()` now synchronously advances both envel
 
 **Verify:** `make format` ✅ `make test` ✅ `make host` ✅ `make build` ✅.
 
+## 2026-07-18 — WO-13a: Juno-106 factory-bank ratification (ADR 0026 + 0027)
+
+Docs-only. Wrote **ADR 0026** (Juno-106 fidelity): narrow supersede of ADR 0002 (Juno gets
+independent saw/pulse switches instead of the mutually-exclusive VA sub-mode; other engines
+keep the hybrid macro-osc), reaffirms ADR 0004 (permissive-only, explicit GPL-bank-data ban),
+narrow supersede of ADR 0009 (Juno panel modulation is hardwired per-voice, not general-matrix
+routings; pre-canon default-routing wire shape isn't a compat constraint for the originals),
+and supersedes ADR 0020 (Juno sub → fixed square). Wrote **ADR 0027** (bank/format reset):
+preset/bank format is JSON via cJSON (ESP-IDF `json` component, no new dependency); 128
+originals + Neiro bank ship as JSON banks embedded in flash (`EMBED_TXTFILES`); user banks are
+`.json` on SD/AppFS; originals decoded from 18-byte tape records once, offline, into JSON (no
+runtime record decoder); the 12 Neiro patches move out of hardcoded `FactoryPreset` into a
+Neiro JSON bank; polyphony drops 8→6 voices. Updated `specs/decisions/README.md` (index rows
+0026/0027), spec 02 (cJSON ledger row + MIT source-gate note), spec 05 (patch contract → JSON
+schema, binary format marked superseded), spec 09 (6-voice PROFILE-baseline step ahead of the
+`kNumVoices` drop).
+
+**State:** WO-13a complete; Stage 13 fidelity/format work is unblocked through WO-13g-i, the
+128-patch payload itself stays gated on the MIT/CC0/redistribution-grant source criterion in
+the stage doc. **Next: WO-13-baseline** (PROFILE worst-block + `sizeof(JunoVoice)` at 8 voices,
+display quiescent, then `kNumVoices = 6`).
+
+**Verify:** docs-only; `git diff --check` clean.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

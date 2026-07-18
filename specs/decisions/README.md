@@ -24,3 +24,5 @@ decision, and the consequence. Supersede rather than rewrite history.
 | [0016](0016-master-output-soft-clip.md) | Master output stage = linear headroom + a gentle cubic soft-clip ceiling (no baked-in drive; overt grit is a future `MASTER_DRIVE` param) |
 | [0017](0017-orchestrator-worker-methodology.md) | Default build methodology: Opus orchestrates, fresh-context Sonnet workers execute closed work-orders; gates return to Opus (amends 0014) |
 | [0025](0025-side-buttons-control-codec-volume.md) | Dedicated side buttons control session-level codec volume (0–90%), independent of patch gain and MIDI CC7 |
+| [0026](0026-juno106-factory-bank-and-fidelity.md) | Juno-106 factory-bank fidelity pass: independent saw/pulse, hardwired panel modulation, square sub (narrow supersedes of 0002/0009/0020) |
+| [0027](0027-json-bank-format-and-6-voice.md) | JSON preset/bank format (cJSON), embedded factory banks + SD/AppFS user banks, 6-voice polyphony (supersedes spec 05's binary format) |

@@ -42,6 +42,12 @@ AppFS partition details: https://docs.tanmatsu.cloud/software/appfs/.
   launch the CPU bench via AppFS (synth slot untouched). Capture with `make sniff`.
 - `make size` / `make size-components` — track flash/RAM budget (do this often).
 - `make format` — clang-format the tree.
+- **6-voice PROFILE baseline (Stage 13-baseline, ADR 0027):** before dropping
+  `kNumVoices` from 8 to 6, build `PROFILE=1` and capture the worst-block render cost and
+  `sizeof(JunoVoice)` at the *current* 8-voice count, with the display quiescent (a live
+  display blit otherwise masks the number — see `[[ipc-collapse-rt-spikes]]`). Record both
+  in `specs/MEMORY.md` as the split-if reference for the Stage 13 fidelity work (13c/13e),
+  then set `kNumVoices = 6`.
 
 ## Host-side DSP tests
 
