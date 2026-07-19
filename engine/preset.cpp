@@ -2,6 +2,8 @@
 #include "preset.h"
 #include <math.h>
 #include <string.h>
+#include "bank_json.h"
+#include "factory_bank.h"
 #include "mod_matrix.h"
 #include "param_desc.h"
 #include "param_id.h"
@@ -41,528 +43,84 @@ static const ParamDesc* find_param_desc(uint16_t id) {
 }
 
 // ---------------------------------------------------------------------------
-// Factory bank — hardcoded physical values, no storage required
+// Factory bank — embedded JSON (WO-13-neiro-bank, ADR 0027)
 // ---------------------------------------------------------------------------
+//
+// The 12 Neiro factory patches live in engine/banks/neiro_factory.json (the
+// single source of truth — see that file's history for the original
+// hardcoded-array provenance). factory_bank_neiro_json() (engine/factory_bank.h)
+// resolves to those exact bytes on every build (device: EMBED_TXTFILES;
+// host/test: a generated raw-string-literal wrapper). Parsed once, lazily, on
+// first use — control-path only (boot/UI), never called from engine::process().
+//
+// WO-13d (ADR 0026): ENV2->cutoff, LFO1->PWM, and LFO1->pitch are direct Juno
+// panel paths (VCF_ENV_DEPTH, PWM_MODE/OSC_PWM, DCO_LFO_DEPTH — see
+// juno_voice.cpp render()), so none of the 12 patches carry matrix routes.
 
-// WO-13d (ADR 0026): ENV2→cutoff, LFO1→PWM, and LFO1→pitch are now direct Juno
-// panel paths (VCF_ENV_DEPTH, PWM_MODE/OSC_PWM, DCO_LFO_DEPTH — see juno_voice.cpp
-// render()), so the factory bank no longer needs matrix routes to express them;
-// doing so would double-apply the modulation. No factory patch currently needs a
-// matrix route to express an original panel control — all use k_no_routings. The
-// matrix remains available as optional additive extension for future patches.
-// (No routing table symbol needed — factory presets below pass nullptr, 0.)
+// Headroom above the current 12 patches for future growth without a format
+// change; bank_json_parse() silently caps at this count if the bank ever grows
+// past it.
+static constexpr int kNeiroBankMaxPatches = 16;
 
-struct FactoryPreset {
-    const char*    name;
-    uint16_t       ids[64];  // Stage 4b-ii: widened from 48 → 64 to hold 49 params + future growth
-    float          vals[64];
-    int            count;
-    const Routing* routings;
-    int            routing_count;
-};
+static PresetPatch g_neiro[kNeiroBankMaxPatches];
+static int         g_neiro_count       = -1;  // -1 = not yet loaded
+static bool        g_neiro_load_failed = false;
 
-// All values in physical units (the same space engine_set_param() expects).
-// Param ordering follows JUNO_PARAM_TABLE order (cosmetic — loader goes by id).
-// Stage 3a: added ENV2 (attack/decay/sustain/release) + LFO1/2 (rate/depth/shape).
-// Stage 3b-ii: added routings fields; all presets carry "Clean 106" routings.
-// Stage 3c-i: added OSC_PWM/WAVEFORM/RANGE, HPF_CUTOFF, VCF_ENV_DEPTH/POLARITY/
-//             KEY_TRACK/LFO_DEPTH, LFO1/2_DELAY, CHORUS_MODE, VCA_GATE_MODE/LEVEL.
-// Stage 3d-i: added PLAY_MODE and PORTAMENTO_TIME.
-// Stage 3d-ii: added UNISON_COUNT and UNISON_DETUNE.
-// Stage 4a-iii: added CLOCK_BPM (120.0 BPM default for all presets).
-static const FactoryPreset
-    k_factory[] =
-        {
-            // 0: INIT — all table defaults; ENV2->cutoff/LFO->PWM/LFO->pitch are the
-            // direct Juno panel paths now, no matrix routes needed (WO-13d, ADR 0026).
-            {
-                "INIT",
-                {ParamId::OSC_LEVEL,     ParamId::SUB_LEVEL,       ParamId::NOISE_LEVEL,      ParamId::OSC_PWM,
-                 ParamId::OSC_SAW_ON,    ParamId::OSC_PULSE_ON,    ParamId::DCO_LFO_DEPTH,    ParamId::PWM_MODE,
-                 ParamId::OSC_RANGE,     ParamId::FILTER_CUTOFF,   ParamId::FILTER_RES,       ParamId::FILTER_MODE,
-                 ParamId::HPF_CUTOFF,    ParamId::VCF_ENV_DEPTH,   ParamId::VCF_ENV_POLARITY, ParamId::VCF_KEY_TRACK,
-                 ParamId::VCF_LFO_DEPTH, ParamId::ENV_ATTACK,      ParamId::ENV_DECAY,        ParamId::ENV_SUSTAIN,
-                 ParamId::ENV_RELEASE,   ParamId::ENV2_ATTACK,     ParamId::ENV2_DECAY,       ParamId::ENV2_SUSTAIN,
-                 ParamId::ENV2_RELEASE,  ParamId::LFO1_RATE,       ParamId::LFO1_DEPTH,       ParamId::LFO1_SHAPE,
-                 ParamId::LFO1_DELAY,    ParamId::LFO2_RATE,       ParamId::LFO2_DEPTH,       ParamId::LFO2_SHAPE,
-                 ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,     ParamId::CHORUS_DELAY,
-                 ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,    ParamId::VCA_LEVEL,
-                 ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,     ParamId::UNISON_DETUNE,
-                 ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,         ParamId::ARP_RATE,
-                 ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,        ParamId::ARP_LATCH},
-                {0.70f, 0.30f, 0.05f, 0.50f, 1.0f, 0.0f, 0.0f, 1.0f, /* DCO LFO=0, PWM mode=Manual */
-                 // HPF_CUTOFF=1.0 (bypass position; WO-13e-ii restepped 0-3 — table default).
-                 0.0f, 2000.0f, 0.30f, 0.0f, 1.0f, 0.35f, 0.0f, 0.50f, 0.0f, 0.010f, 0.100f, 0.700f, 0.300f, 0.005f,
-                 0.200f, 0.000f, 0.200f, 1.0f, 0.5f, 0.0f, 0.0f, 0.5f, 0.5f, 0.0f, 0.0f, 0.500f, 0.700f, 0.400f, 1.0f,
-                 1.000f, 0.0f, 1.0f, 0.0f, 0.0f, /* poly, no glide
-                                                  */
-                 1.0f, 7.0f, 120.0f, 0.0f, 0.0f, 3.0f, 1.0f, 0.5f, 0.0f, 0.0f},
-                /* arp: off, up, 1/16, 1 oct, gate 0.5, no swing/latch */ /* U=1 (no unison), 7 cents ready (table
-                                                                             default); 120 BPM */
-                52,
-                nullptr,
-                0, /* WO-13d: ENV2->cutoff (VCF_ENV_DEPTH) and PWM (PWM_MODE/OSC_PWM) already direct */
-            },
-            // 1: Bass — thick sub, tight attack, dark filter + mono retrigger + subtle glide
-            {
-                "Bass",
-                {ParamId::OSC_LEVEL,     ParamId::SUB_LEVEL,       ParamId::NOISE_LEVEL,      ParamId::OSC_PWM,
-                 ParamId::OSC_SAW_ON,    ParamId::OSC_PULSE_ON,    ParamId::DCO_LFO_DEPTH,    ParamId::PWM_MODE,
-                 ParamId::OSC_RANGE,     ParamId::FILTER_CUTOFF,   ParamId::FILTER_RES,       ParamId::FILTER_MODE,
-                 ParamId::HPF_CUTOFF,    ParamId::VCF_ENV_DEPTH,   ParamId::VCF_ENV_POLARITY, ParamId::VCF_KEY_TRACK,
-                 ParamId::VCF_LFO_DEPTH, ParamId::ENV_ATTACK,      ParamId::ENV_DECAY,        ParamId::ENV_SUSTAIN,
-                 ParamId::ENV_RELEASE,   ParamId::ENV2_ATTACK,     ParamId::ENV2_DECAY,       ParamId::ENV2_SUSTAIN,
-                 ParamId::ENV2_RELEASE,  ParamId::LFO1_RATE,       ParamId::LFO1_DEPTH,       ParamId::LFO1_SHAPE,
-                 ParamId::LFO1_DELAY,    ParamId::LFO2_RATE,       ParamId::LFO2_DEPTH,       ParamId::LFO2_SHAPE,
-                 ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,     ParamId::CHORUS_DELAY,
-                 ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,    ParamId::VCA_LEVEL,
-                 ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,     ParamId::UNISON_DETUNE,
-                 ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,         ParamId::ARP_RATE,
-                 ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,        ParamId::ARP_LATCH},
-                {0.85f,  0.60f, 0.00f,  0.50f, 1.0f,   0.0f,  0.0f,  1.0f, /* DCO LFO=0, PWM mode=Manual */
-                 -12.0f,                                                   /* bass: 1 oct down */
-                 800.0f, 0.50f, 0.0f,   20.0f, 0.50f,  0.0f,  0.30f, 0.0f, /* stronger env mod for bass filter sweep */
-                 0.002f, 0.15f, 0.50f,  0.08f, 0.002f, 0.10f, 0.00f, 0.08f, 0.5f, 0.3f, 0.0f, 0.0f,  0.5f,
-                 0.3f,   0.0f,  0.0f,   0.30f, 0.40f,  0.30f, 1.0f,  1.00f, 0.0f, 1.0f, 1.0f, 0.06f, /* mono+retrigger,
-                                                                                                        60 ms glide */
-                 1.0f,   0.0f,  120.0f, 0.0f,  0.0f,   3.0f,  1.0f,  0.5f,  0.0f, 0.0f},
-                /* arp: off, up, 1/16, 1 oct, gate 0.5, no swing/latch */ /* U=1 (no unison — bass lines stay tight);
-                                                                             120 BPM */
-                52,
-                nullptr,
-                0, /* WO-13d: ENV2->cutoff (VCF_ENV_DEPTH) and PWM (PWM_MODE/OSC_PWM) already direct */
-            },
-            // 2: Pad — slow attack, lush chorus, long release, poly + unison 2 + 7 cents
-            {
-                "Pad",
-                {ParamId::OSC_LEVEL,     ParamId::SUB_LEVEL,       ParamId::NOISE_LEVEL,      ParamId::OSC_PWM,
-                 ParamId::OSC_SAW_ON,    ParamId::OSC_PULSE_ON,    ParamId::DCO_LFO_DEPTH,    ParamId::PWM_MODE,
-                 ParamId::OSC_RANGE,     ParamId::FILTER_CUTOFF,   ParamId::FILTER_RES,       ParamId::FILTER_MODE,
-                 ParamId::HPF_CUTOFF,    ParamId::VCF_ENV_DEPTH,   ParamId::VCF_ENV_POLARITY, ParamId::VCF_KEY_TRACK,
-                 ParamId::VCF_LFO_DEPTH, ParamId::ENV_ATTACK,      ParamId::ENV_DECAY,        ParamId::ENV_SUSTAIN,
-                 ParamId::ENV_RELEASE,   ParamId::ENV2_ATTACK,     ParamId::ENV2_DECAY,       ParamId::ENV2_SUSTAIN,
-                 ParamId::ENV2_RELEASE,  ParamId::LFO1_RATE,       ParamId::LFO1_DEPTH,       ParamId::LFO1_SHAPE,
-                 ParamId::LFO1_DELAY,    ParamId::LFO2_RATE,       ParamId::LFO2_DEPTH,       ParamId::LFO2_SHAPE,
-                 ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,     ParamId::CHORUS_DELAY,
-                 ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,    ParamId::VCA_LEVEL,
-                 ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,     ParamId::UNISON_DETUNE,
-                 ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,         ParamId::ARP_RATE,
-                 ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,        ParamId::ARP_LATCH},
-                {0.75f,   0.20f, 0.08f,  0.60f, 1.0f,  0.0f,  0.0f,  1.0f, /* DCO LFO=0, PWM mode=Manual */
-                 0.0f,                                                     /* wider PWM for pad shimmer */
-                 3000.0f, 0.15f, 0.0f,   20.0f, 0.25f, 0.0f,  0.60f, 0.0f, 0.80f, 0.50f, 0.80f,
-                 1.50f,   0.50f, 0.80f,  0.00f, 0.80f, 0.3f,  0.6f,  0.0f, 0.3f, /* LFO1 delay 0.3s for gentle vibrato
-                                                                                    fade-in */
-                 0.2f,    0.4f,  1.0f,   0.0f,  0.40f, 0.90f, 0.55f, 2.0f,       /* Chorus II for wider stereo spread */
-                 1.00f,   0.0f,  1.0f,   0.0f,  0.0f,                            /* poly, no glide */
-                 2.0f,    7.0f,  120.0f, 0.0f,  0.0f,  3.0f,  1.0f,  0.5f, 0.0f,  0.0f},
-                /* arp: off, up, 1/16, 1 oct, gate 0.5, no swing/latch */ /* U=2, 7 cents spread — fat pad shimmer; 120
-                                                                             BPM */
-                52,
-                nullptr,
-                0, /* WO-13d: ENV2->cutoff (VCF_ENV_DEPTH) and PWM (PWM_MODE/OSC_PWM) already direct */
-            },
-            // 3: Lead — bright, cutting, legato mono + short glide + unison 2 + 10 cents
-            {
-                "Lead",
-                {ParamId::OSC_LEVEL,     ParamId::SUB_LEVEL,       ParamId::NOISE_LEVEL,      ParamId::OSC_PWM,
-                 ParamId::OSC_SAW_ON,    ParamId::OSC_PULSE_ON,    ParamId::DCO_LFO_DEPTH,    ParamId::PWM_MODE,
-                 ParamId::OSC_RANGE,     ParamId::FILTER_CUTOFF,   ParamId::FILTER_RES,       ParamId::FILTER_MODE,
-                 ParamId::HPF_CUTOFF,    ParamId::VCF_ENV_DEPTH,   ParamId::VCF_ENV_POLARITY, ParamId::VCF_KEY_TRACK,
-                 ParamId::VCF_LFO_DEPTH, ParamId::ENV_ATTACK,      ParamId::ENV_DECAY,        ParamId::ENV_SUSTAIN,
-                 ParamId::ENV_RELEASE,   ParamId::ENV2_ATTACK,     ParamId::ENV2_DECAY,       ParamId::ENV2_SUSTAIN,
-                 ParamId::ENV2_RELEASE,  ParamId::LFO1_RATE,       ParamId::LFO1_DEPTH,       ParamId::LFO1_SHAPE,
-                 ParamId::LFO1_DELAY,    ParamId::LFO2_RATE,       ParamId::LFO2_DEPTH,       ParamId::LFO2_SHAPE,
-                 ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,     ParamId::CHORUS_DELAY,
-                 ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,    ParamId::VCA_LEVEL,
-                 ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,     ParamId::UNISON_DETUNE,
-                 ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,         ParamId::ARP_RATE,
-                 ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,        ParamId::ARP_LATCH},
-                {0.90f, 0.10f,   0.00f,  0.50f, 1.0f,   0.0f,  0.0f,  1.0f, /* DCO LFO=0, PWM mode=Manual */
-                 0.0f,  6000.0f, 0.60f,  0.0f,  80.0f,                      /* Lead: slight HPF
-                                                                                                                     to thin low end */
-                 0.30f, 0.0f,    0.70f,  0.0f,  0.005f, 0.20f, 0.65f, 0.12f, 0.003f, 0.15f,
-                 0.00f, 0.10f,   5.0f,   0.4f,  0.0f,   0.0f,  3.0f,  0.2f,  0.0f,   0.0f,
-                 1.00f, 0.50f,   0.30f,  1.0f,  1.00f,  0.0f,  1.0f,  2.0f,  0.08f, /* mono+legato, 80 ms glide for
-                                                                                     * expressive phrasing
-                                                                                     */
-                 2.0f,  10.0f,   120.0f, 0.0f,  0.0f,   3.0f,  1.0f,  0.5f,  0.0f,   0.0f},
-                /* arp: off, up, 1/16, 1 oct, gate 0.5, no swing/latch */ /* U=2, 10 cents — thicker lead without
-                                                                             muddiness; 120 BPM */
-                52,
-                nullptr,
-                0, /* WO-13d: ENV2->cutoff (VCF_ENV_DEPTH) and PWM (PWM_MODE/OSC_PWM) already direct */
-            },
-            // 4: 106 Strings — the defining Juno-106 sound: slow LFO PWM sweep, lush Chorus II, poly
-            // OSC_WAVEFORM=1 (PULSE), slow LFO (0.4 Hz) sweeping PWM depth 0.35; Chorus II (2=wide).
-            {
-                "106 Strings",
-                {ParamId::OSC_LEVEL,     ParamId::SUB_LEVEL,       ParamId::NOISE_LEVEL,      ParamId::OSC_PWM,
-                 ParamId::OSC_SAW_ON,    ParamId::OSC_PULSE_ON,    ParamId::DCO_LFO_DEPTH,    ParamId::PWM_MODE,
-                 ParamId::OSC_RANGE,     ParamId::FILTER_CUTOFF,   ParamId::FILTER_RES,       ParamId::FILTER_MODE,
-                 ParamId::HPF_CUTOFF,    ParamId::VCF_ENV_DEPTH,   ParamId::VCF_ENV_POLARITY, ParamId::VCF_KEY_TRACK,
-                 ParamId::VCF_LFO_DEPTH, ParamId::ENV_ATTACK,      ParamId::ENV_DECAY,        ParamId::ENV_SUSTAIN,
-                 ParamId::ENV_RELEASE,   ParamId::ENV2_ATTACK,     ParamId::ENV2_DECAY,       ParamId::ENV2_SUSTAIN,
-                 ParamId::ENV2_RELEASE,  ParamId::LFO1_RATE,       ParamId::LFO1_DEPTH,       ParamId::LFO1_SHAPE,
-                 ParamId::LFO1_DELAY,    ParamId::LFO2_RATE,       ParamId::LFO2_DEPTH,       ParamId::LFO2_SHAPE,
-                 ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,     ParamId::CHORUS_DELAY,
-                 ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,    ParamId::VCA_LEVEL,
-                 ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,     ParamId::UNISON_DETUNE,
-                 ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,         ParamId::ARP_RATE,
-                 ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,        ParamId::ARP_LATCH},
-                /* OSC: pulse wave, PWM amount=0.75 (LFO mode, direct panel sweep — WO-13d), sub gentle, no noise */
-                {0.80f, 0.20f, 0.00f, 0.75f, 0.0f, 1.0f, 0.0f, 0.0f, /* DCO LFO=0, PWM mode=LFO (direct sweep) */
-                 0.0f,
-                 /* FILTER: warm LP cutoff, low res, no HPF; gentle filter env mod */
-                 1800.0f, 0.15f, 0.0f, 20.0f, 0.20f, 0.0f, 0.50f, 0.0f,
-                 /* AMP ENV: slow attack and release for strings swell */
-                 0.40f, 0.80f, 0.85f, 1.20f,
-                 /* ENV2: slower sweep for filter mod — A=0.6/D=1.0/S=0.5/R=1.0 */
-                 0.60f, 1.00f, 0.50f, 1.00f,
-                 /* LFO1: slow (0.4 Hz) SINE PWM sweep; LFO2 idle */
-                 0.40f, 0.50f, 0.0f, 0.0f, 0.5f, 0.5f, 0.0f, 0.0f,
-                 /* CHORUS: Chorus II (2=fast/wide) for lush spread */
-                 0.50f, 0.80f, 0.40f, 2.0f,
-                 /* AMP: unity gain, env mode, full VCA */
-                 1.00f, 0.0f, 1.0f,
-                 /* PLAY: poly, no glide */
-                 0.0f, 0.0f, 1.0f, 0.0f,
-                 /* CLOCK + ARP: 120 BPM, arp off */
-                 120.0f, 0.0f, 0.0f, 3.0f, 1.0f, 0.5f, 0.0f, 0.0f},
-                52,
-                nullptr,
-                0, /* WO-13d: ENV2->cutoff and PWM sweep now direct (VCF_ENV_DEPTH, PWM_MODE=LFO) */
-            },
-            // 5: 106 Brass — punchy pulse brass, strong filter env + moderate chorus, poly
-            // OSC_WAVEFORM=1 (PULSE), positive filter env with VCF_ENV_DEPTH=0.6; fast attack.
-            {
-                "106 Brass",
-                {ParamId::OSC_LEVEL,     ParamId::SUB_LEVEL,       ParamId::NOISE_LEVEL,      ParamId::OSC_PWM,
-                 ParamId::OSC_SAW_ON,    ParamId::OSC_PULSE_ON,    ParamId::DCO_LFO_DEPTH,    ParamId::PWM_MODE,
-                 ParamId::OSC_RANGE,     ParamId::FILTER_CUTOFF,   ParamId::FILTER_RES,       ParamId::FILTER_MODE,
-                 ParamId::HPF_CUTOFF,    ParamId::VCF_ENV_DEPTH,   ParamId::VCF_ENV_POLARITY, ParamId::VCF_KEY_TRACK,
-                 ParamId::VCF_LFO_DEPTH, ParamId::ENV_ATTACK,      ParamId::ENV_DECAY,        ParamId::ENV_SUSTAIN,
-                 ParamId::ENV_RELEASE,   ParamId::ENV2_ATTACK,     ParamId::ENV2_DECAY,       ParamId::ENV2_SUSTAIN,
-                 ParamId::ENV2_RELEASE,  ParamId::LFO1_RATE,       ParamId::LFO1_DEPTH,       ParamId::LFO1_SHAPE,
-                 ParamId::LFO1_DELAY,    ParamId::LFO2_RATE,       ParamId::LFO2_DEPTH,       ParamId::LFO2_SHAPE,
-                 ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,     ParamId::CHORUS_DELAY,
-                 ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,    ParamId::VCA_LEVEL,
-                 ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,     ParamId::UNISON_DETUNE,
-                 ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,         ParamId::ARP_RATE,
-                 ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,        ParamId::ARP_LATCH},
-                /* OSC: pulse, sub for body */
-                {0.80f, 0.30f, 0.00f, 0.50f, 0.0f, 1.0f, 0.0f, 1.0f, /* DCO LFO=0, PWM mode=Manual */
-                 0.0f,
-                 /* FILTER: mid cutoff, moderate res; strong positive filter env */
-                 1200.0f, 0.30f, 0.0f, 20.0f, 0.60f, 0.0f, 0.50f, 0.0f,
-                 /* AMP ENV: fast attack, short decay, sustain, quick release */
-                 0.02f, 0.20f, 0.70f, 0.30f,
-                 /* ENV2: fast A, quick D, mid S, quick R for snappy filter sweep */
-                 0.01f, 0.30f, 0.40f, 0.30f,
-                 /* LFO1: slow sine for subtle PWM; LFO2 idle */
-                 0.50f, 0.30f, 0.0f, 0.0f, 0.5f, 0.5f, 0.0f, 0.0f,
-                 /* CHORUS: Chorus I (1=slow/lush) moderate depth */
-                 0.50f, 0.60f, 0.40f, 1.0f,
-                 /* AMP: unity gain, env mode, full VCA */
-                 1.00f, 0.0f, 1.0f,
-                 /* PLAY: poly, no glide */
-                 0.0f, 0.0f, 1.0f, 0.0f,
-                 /* CLOCK + ARP: 120 BPM, arp off */
-                 120.0f, 0.0f, 0.0f, 3.0f, 1.0f, 0.5f, 0.0f, 0.0f},
-                52,
-                nullptr,
-                0, /* WO-13d: ENV2->cutoff (VCF_ENV_DEPTH) and PWM (PWM_MODE/OSC_PWM) already direct */
-            },
-            // 6: Juno EP — plucky electric piano / bell; percussive amp env, filter snap, light chorus
-            // OSC_WAVEFORM=1 (PULSE), narrow PWM=0.3; percussive zero-sustain envs.
-            {
-                "Juno EP",
-                {ParamId::OSC_LEVEL,     ParamId::SUB_LEVEL,       ParamId::NOISE_LEVEL,      ParamId::OSC_PWM,
-                 ParamId::OSC_SAW_ON,    ParamId::OSC_PULSE_ON,    ParamId::DCO_LFO_DEPTH,    ParamId::PWM_MODE,
-                 ParamId::OSC_RANGE,     ParamId::FILTER_CUTOFF,   ParamId::FILTER_RES,       ParamId::FILTER_MODE,
-                 ParamId::HPF_CUTOFF,    ParamId::VCF_ENV_DEPTH,   ParamId::VCF_ENV_POLARITY, ParamId::VCF_KEY_TRACK,
-                 ParamId::VCF_LFO_DEPTH, ParamId::ENV_ATTACK,      ParamId::ENV_DECAY,        ParamId::ENV_SUSTAIN,
-                 ParamId::ENV_RELEASE,   ParamId::ENV2_ATTACK,     ParamId::ENV2_DECAY,       ParamId::ENV2_SUSTAIN,
-                 ParamId::ENV2_RELEASE,  ParamId::LFO1_RATE,       ParamId::LFO1_DEPTH,       ParamId::LFO1_SHAPE,
-                 ParamId::LFO1_DELAY,    ParamId::LFO2_RATE,       ParamId::LFO2_DEPTH,       ParamId::LFO2_SHAPE,
-                 ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,     ParamId::CHORUS_DELAY,
-                 ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,    ParamId::VCA_LEVEL,
-                 ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,     ParamId::UNISON_DETUNE,
-                 ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,         ParamId::ARP_RATE,
-                 ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,        ParamId::ARP_LATCH},
-                /* OSC: narrow pulse for bell-like timbre, light sub */
-                {0.85f, 0.10f, 0.00f, 0.30f, 0.0f, 1.0f, 0.0f, 1.0f, /* DCO LFO=0, PWM mode=Manual */
-                 0.0f,
-                 /* FILTER: brighter open, moderate res; deep filter env snap */
-                 3000.0f, 0.50f, 0.0f, 20.0f, 0.80f, 0.0f, 0.50f, 0.0f,
-                 /* AMP ENV: instant attack, medium decay, zero sustain (pluck) */
-                 0.001f, 0.60f, 0.00f, 0.40f,
-                 /* ENV2: instant A, short D, no S, quick R for filter snap */
-                 0.001f, 0.40f, 0.00f, 0.30f,
-                 /* LFO1/LFO2: idle */
-                 1.0f, 0.5f, 0.0f, 0.0f, 0.5f, 0.5f, 0.0f, 0.0f,
-                 /* CHORUS: Chorus I (1) light depth */
-                 0.50f, 0.50f, 0.40f, 1.0f,
-                 /* AMP: unity gain, env mode, full VCA */
-                 1.00f, 0.0f, 1.0f,
-                 /* PLAY: poly, no glide */
-                 0.0f, 0.0f, 1.0f, 0.0f,
-                 /* CLOCK + ARP: 120 BPM, arp off */
-                 120.0f, 0.0f, 0.0f, 3.0f, 1.0f, 0.5f, 0.0f, 0.0f},
-                52,
-                nullptr,
-                0, /* WO-13d: ENV2->cutoff (VCF_ENV_DEPTH) is direct */
-            },
-            // 7: Solo Lead — square-wave mono lead with delayed vibrato + unison 2 + legato glide
-            // OSC_WAVEFORM=1 (PULSE), PLAY_MODE=2 (legato), LFO1 delayed 0.4s for expressive vibrato.
-            {
-                "Solo Lead",
-                {ParamId::OSC_LEVEL,     ParamId::SUB_LEVEL,       ParamId::NOISE_LEVEL,      ParamId::OSC_PWM,
-                 ParamId::OSC_SAW_ON,    ParamId::OSC_PULSE_ON,    ParamId::DCO_LFO_DEPTH,    ParamId::PWM_MODE,
-                 ParamId::OSC_RANGE,     ParamId::FILTER_CUTOFF,   ParamId::FILTER_RES,       ParamId::FILTER_MODE,
-                 ParamId::HPF_CUTOFF,    ParamId::VCF_ENV_DEPTH,   ParamId::VCF_ENV_POLARITY, ParamId::VCF_KEY_TRACK,
-                 ParamId::VCF_LFO_DEPTH, ParamId::ENV_ATTACK,      ParamId::ENV_DECAY,        ParamId::ENV_SUSTAIN,
-                 ParamId::ENV_RELEASE,   ParamId::ENV2_ATTACK,     ParamId::ENV2_DECAY,       ParamId::ENV2_SUSTAIN,
-                 ParamId::ENV2_RELEASE,  ParamId::LFO1_RATE,       ParamId::LFO1_DEPTH,       ParamId::LFO1_SHAPE,
-                 ParamId::LFO1_DELAY,    ParamId::LFO2_RATE,       ParamId::LFO2_DEPTH,       ParamId::LFO2_SHAPE,
-                 ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,     ParamId::CHORUS_DELAY,
-                 ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,    ParamId::VCA_LEVEL,
-                 ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,     ParamId::UNISON_DETUNE,
-                 ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,         ParamId::ARP_RATE,
-                 ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,        ParamId::ARP_LATCH},
-                /* OSC: square wave (pulse 50%), bright, no sub */
-                {0.90f, 0.10f, 0.00f, 0.50f, 0.0f, 1.0f, 0.05f,
-                 1.0f, /* DCO LFO=0.05 (direct vibrato, WO-13d), PWM Manual */
-                 0.0f,
-                 /* FILTER: open bright cutoff, moderate res; moderate filter env */
-                 3000.0f, 0.40f, 0.0f, 20.0f, 0.40f, 0.0f, 0.50f, 0.0f,
-                 /* AMP ENV: fast attack, short decay, sustain held, quick release */
-                 0.005f, 0.20f, 0.80f, 0.20f,
-                 /* ENV2: very fast A, short D, no S, quick R */
-                 0.003f, 0.15f, 0.00f, 0.10f,
-                 /* LFO1: 5 Hz SINE for vibrato, delayed 0.4 s after note-on; LFO2 idle */
-                 5.0f, 0.40f, 0.0f, 0.40f, 0.5f, 0.5f, 0.0f, 0.0f,
-                 /* CHORUS: Chorus I (1) subtle width */
-                 0.50f, 0.50f, 0.40f, 1.0f,
-                 /* AMP: unity gain, env mode, full VCA */
-                 1.00f, 0.0f, 1.0f,
-                 /* PLAY: mono+legato, 80 ms glide; unison 2 voices, 10 cents */
-                 2.0f, 0.08f, 2.0f, 10.0f,
-                 /* CLOCK + ARP: 120 BPM, arp off */
-                 120.0f, 0.0f, 0.0f, 3.0f, 1.0f, 0.5f, 0.0f, 0.0f},
-                52,
-                nullptr,
-                0, /* WO-13d: ENV2->cutoff and LFO1->pitch vibrato now direct (VCF_ENV_DEPTH, DCO_LFO_DEPTH) */
-            },
-            // 8: 8-Bit Lead — NES pulse channel square wave, instant on/off (VCA_GATE_MODE=1),
-            // mono, no chorus. LFO1 delayed vibrato (0.25 s) for expressive leads.
-            // Alt duty cycles: OSC_PWM=0.25 (nasal 25%) or 0.125 (thin 12.5%).
-            {
-                "8-Bit Lead",
-                {ParamId::OSC_LEVEL,     ParamId::SUB_LEVEL,       ParamId::NOISE_LEVEL,      ParamId::OSC_PWM,
-                 ParamId::OSC_SAW_ON,    ParamId::OSC_PULSE_ON,    ParamId::DCO_LFO_DEPTH,    ParamId::PWM_MODE,
-                 ParamId::OSC_RANGE,     ParamId::FILTER_CUTOFF,   ParamId::FILTER_RES,       ParamId::FILTER_MODE,
-                 ParamId::HPF_CUTOFF,    ParamId::VCF_ENV_DEPTH,   ParamId::VCF_ENV_POLARITY, ParamId::VCF_KEY_TRACK,
-                 ParamId::VCF_LFO_DEPTH, ParamId::ENV_ATTACK,      ParamId::ENV_DECAY,        ParamId::ENV_SUSTAIN,
-                 ParamId::ENV_RELEASE,   ParamId::ENV2_ATTACK,     ParamId::ENV2_DECAY,       ParamId::ENV2_SUSTAIN,
-                 ParamId::ENV2_RELEASE,  ParamId::LFO1_RATE,       ParamId::LFO1_DEPTH,       ParamId::LFO1_SHAPE,
-                 ParamId::LFO1_DELAY,    ParamId::LFO2_RATE,       ParamId::LFO2_DEPTH,       ParamId::LFO2_SHAPE,
-                 ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,     ParamId::CHORUS_DELAY,
-                 ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,    ParamId::VCA_LEVEL,
-                 ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,     ParamId::UNISON_DETUNE,
-                 ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,         ParamId::ARP_RATE,
-                 ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,        ParamId::ARP_LATCH},
-                /* OSC: hollow square (50% duty), no sub, no noise */
-                {0.90f, 0.00f, 0.00f, 0.50f, 0.0f, 1.0f, 0.075f,
-                 1.0f, /* DCO LFO=0.075 (direct vibrato, WO-13d), PWM Manual */
-                 0.0f,
-                 /* FILTER: wide open (chip has no filter), no res, no env mod */
-                 20000.0f, 0.00f, 0.0f, 20.0f, 0.00f, 0.0f, 0.50f, 0.0f,
-                 /* AMP ENV: instant A, full sustain, instant R (gate mode drives VCA) */
-                 0.001f, 0.10f, 1.00f, 0.001f,
-                 /* ENV2: unused (no filter mod) */
-                 0.005f, 0.200f, 0.000f, 0.200f,
-                 /* LFO1: 6 Hz SINE, delayed 0.25 s for classic NES pitch vibrato */
-                 6.0f, 0.50f, 0.0f, 0.25f,
-                 /* LFO2: idle */
-                 0.5f, 0.5f, 0.0f, 0.0f,
-                 /* CHORUS: off (authentic chip sound — no chorus) */
-                 0.50f, 0.70f, 0.40f, 0.0f,
-                 /* AMP: unity gain, gate mode (instant on/off), full VCA */
-                 1.00f, 1.0f, 1.0f,
-                 /* PLAY: mono+retrigger, no glide */
-                 1.0f, 0.0f, 1.0f, 0.0f,
-                 /* CLOCK + ARP: 120 BPM, arp off */
-                 120.0f, 0.0f, 0.0f, 3.0f, 1.0f, 0.5f, 0.0f, 0.0f},
-                52,
-                nullptr,
-                0, /* WO-13d: LFO1->pitch vibrato now direct (DCO_LFO_DEPTH) */
-            },
-            // 9: Chip Arp — Game Boy arpeggio: pulse 50%, arp on (up, 1/16, 2 oct), 130 BPM.
-            // VCA_GATE_MODE=1 (instant on/off) for tight chip-style gating. Poly so arp can
-            // hold a full chord. No chorus. DCO_LFO_DEPTH gives subtle direct pitch vibrato.
-            {
-                "Chip Arp",
-                {ParamId::OSC_LEVEL,     ParamId::SUB_LEVEL,       ParamId::NOISE_LEVEL,      ParamId::OSC_PWM,
-                 ParamId::OSC_SAW_ON,    ParamId::OSC_PULSE_ON,    ParamId::DCO_LFO_DEPTH,    ParamId::PWM_MODE,
-                 ParamId::OSC_RANGE,     ParamId::FILTER_CUTOFF,   ParamId::FILTER_RES,       ParamId::FILTER_MODE,
-                 ParamId::HPF_CUTOFF,    ParamId::VCF_ENV_DEPTH,   ParamId::VCF_ENV_POLARITY, ParamId::VCF_KEY_TRACK,
-                 ParamId::VCF_LFO_DEPTH, ParamId::ENV_ATTACK,      ParamId::ENV_DECAY,        ParamId::ENV_SUSTAIN,
-                 ParamId::ENV_RELEASE,   ParamId::ENV2_ATTACK,     ParamId::ENV2_DECAY,       ParamId::ENV2_SUSTAIN,
-                 ParamId::ENV2_RELEASE,  ParamId::LFO1_RATE,       ParamId::LFO1_DEPTH,       ParamId::LFO1_SHAPE,
-                 ParamId::LFO1_DELAY,    ParamId::LFO2_RATE,       ParamId::LFO2_DEPTH,       ParamId::LFO2_SHAPE,
-                 ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,     ParamId::CHORUS_DELAY,
-                 ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,    ParamId::VCA_LEVEL,
-                 ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,     ParamId::UNISON_DETUNE,
-                 ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,         ParamId::ARP_RATE,
-                 ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,        ParamId::ARP_LATCH},
-                /* OSC: hollow square (50% duty), no sub, no noise */
-                {0.90f, 0.00f, 0.00f, 0.50f, 0.0f, 1.0f, 0.075f,
-                 1.0f, /* DCO LFO=0.075 (direct vibrato, WO-13d), PWM Manual */
-                 0.0f,
-                 /* FILTER: wide open, no res, no env mod */
-                 20000.0f, 0.00f, 0.0f, 20.0f, 0.00f, 0.0f, 0.50f, 0.0f,
-                 /* AMP ENV: instant A, full sustain, instant R (gate mode) */
-                 0.001f, 0.10f, 1.00f, 0.001f,
-                 /* ENV2: unused */
-                 0.005f, 0.200f, 0.000f, 0.200f,
-                 /* LFO1: 6 Hz SINE, no delay (vibrato always on for arp context) */
-                 6.0f, 0.30f, 0.0f, 0.0f,
-                 /* LFO2: idle */
-                 0.5f, 0.5f, 0.0f, 0.0f,
-                 /* CHORUS: off */
-                 0.50f, 0.70f, 0.40f, 0.0f,
-                 /* AMP: unity gain, gate mode (instant on/off), full VCA */
-                 1.00f, 1.0f, 1.0f,
-                 /* PLAY: poly (arp holds chord across all voices), no glide */
-                 0.0f, 0.0f, 1.0f, 0.0f,
-                 /* CLOCK + ARP: 130 BPM, arp ON, up, 1/16, 2 oct, gate 0.5 */
-                 130.0f, 1.0f, 0.0f, 3.0f, 2.0f, 0.5f, 0.0f, 0.0f},
-                52,
-                nullptr,
-                0, /* WO-13d: LFO1->pitch vibrato now direct (DCO_LFO_DEPTH) */
-            },
-            // 10: 8-Bit Bass — NES triangle bass channel: TRI waveform, 1 oct down, mild LP filter,
-            // punchy envelope, mono. No chorus, no LFO. Sub at 0.3 adds low-end weight.
-            {
-                "8-Bit Bass",
-                {ParamId::OSC_LEVEL,     ParamId::SUB_LEVEL,       ParamId::NOISE_LEVEL,      ParamId::OSC_PWM,
-                 ParamId::OSC_SAW_ON,    ParamId::OSC_PULSE_ON,    ParamId::DCO_LFO_DEPTH,    ParamId::PWM_MODE,
-                 ParamId::OSC_RANGE,     ParamId::FILTER_CUTOFF,   ParamId::FILTER_RES,       ParamId::FILTER_MODE,
-                 ParamId::HPF_CUTOFF,    ParamId::VCF_ENV_DEPTH,   ParamId::VCF_ENV_POLARITY, ParamId::VCF_KEY_TRACK,
-                 ParamId::VCF_LFO_DEPTH, ParamId::ENV_ATTACK,      ParamId::ENV_DECAY,        ParamId::ENV_SUSTAIN,
-                 ParamId::ENV_RELEASE,   ParamId::ENV2_ATTACK,     ParamId::ENV2_DECAY,       ParamId::ENV2_SUSTAIN,
-                 ParamId::ENV2_RELEASE,  ParamId::LFO1_RATE,       ParamId::LFO1_DEPTH,       ParamId::LFO1_SHAPE,
-                 ParamId::LFO1_DELAY,    ParamId::LFO2_RATE,       ParamId::LFO2_DEPTH,       ParamId::LFO2_SHAPE,
-                 ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,     ParamId::CHORUS_DELAY,
-                 ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,    ParamId::VCA_LEVEL,
-                 ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,     ParamId::UNISON_DETUNE,
-                 ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,         ParamId::ARP_RATE,
-                 ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,        ParamId::ARP_LATCH},
-                /* OSC: triangle wave (-12 semitones for bass register), sub for depth, no noise */
-                /* PWM is irrelevant for TRI waveform but kept at 0.5 (table default) */
-                {0.90f, 0.30f, 0.00f, 0.50f, 0.0f, 1.0f, 0.0f, 1.0f, /* DCO LFO=0, PWM mode=Manual */
-                 -12.0f, /* TRI retired (ADR 0026): approximated with pulse 50%% */
-                 /* FILTER: mild LP rounding (800 Hz), low res; gentle filter env punch */
-                 800.0f, 0.10f, 0.0f, 20.0f, 0.00f, 0.0f, 0.30f, 0.0f,
-                 /* AMP ENV: punchy — instant attack, short decay, medium sustain, quick release */
-                 0.001f, 0.15f, 0.50f, 0.05f,
-                 /* ENV2: unused (no filter mod for authentic NES triangle) */
-                 0.005f, 0.200f, 0.000f, 0.200f,
-                 /* LFO1/LFO2: idle */
-                 1.0f, 0.50f, 0.0f, 0.0f, 0.5f, 0.5f, 0.0f, 0.0f,
-                 /* CHORUS: off (chip bass is dry) */
-                 0.50f, 0.70f, 0.40f, 0.0f,
-                 /* AMP: unity gain, envelope mode (for punch), full VCA */
-                 1.00f, 0.0f, 1.0f,
-                 /* PLAY: mono+retrigger, no glide */
-                 1.0f, 0.0f, 1.0f, 0.0f,
-                 /* CLOCK + ARP: 120 BPM, arp off */
-                 120.0f, 0.0f, 0.0f, 3.0f, 1.0f, 0.5f, 0.0f, 0.0f},
-                52,
-                nullptr,
-                0, /* WO-13d: ENV2->cutoff (VCF_ENV_DEPTH) and PWM (PWM_MODE/OSC_PWM) already direct */
-            },
-            // 11: Chip Noise — NES/GB noise channel: hats / snare / zap depending on note + velocity.
-            // BP filter (2000 Hz) + VCF_ENV_DEPTH sweep for "pew" / zap transient.
-            // Comment: long note = crash/hat; short = snare; high velocity + short = zap.
-            {
-                "Chip Noise",
-                {ParamId::OSC_LEVEL,     ParamId::SUB_LEVEL,       ParamId::NOISE_LEVEL,      ParamId::OSC_PWM,
-                 ParamId::OSC_SAW_ON,    ParamId::OSC_PULSE_ON,    ParamId::DCO_LFO_DEPTH,    ParamId::PWM_MODE,
-                 ParamId::OSC_RANGE,     ParamId::FILTER_CUTOFF,   ParamId::FILTER_RES,       ParamId::FILTER_MODE,
-                 ParamId::HPF_CUTOFF,    ParamId::VCF_ENV_DEPTH,   ParamId::VCF_ENV_POLARITY, ParamId::VCF_KEY_TRACK,
-                 ParamId::VCF_LFO_DEPTH, ParamId::ENV_ATTACK,      ParamId::ENV_DECAY,        ParamId::ENV_SUSTAIN,
-                 ParamId::ENV_RELEASE,   ParamId::ENV2_ATTACK,     ParamId::ENV2_DECAY,       ParamId::ENV2_SUSTAIN,
-                 ParamId::ENV2_RELEASE,  ParamId::LFO1_RATE,       ParamId::LFO1_DEPTH,       ParamId::LFO1_SHAPE,
-                 ParamId::LFO1_DELAY,    ParamId::LFO2_RATE,       ParamId::LFO2_DEPTH,       ParamId::LFO2_SHAPE,
-                 ParamId::LFO2_DELAY,    ParamId::CHORUS_RATE,     ParamId::CHORUS_DEPTH,     ParamId::CHORUS_DELAY,
-                 ParamId::CHORUS_MODE,   ParamId::MASTER_GAIN,     ParamId::VCA_GATE_MODE,    ParamId::VCA_LEVEL,
-                 ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,     ParamId::UNISON_DETUNE,
-                 ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,         ParamId::ARP_RATE,
-                 ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,        ParamId::ARP_LATCH},
-                /* OSC: pure noise, osc and sub off */
-                {0.00f, 0.00f, 1.00f, 0.50f, 1.0f, 0.0f, 0.0f, 1.0f, /* DCO LFO=0, PWM mode=Manual */
-                 0.0f,
-                 /* FILTER: BP at 2000 Hz, moderate res; VCF_ENV_DEPTH=0.8 for "pew" sweep */
-                 2000.0f, 0.50f, 1.0f, 20.0f, 0.80f, 0.0f, 0.00f, 0.0f,
-                 /* AMP ENV: percussive — instant attack, short decay, no sustain, quick release */
-                 0.001f, 0.08f, 0.00f, 0.05f,
-                 /* ENV2: fast sweep envelope — instant A, medium D, no S */
-                 0.001f, 0.15f, 0.00f, 0.05f,
-                 /* LFO1/LFO2: idle */
-                 1.0f, 0.50f, 0.0f, 0.0f, 0.5f, 0.5f, 0.0f, 0.0f,
-                 /* CHORUS: off */
-                 0.50f, 0.70f, 0.40f, 0.0f,
-                 /* AMP: unity gain, envelope mode (for percussive shape), full VCA */
-                 1.00f, 0.0f, 1.0f,
-                 /* PLAY: mono+retrigger, no glide */
-                 1.0f, 0.0f, 1.0f, 0.0f,
-                 /* CLOCK + ARP: 120 BPM, arp off */
-                 120.0f, 0.0f, 0.0f, 3.0f, 1.0f, 0.5f, 0.0f, 0.0f},
-                52,
-                nullptr,
-                0, /* WO-13d: ENV2->cutoff (VCF_ENV_DEPTH) is direct */
-            },
-};
-
-static constexpr int k_factory_count = (int)(sizeof(k_factory) / sizeof(k_factory[0]));
+// Lazily parses the embedded bank on first use. Idempotent; safe to call from
+// every preset_factory_* entry point.
+static void ensure_neiro_bank_loaded(void) {
+    if (g_neiro_count >= 0 || g_neiro_load_failed) return;
+    size_t      len  = 0;
+    const char* json = factory_bank_neiro_json(&len);
+    int         n    = (json && len > 0) ? bank_json_parse(json, len, g_neiro, kNeiroBankMaxPatches) : -1;
+    if (n < 0) {
+        g_neiro_load_failed = true;  // fail closed: preset_factory_count() reports 0
+        return;
+    }
+    g_neiro_count = n;
+}
 
 int preset_factory_count(void) {
-    return k_factory_count;
+    ensure_neiro_bank_loaded();
+    return g_neiro_count < 0 ? 0 : g_neiro_count;
 }
 
 const char* preset_factory_name(int idx) {
-    if (idx < 0 || idx >= k_factory_count) return "";
-    return k_factory[idx].name;
+    ensure_neiro_bank_loaded();
+    if (idx < 0 || idx >= preset_factory_count()) return "";
+    return g_neiro[idx].name;
 }
 
 int preset_factory_default(void) {
     static const char* k_default_name = "Solo Lead";
-    for (int i = 0; i < k_factory_count; i++) {
-        if (k_factory[i].name && strcmp(k_factory[i].name, k_default_name) == 0) return i;
+    ensure_neiro_bank_loaded();
+    const int count = preset_factory_count();
+    for (int i = 0; i < count; i++) {
+        if (strcmp(g_neiro[i].name, k_default_name) == 0) return i;
     }
     return 0;  // named patch missing — fall back to INIT
 }
 
 int preset_factory_params(int idx, uint16_t* ids_out, float* vals_out, int max_count) {
-    if (idx < 0 || idx >= k_factory_count) return -1;
-    const FactoryPreset& fp = k_factory[idx];
-    int                  n  = (fp.count < max_count) ? fp.count : max_count;
+    ensure_neiro_bank_loaded();
+    if (idx < 0 || idx >= preset_factory_count()) return -1;
+    const PresetPatch& p = g_neiro[idx];
+    int                n = (p.count < max_count) ? p.count : max_count;
     for (int i = 0; i < n; i++) {
-        ids_out[i]  = fp.ids[i];
-        vals_out[i] = fp.vals[i];
+        ids_out[i]  = p.ids[i];
+        vals_out[i] = p.vals[i];
     }
     return n;
 }
 
 int preset_factory_routings(int idx, Routing* routings_out, int max_count) {
-    if (idx < 0 || idx >= k_factory_count) return -1;
-    const FactoryPreset& fp = k_factory[idx];
-    if (!fp.routings || fp.routing_count == 0) return 0;
-    int n = (fp.routing_count < max_count) ? fp.routing_count : max_count;
+    ensure_neiro_bank_loaded();
+    if (idx < 0 || idx >= preset_factory_count()) return -1;
+    const PresetPatch& p = g_neiro[idx];
+    if (p.route_count == 0) return 0;
+    int n = (p.route_count < max_count) ? p.route_count : max_count;
     for (int i = 0; i < n; i++) {
-        routings_out[i] = fp.routings[i];
+        routings_out[i] = p.routes[i];
     }
     return n;
 }

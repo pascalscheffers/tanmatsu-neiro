@@ -1,0 +1,15 @@
+// GENERATED FILE — do not edit, do not commit. Produced by CMake configure_file()
+// from engine/factory_bank_embed.cpp.in (host/CMakeLists.txt, tests/host/CMakeLists.txt).
+// Wraps engine/banks/neiro_factory.json verbatim as a raw string literal so the
+// host/test builds resolve factory_bank_neiro_json() to the identical bytes the
+// device gets via EMBED_TXTFILES (main/factory_bank_embed.cpp). Regenerated
+// automatically whenever the source .json changes (CMake re-configure).
+#include "factory_bank.h"
+#include <cstring>
+
+static const char kNeiroFactoryBankJson[] = R"NEIROBANK(@NEIRO_FACTORY_JSON_CONTENT@)NEIROBANK";
+
+const char* factory_bank_neiro_json(size_t* len_out) {
+    if (len_out) *len_out = sizeof(kNeiroFactoryBankJson) - 1;  // exclude the implicit NUL
+    return kNeiroFactoryBankJson;
+}

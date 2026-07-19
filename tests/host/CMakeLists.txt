@@ -11,6 +11,15 @@ find_package(Threads REQUIRED)
 get_filename_component(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 set(DAISYSP "${REPO_ROOT}/dsp/vendor/daisysp")
 
+# WO-13-neiro-bank: generate the test-build embed of the Neiro factory JSON
+# bank from the single source-of-truth file. See host/CMakeLists.txt (same
+# mechanism) and engine/factory_bank_embed.cpp.in.
+file(READ "${REPO_ROOT}/engine/banks/neiro_factory.json" NEIRO_FACTORY_JSON_CONTENT)
+configure_file(
+    "${REPO_ROOT}/engine/factory_bank_embed.cpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/factory_bank_embed.cpp"
+    @ONLY)
+
 add_executable(tanmatsu-tests
     main.cpp
     test_midi_parse.cpp
@@ -38,6 +47,8 @@ add_executable(tanmatsu-tests
     test_arp_clock.cpp
     test_sustain.cpp
     test_bank_json.cpp
+    test_neiro_bank.cpp
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/factory_bank_embed.cpp"
     # mono+unison voice-cap regression tests.
     test_alloc_unison_mono.cpp
     # WO-3: preset browser state-machine tests (no PAX dependency).

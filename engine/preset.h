@@ -44,7 +44,10 @@ static constexpr int PRESET_MAX_ROUTINGS = kMaxRoutes;
 static constexpr int PRESET_MAX_PARAMS = 96;
 
 // ---------------------------------------------------------------------------
-// Factory presets (hardcoded; no storage, no engine calls required)
+// Factory presets (WO-13-neiro-bank: embedded JSON bank, ADR 0027 — no
+// storage/engine calls required. See engine/banks/neiro_factory.json and
+// engine/factory_bank.h. Parsed lazily on first call to any preset_factory_*
+// function below; the bank is fixed-capacity and control-path only.)
 // ---------------------------------------------------------------------------
 
 int         preset_factory_count(void);

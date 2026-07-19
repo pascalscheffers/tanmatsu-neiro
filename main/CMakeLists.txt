@@ -47,6 +47,9 @@ idf_component_register(
 		"../engine/preset.cpp"
 		# WO-13-fmt: PresetPatch value object + JSON bank codec (ADR 0027).
 		"../engine/bank_json.cpp"
+		# WO-13-neiro-bank: device embed of engine/banks/neiro_factory.json
+		# (bytes come from EMBED_TXTFILES below).
+		"factory_bank_embed.cpp"
 		# DaisySP modules.
 		"${DAISYSP}/Source/Synthesis/oscillator.cpp"
 		"${DAISYSP}/Source/Filters/svf.cpp"
@@ -86,6 +89,9 @@ idf_component_register(
 		usb
 		json
 		${extra_requires}
+	EMBED_TXTFILES
+		# WO-13-neiro-bank: the Neiro factory bank's only home (ADR 0027).
+		"../engine/banks/neiro_factory.json"
 	INCLUDE_DIRS
 		"."
 		"../platform"

@@ -13,6 +13,19 @@ set(CMAKE_CXX_STANDARD 17)
 get_filename_component(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 set(DAISYSP "${REPO_ROOT}/dsp/vendor/daisysp")
 
+# WO-13-neiro-bank: host/test builds embed the Neiro factory JSON bank by
+# wrapping the single source-of-truth file (engine/banks/neiro_factory.json)
+# in a generated C++ raw-string-literal source (engine/factory_bank_embed.cpp.in).
+# The device build instead uses ESP-IDF's EMBED_TXTFILES on the same .json
+# (main/CMakeLists.txt + main/factory_bank_embed.cpp) — see engine/factory_bank.h.
+# configure_file() tracks the .json as a configure-time dependency, so editing
+# the bank automatically regenerates this file on the next build.
+file(READ "${REPO_ROOT}/engine/banks/neiro_factory.json" NEIRO_FACTORY_JSON_CONTENT)
+configure_file(
+    "${REPO_ROOT}/engine/factory_bank_embed.cpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/factory_bank_embed.cpp"
+    @ONLY)
+
 # --- PAX (built host-side, static so its GNU-ld link flags never reach ld64) ---
 set(PAX_STATIC true)
 # EXCLUDE_FROM_ALL: build only the targets we actually link (pax_gfx). The gui
@@ -58,6 +71,8 @@ set(HOST_SRCS
     # WO-13-fmt: PresetPatch value object + JSON bank codec (ADR 0027).
     "${REPO_ROOT}/engine/bank_json.cpp"
     "${REPO_ROOT}/dsp/vendor/cjson/cJSON.c"
+    # WO-13-neiro-bank: generated host embed of engine/banks/neiro_factory.json.
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/factory_bank_embed.cpp"
     # DaisySP modules (header-only: whitenoise, dsp wrappers).
     "${DAISYSP}/Source/Synthesis/oscillator.cpp"
     "${DAISYSP}/Source/Filters/svf.cpp"
