@@ -43,6 +43,20 @@ patches, and only where named below.
   load them at neutral defaults so an original patch sounds like the source data, not
   like an accidental Neiro-extension patch.
 
+## HPF calibration (four-position switch)
+The Juno-106 HPF is a four-position switch (source byte encodes 0–3), one first-order
+(6 dB/oct) stage. These are **our calibration targets**, not pinned Roland service-manual
+component values — WO-13e-i derives coefficients to hit them and records the derivation:
+
+- **Position 0** — low-shelf **bass boost**, approximately **+3 dB at 70 Hz** (warms
+  organ/bass). Not a cut; a low shelf that lifts the lows and is flat above the shelf.
+- **Position 1** — **bypass / flat unity**. Signal passes with flat response; still needs
+  the block's numerical/DC hygiene so switching in/out is click-safe.
+- **Position 2** — first-order high-pass, corner **≈ 225 Hz** (light low-end roll-off).
+- **Position 3** — first-order high-pass, corner **≈ 700 Hz** (heavy low cut; bright/airy).
+
+If real-hardware sweeps later supersede these, update this section and re-derive.
+
 ## Consequences
 - `JunoVoice`'s oscillator gains two independent wave-enable bits instead of one
   `OSC_WAVEFORM` enum select, for Juno only; other models/modes keep ADR 0002's
