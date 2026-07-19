@@ -1950,6 +1950,38 @@ display quiescent, then `kNumVoices = 6`).
 
 **Verify:** docs-only; `git diff --check` clean.
 
+## 2026-07-19 — WO-13-neiro-bank: Neiro factory patches → embedded JSON
+
+Deleted the hardcoded `k_factory[]`/`FactoryPreset` table in `engine/preset.cpp`. The 12
+Neiro patches now live in `engine/banks/neiro_factory.json` (round-tripped from the old
+array via a throwaway generator, then verified byte-for-byte and removed — no hand
+transcription). `preset_factory_*` is unchanged at the API level; it now lazily parses the
+bank once via `bank_json_parse()` behind a new `engine/factory_bank.h` seam. Device gets the
+bytes through ESP-IDF `EMBED_TXTFILES` (`main/factory_bank_embed.cpp`,
+`_binary_neiro_factory_json_start/_end`); host/test builds wrap the same `.json` in a
+CMake-generated raw-string-literal source (`engine/factory_bank_embed.cpp.in` +
+`configure_file()` in `host/CMakeLists.txt` and `tests/host/CMakeLists.txt`) — one source
+file, three build targets, byte-identical content. New regression test
+`tests/host/test_neiro_bank.cpp` pins count (12), name order, `preset_factory_default()` →
+Solo Lead, per-patch param count (52), and spot-checked physical values against the
+pre-JSON data.
+
+Pure refactor: zero sonic change, values served are byte-identical to before. cJSON ledger
+row in spec 02 already existed (WO-13a) — nothing to add.
+
+**Flash delta:** image 1,213,892 B vs previous recorded 1,184,672 B (WO-13e-ii) — **+29,220 B**
+for the embedded JSON bank + parse path; expected and acceptable (control-path only, no
+audio-path cost). App partition/DIRAM % unchanged in kind (bootloader untouched, 19% free).
+
+**Deferred (explicitly out of scope):** user-bank loading from SD/AppFS → WO-13i; stale
+`HPF_CUTOFF` values in the shipped patches were serialized verbatim, not retuned.
+
+**Verify:** `make format` ✅ `make test` ✅ (`All tests passed.`, 4 new neiro_bank cases)
+`make host` ✅ `make build` ✅ `make size` (see above) `git diff --check` ✅ membrane clean
+(parsing is control-path, never in `engine::process()`). Commit 3ef1a0b.
+
+**Next:** WO-13g-i (Opus-led tape transport) or the WO-13i user-bank provider.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
