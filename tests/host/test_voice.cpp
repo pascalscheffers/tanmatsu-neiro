@@ -7,6 +7,13 @@
  *    and is_active() returns false.
  * 3. reset() silences — output is immediately zero after reset().
  * 4. SVF LP filter — lower cutoff attenuates a high-frequency signal more.
+ * 8. HPF signal order + four positions (WO-13e-ii) — with the VCF forced
+ *    wide open/no-res (near-transparent), the voice's output must show the
+ *    dsp::Juno106Hpf block's own per-position shaping, proving the HPF is
+ *    live in the per-voice chain ahead of the VCF (a transparent VCF can't
+ *    be masking or replacing the HPF's effect).
+ * 9. HPF position switch stays bounded — switching position mid-note on a
+ *    running voice produces no non-finite samples and no unbounded blow-up.
  *
  * ADR 0012 (FTZ-off): CMakeLists enforces -fno-fast-math; tests run without
  * hardware flush-to-zero so denormal behaviour matches the device.
@@ -16,6 +23,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "dsp/filter.h"
+#include "dsp/juno106_hpf.h"
 #include "juno_voice.h"
 #include "param_id.h"
 #include "runner.h"
@@ -270,6 +278,108 @@ void test_voice_zero_sustain_retrigger() {
     test_pass();
 }
 
+/* --- 8. HPF signal order + four positions (WO-13e-ii) --------------------
+ * The VCF is forced wide open (cutoff at the param max, res 0, all panel
+ * mods off) so it is near-transparent at these low test frequencies. What
+ * reaches the output is then dominated by the per-voice HPF's own shaping —
+ * proving the HPF is live in the voice's render path ahead of the VCF (a
+ * bypassed-looking VCF can't be substituting for it). Note 36 (~65.4 Hz)
+ * sits near the bass-boost corner (70 Hz) and well below both HPF corners
+ * (225 Hz, 700 Hz), giving a clear separation across all four positions.
+ */
+static float measure_voice_hpf_rms(int hpf_position, uint8_t note) {
+    JunoVoice v;
+    v.init(kSampleRate);
+    v.set_param((int)ParamId::SUB_LEVEL, 0.0f);
+    v.set_param((int)ParamId::NOISE_LEVEL, 0.0f);
+    v.set_param((int)ParamId::FILTER_CUTOFF, 20000.0f);  // wide open — near-transparent VCF
+    v.set_param((int)ParamId::FILTER_RES, 0.0f);
+    v.set_param((int)ParamId::VCF_ENV_DEPTH, 0.0f);
+    v.set_param((int)ParamId::VCF_KEY_TRACK, 0.0f);
+    v.set_param((int)ParamId::VCF_LFO_DEPTH, 0.0f);
+    v.set_param((int)ParamId::HPF_CUTOFF, (float)hpf_position);
+
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+    v.note_on(note, 127, expr);
+
+    float buf[64];
+    for (int b = 0; b < 200; b++) {  // settle past attack
+        memset(buf, 0, sizeof(buf));
+        v.render(buf, 64);
+    }
+    // Measure over a wider window (40 blocks = 2560 samples) so at least a
+    // couple of full periods of the ~65 Hz test note are captured.
+    float sum   = 0.0f;
+    int   count = 0;
+    for (int b = 0; b < 40; b++) {
+        memset(buf, 0, sizeof(buf));
+        v.render(buf, 64);
+        for (int i = 0; i < 64; i++) sum += buf[i] * buf[i];
+        count += 64;
+    }
+    return sqrtf(sum / (float)count);
+}
+
+void test_voice_hpf_signal_order_and_positions() {
+    test_begin("HPF signal order: four positions shape voice output ahead of a transparent VCF");
+
+    const uint8_t note       = 36;  // ~65.4 Hz
+    float         rms_bypass = measure_voice_hpf_rms(dsp::JUNO106_HPF_BYPASS, note);
+    float         rms_boost  = measure_voice_hpf_rms(dsp::JUNO106_HPF_BASS_BOOST, note);
+    float         rms_225    = measure_voice_hpf_rms(dsp::JUNO106_HPF_225HZ, note);
+    float         rms_700    = measure_voice_hpf_rms(dsp::JUNO106_HPF_700HZ, note);
+
+    TEST_ASSERT(rms_boost > rms_bypass * 1.02f, "bass-boost position must pass more RMS than bypass at ~65 Hz");
+    TEST_ASSERT(rms_225 < rms_bypass * 0.6f, "225 Hz HPF must attenuate a ~65 Hz tone well below bypass");
+    TEST_ASSERT(rms_700 < rms_225 * 0.6f, "700 Hz HPF must attenuate a ~65 Hz tone further than the 225 Hz position");
+    test_pass();
+}
+
+/* --- 9. HPF position switch stays bounded through the voice path --------- */
+void test_voice_hpf_switch_bounded() {
+    test_begin("HPF position switch on a running voice stays bounded (no non-finite, no runaway)");
+
+    JunoVoice v;
+    v.init(kSampleRate);
+    v.set_param((int)ParamId::SUB_LEVEL, 0.0f);
+    v.set_param((int)ParamId::NOISE_LEVEL, 0.0f);
+    v.set_param((int)ParamId::FILTER_CUTOFF, 20000.0f);
+    v.set_param((int)ParamId::FILTER_RES, 0.0f);
+    v.set_param((int)ParamId::HPF_CUTOFF, (float)dsp::JUNO106_HPF_BYPASS);
+
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+    v.note_on(69, 127, expr);  // A4
+
+    float buf[64];
+    for (int b = 0; b < 200; b++) {
+        memset(buf, 0, sizeof(buf));
+        v.render(buf, 64);
+    }
+    float pre_rms = rms(buf, 64);
+
+    // Sweep through every position mid-note (each is a coefficient change on
+    // a running filter — the switch itself must never blow up or NaN).
+    const int positions[] = {(int)dsp::JUNO106_HPF_225HZ, (int)dsp::JUNO106_HPF_700HZ, (int)dsp::JUNO106_HPF_BASS_BOOST,
+                             (int)dsp::JUNO106_HPF_BYPASS};
+    float     peak        = pre_rms;
+    for (int p : positions) {
+        v.set_param((int)ParamId::HPF_CUTOFF, (float)p);
+        for (int b = 0; b < 10; b++) {
+            memset(buf, 0, sizeof(buf));
+            v.render(buf, 64);
+            for (int i = 0; i < 64; i++) {
+                TEST_ASSERT(isfinite(buf[i]), "HPF position switch produced non-finite voice output");
+                float a = fabsf(buf[i]);
+                if (a > peak) peak = a;
+            }
+        }
+    }
+    // Bounded, not runaway: even the most extreme jump (bypass <-> bass boost)
+    // shouldn't blow the settled level up by more than a generous safety margin.
+    TEST_ASSERT(peak < pre_rms * 10.0f + 0.01f, "HPF position switch transient exceeded bounded margin");
+    test_pass();
+}
+
 /* Entry points declared in main.cpp */
 void test_voice_suite() {
     test_voice_adsr_shape();
@@ -279,4 +389,6 @@ void test_voice_suite() {
     test_voice_set_param_zero_levels();
     test_voice_set_param_cutoff();
     test_voice_zero_sustain_retrigger();
+    test_voice_hpf_signal_order_and_positions();
+    test_voice_hpf_switch_bounded();
 }

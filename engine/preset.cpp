@@ -90,12 +90,13 @@ static const FactoryPreset
                  ParamId::PLAY_MODE,     ParamId::PORTAMENTO_TIME, ParamId::UNISON_COUNT,     ParamId::UNISON_DETUNE,
                  ParamId::CLOCK_BPM,     ParamId::ARP_ON,          ParamId::ARP_MODE,         ParamId::ARP_RATE,
                  ParamId::ARP_OCTAVES,   ParamId::ARP_GATE,        ParamId::ARP_SWING,        ParamId::ARP_LATCH},
-                {0.70f,  0.30f,   0.05f,  0.50f,  1.0f,   0.0f,   0.0f, 1.0f, /* DCO LFO=0, PWM mode=Manual */
-                 0.0f,   2000.0f, 0.30f,  0.0f,   20.0f,  0.35f,  0.0f, 0.50f, 0.0f, 0.010f, 0.100f, 0.700f,
-                 0.300f, 0.005f,  0.200f, 0.000f, 0.200f, 1.0f,   0.5f, 0.0f,  0.0f, 0.5f,   0.5f,   0.0f,
-                 0.0f,   0.500f,  0.700f, 0.400f, 1.0f,   1.000f, 0.0f, 1.0f,  0.0f, 0.0f, /* poly, no glide
-                                                                                            */
-                 1.0f,   7.0f,    120.0f, 0.0f,   0.0f,   3.0f,   1.0f, 0.5f,  0.0f, 0.0f},
+                {0.70f, 0.30f, 0.05f, 0.50f, 1.0f, 0.0f, 0.0f, 1.0f, /* DCO LFO=0, PWM mode=Manual */
+                 // HPF_CUTOFF=1.0 (bypass position; WO-13e-ii restepped 0-3 — table default).
+                 0.0f, 2000.0f, 0.30f, 0.0f, 1.0f, 0.35f, 0.0f, 0.50f, 0.0f, 0.010f, 0.100f, 0.700f, 0.300f, 0.005f,
+                 0.200f, 0.000f, 0.200f, 1.0f, 0.5f, 0.0f, 0.0f, 0.5f, 0.5f, 0.0f, 0.0f, 0.500f, 0.700f, 0.400f, 1.0f,
+                 1.000f, 0.0f, 1.0f, 0.0f, 0.0f, /* poly, no glide
+                                                  */
+                 1.0f, 7.0f, 120.0f, 0.0f, 0.0f, 3.0f, 1.0f, 0.5f, 0.0f, 0.0f},
                 /* arp: off, up, 1/16, 1 oct, gate 0.5, no swing/latch */ /* U=1 (no unison), 7 cents ready (table
                                                                              default); 120 BPM */
                 52,

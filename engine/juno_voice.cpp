@@ -27,6 +27,7 @@ void JunoVoice::init(float sample_rate) {
     osc_sub_.set_waveform(1);  // WO-13c/ADR 0026: sub is a fixed square, one octave below
     osc_sub_.set_pw(0.5f);     // fixed 50% duty — not user-editable
     noise_.Init();
+    hpf_.init(sample_rate);
     filter_.init(sample_rate);
     env_.init(sample_rate);
 
@@ -161,10 +162,17 @@ void JunoVoice::set_param(int id, float value) {
         case ParamId::VCF_LFO_DEPTH:
             p_vcf_lfo_depth_ = value;
             break;
-        // HPF_CUTOFF: cached; DSP block (second Filter) is a separate sub-stage.
-        case ParamId::HPF_CUTOFF:
-            p_hpf_cutoff_ = value;
+        // HPF_CUTOFF: 4-position HPF switch (WO-13e-ii). Value is the stepped
+        // param [0,3]; clamp before casting so an out-of-range value (e.g. a
+        // malformed preset) can't index past Juno106HpfPosition's 4 positions.
+        case ParamId::HPF_CUTOFF: {
+            int pos = (int)value;
+            if (pos < 0) pos = 0;
+            if (pos > 3) pos = 3;
+            p_hpf_position_ = pos;
+            hpf_.set_position((dsp::Juno106HpfPosition)pos);
             break;
+        }
 
         // --- ENV ---
         case ParamId::ENV_ATTACK:
@@ -384,7 +392,12 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
         float noise     = noise_.Process() * eff_noise;
         float mixed     = osc + sub + noise;
 
-        filter_.process(mixed);  // anti-denormal inside filter.h
+        // WO-13e-ii (ADR 0026): the 4-position HPF sits after osc/sub/noise mixing
+        // and before the VCF, per-voice — matching the Juno-106's signal chain
+        // (front-panel HPF switch feeds straight into the VCF).
+        float hpf_out = hpf_.process(mixed);
+
+        filter_.process(hpf_out);  // anti-denormal inside filter.h
         float filtered = filter_.output();
 
         // VCA: gate-mode selects between envelope output and raw gate (1.0).

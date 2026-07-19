@@ -5,6 +5,52 @@ The **live** log: recent entries + open gates. Older history is in
 just above the "Open Opus gates" section** (which stays last). Lean — link to specs, don't
 restate. When this passes ~200 lines, rotate older entries into the archive.
 
+## 2026-07-19 — WO-13e-ii: wire Juno-106 HPF before the VCF (COMPLETE)
+
+Per ADR 0026 and WO-13e-i's DSP block. `JunoVoice` gains one `dsp::Juno106Hpf hpf_` member
+(`engine/juno_voice.h`), `init()`'d alongside the other per-voice DSP objects, `process()`'d in
+`render()` immediately after osc/sub/noise mixing and before `filter_.process()` (the VCF) —
+matching the Juno-106's real signal chain (panel HPF switch feeds straight into the VCF). Not
+on the master bus; strictly per-voice, matching the touch-list constraint.
+
+`HPF_CUTOFF`'s existing param ID is repurposed as a stepped 0–3 position
+(`engine/param_desc.cpp`: `CURVE_STEPPED`, range `[0,3]`, default `1` = bypass, matching
+`Juno106Hpf`'s own init default) instead of the old inert continuous-cutoff placeholder; renamed
+"HPF Position" and the stale "DSP hook pending" comment removed. `set_param(HPF_CUTOFF, …)`
+clamps to `[0,3]` before casting to `Juno106HpfPosition` (defensive against a malformed preset
+value) and calls `hpf_.set_position()` — a coefficient change on the running filter, so no
+click. Voice-cache field renamed `p_hpf_cutoff_` → `p_hpf_position_` (int).
+
+**Necessary out-of-touch-list fix:** changing the table default from `20.0f` (old continuous
+Hz placeholder) to `1.0f` (new stepped bypass default) broke `test_preset.cpp`'s "INIT value
+deviates from table default" check, because the INIT factory preset (`engine/preset.cpp`)
+hardcoded the old `20.0f` value. Fixed that single literal to `1.0f` (bypass) — a one-line,
+mechanical correction, not a preset redesign. The other 8 factory presets' HPF fields still
+carry their old continuous-Hz values (e.g. 80/6000 Hz) which now clamp to position 3 (700 Hz
+HPF) in `set_param` — not a crash, but not musically intentional either; retuning those to
+correct discrete positions is preset-content work and is left for the bank-rebuild work order
+(WO-13-neiro-bank / a future preset retune), consistent with this WO's "don't touch preset
+implementation" scope boundary.
+
+2 new tests in `tests/host/test_voice.cpp`: (1) signal-order + all four positions — VCF forced
+wide open/no-res (near-transparent) so the output is dominated by the HPF's own shaping; at a
+~65 Hz test tone (note 36, near the bass-boost corner and well below both HPF corners),
+bass-boost > bypass > 225 Hz position > 700 Hz position, proving the HPF is live in the voice
+path ahead of the VCF; (2) bounded position-switch — sweeping all four positions mid-note on a
+running voice produces no non-finite samples and stays within a generous bounded-transient
+margin.
+
+`make format` / `make host` / `make test` (green, "All tests passed") / `make build`
+(app.bin 43% flash free, unchanged) / `make size` all pass. `git diff --check` clean. Membrane
+clean (no malloc/new/free/printf/ESP_LOG/vTaskDelay in the touched render/init/set_param code).
+
+`sizeof(JunoVoice)` = 744 bytes (host build); `sizeof(dsp::Juno106Hpf)` = 28 bytes. Device
+DIRAM: 41.91% used, 334,890 B free (was 334,938 B free at WO-13e-i's landing) — a 48-byte
+delta across all voice instances, well within budget; no split-if triggered.
+
+Next: retune the 8 non-INIT factory presets' `HPF_CUTOFF` values to valid stepped positions
+(0–3) reflecting their original intent, likely folded into WO-13-neiro-bank's bank rebuild.
+
 ## 2026-07-19 — WO-13e-i: Juno-106 four-position HPF DSP block (COMPLETE)
 
 Per ADR 0026's HPF calibration section. New pure, allocation-free `dsp/juno106_hpf.{h,cpp}`

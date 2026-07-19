@@ -19,6 +19,7 @@
 #include "Noise/whitenoise.h"
 #include "dsp/env.h"
 #include "dsp/filter.h"
+#include "dsp/juno106_hpf.h"
 #include "dsp/lfo.h"
 #include "dsp/osc.h"
 #include "mod_matrix.h"
@@ -85,6 +86,7 @@ private:
     dsp::Osc            osc_pulse_;
     dsp::Osc            osc_sub_;
     daisysp::WhiteNoise noise_;
+    dsp::Juno106Hpf     hpf_;  // WO-13e-ii: per-voice, post-mix, pre-VCF (ADR 0026).
     dsp::Filter         filter_;
     dsp::Env            env_;
 
@@ -123,12 +125,12 @@ private:
     int   p_pwm_mode_         = 1;  // default Manual
     float p_cutoff_           = 2000.0f;
     float p_res_              = 0.30f;
-    float p_vcf_env_depth_    = 0.35f;   // ENV2 → VCF mod depth
-    int   p_vcf_env_polarity_ = 0;       // 0=positive, 1=negative
-    float p_vcf_key_track_    = 0.50f;   // key-follow amount (0..1)
-    float p_vcf_lfo_depth_    = 0.0f;    // LFO1 → VCF panel mod depth
-    float p_hpf_cutoff_       = 20.0f;   // HPF cutoff (cached; DSP block pending)
-    float p_attack_           = 0.010f;  // seconds
+    float p_vcf_env_depth_    = 0.35f;                    // ENV2 → VCF mod depth
+    int   p_vcf_env_polarity_ = 0;                        // 0=positive, 1=negative
+    float p_vcf_key_track_    = 0.50f;                    // key-follow amount (0..1)
+    float p_vcf_lfo_depth_    = 0.0f;                     // LFO1 → VCF panel mod depth
+    int   p_hpf_position_     = dsp::JUNO106_HPF_BYPASS;  // 4-position HPF switch (WO-13e-ii)
+    float p_attack_           = 0.010f;                   // seconds
     float p_decay_            = 0.100f;
     float p_sustain_          = 0.700f;
     float p_release_          = 0.300f;
