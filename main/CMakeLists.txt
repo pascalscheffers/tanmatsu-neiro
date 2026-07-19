@@ -36,6 +36,7 @@ idf_component_register(
 		"../engine/synth.cpp"
 		"../engine/record_ring.cpp"
 		"../engine/juno_voice.cpp"
+		"../dsp/juno106_hpf.cpp"
 		"../engine/mod_matrix.cpp"
 		"../engine/juno_model.cpp"
 		"../engine/voice_alloc.cpp"

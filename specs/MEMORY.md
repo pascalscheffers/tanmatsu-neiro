@@ -5,6 +5,47 @@ The **live** log: recent entries + open gates. Older history is in
 just above the "Open Opus gates" section** (which stays last). Lean — link to specs, don't
 restate. When this passes ~200 lines, rotate older entries into the archive.
 
+## 2026-07-19 — WO-13e-i: Juno-106 four-position HPF DSP block (COMPLETE)
+
+Per ADR 0026's HPF calibration section. New pure, allocation-free `dsp/juno106_hpf.{h,cpp}`
+(`dsp::Juno106Hpf`): one shared first-order (one-pole/one-zero) Direct-Form-I biquad section
+whose coefficients are recomputed per position — a switch is a coefficient change on a
+*running* filter (state preserved), not a topology change, which is what makes it click-safe.
+Full derivation, difference-equation coefficients, and per-position magnitude-response tables
+recorded in [`specs/notes/juno106-hpf-analysis.md`](notes/juno106-hpf-analysis.md) before any
+code was written, per the work-order's split-if guard.
+
+**Positions**: 0 = low-shelf bass boost (corner placed at 70 Hz, DC/low-freq asymptote solved
+so the analytic magnitude *at* 70 Hz lands on the ADR's +3 dB target exactly); 1 = bypass
+(identity coefficients `b0=1,b1=0,a1=0` on the same structure, still denormal-hygienic);
+2/3 = first-order HPF at 225 Hz / 700 Hz via the standard prewarped-bilinear-transform
+formula (`alpha=tan(pi*fc/Fs)`, `b0=1/(1+alpha)`, `b1=-b0`, `a1=(alpha-1)/(alpha+1)`) — exact
+-3.01 dB at each corner by construction. No third-party implementation or coefficient table
+consulted; all four coefficient sets derived from scratch and cross-checked with an
+independent Python magnitude-response script before being written into the C++.
+
+ADR 0012 anti-denormal `+1e-20f` input bias applied on every `process()` call, in every
+position including bypass, matching `dsp/dcblock.h`/`dsp/filter.h`'s style.
+
+8 new tests in `tests/host/test_juno106_hpf.cpp` (registered in `tests/host/CMakeLists.txt`,
+`main/CMakeLists.txt`, `host/CMakeLists.txt`, and `tests/host/main.cpp` — the last one is a
+necessary addition outside the work-order's 8-file touch list; without registering the suite
+in `main()` it would silently never run under `make test`): both HPF corners within 0.5 dB of
+-3 dB, 225 Hz position rolls off well below its corner, bypass flat within 0.05 dB at five
+probe frequencies, bass-boost within 0.5 dB of +3 dB at 70 Hz and within 0.2 dB of unity at
+5 kHz, finite output on silence/signal across all four positions, bounded (<2x) transient on a
+live position switch with no non-finite samples, and no denormal (`FP_SUBNORMAL`) state after
+200k samples of silence in any position.
+
+`make format` / `make host` / `make test` (all green, incl. new 8-test suite — full suite
+"All tests passed") / `make build` / `make size` all pass. `git diff --check` clean. Device:
+app.bin 43% flash free, DIRAM 41.9% used (334,938 B free) — module compiles but is not yet
+wired into any voice, so footprint is near baseline. Membrane clean — grep for
+malloc/new/free/printf/ESP_LOG/vTaskDelay in `dsp/juno106_hpf.{h,cpp}` returns nothing.
+
+Next: **WO-13e-ii** — wire this HPF block into each Juno voice, ahead of the VCF, per ADR
+0026's consequences section.
+
 ## 2026-07-18 — WO-13-fmt: PresetPatch value object + JSON bank codec (COMPLETE)
 
 Per ADR 0027. New self-contained module `engine/bank_json.{h,cpp}`: fixed-capacity

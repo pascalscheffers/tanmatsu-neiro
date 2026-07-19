@@ -13,6 +13,7 @@ void test_wav_recorder_suite();
 void test_param_store_suite();
 void test_saturate_suite();
 void test_dcblock_suite();
+void test_juno106_hpf_suite();
 void test_limiter_suite();
 void test_audio_volume_suite();
 void test_preset_suite();
@@ -43,6 +44,7 @@ int main(void) {
     test_param_store_suite();
     test_saturate_suite();
     test_dcblock_suite();
+    test_juno106_hpf_suite();
     test_limiter_suite();
     test_audio_volume_suite();
     test_preset_suite();

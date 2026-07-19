@@ -46,6 +46,7 @@ set(HOST_SRCS
     "${REPO_ROOT}/engine/synth.cpp"
     "${REPO_ROOT}/engine/record_ring.cpp"
     "${REPO_ROOT}/engine/juno_voice.cpp"
+    "${REPO_ROOT}/dsp/juno106_hpf.cpp"
     "${REPO_ROOT}/engine/mod_matrix.cpp"
     "${REPO_ROOT}/engine/juno_model.cpp"
     "${REPO_ROOT}/engine/voice_alloc.cpp"

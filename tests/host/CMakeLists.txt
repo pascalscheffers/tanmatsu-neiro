@@ -25,6 +25,7 @@ add_executable(tanmatsu-tests
     test_param_store.cpp
     test_saturate.cpp
     test_dcblock.cpp
+    test_juno106_hpf.cpp
     test_limiter.cpp
     test_audio_volume.cpp
     test_preset.cpp
@@ -53,6 +54,7 @@ add_executable(tanmatsu-tests
     "${DAISYSP}/Source/Effects/chorus.cpp"
     "${DAISYSP}/Source/Utility/dcblock.cpp"
     "${REPO_ROOT}/engine/juno_voice.cpp"
+    "${REPO_ROOT}/dsp/juno106_hpf.cpp"
     "${REPO_ROOT}/engine/mod_matrix.cpp"
     "${REPO_ROOT}/engine/juno_model.cpp"
     "${REPO_ROOT}/engine/voice_alloc.cpp"
