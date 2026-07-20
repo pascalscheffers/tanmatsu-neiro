@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "dsp/juno106_hpf.h"
+#include "dsp/vendor/kr106/KR106Noise.h"
 #include "dsp/vendor/kr106/KR106VCA.h"
 #include "juno_voice.h"
 #include "param_id.h"
@@ -339,6 +340,106 @@ void test_voice_amp_public_extremes_finite() {
     test_pass();
 }
 
+static void configure_noise_voice(JunoVoice& voice, float level) {
+    voice.init(kSampleRate);
+    voice.set_param((int)ParamId::OSC_SAW_ON, 0.0f);
+    voice.set_param((int)ParamId::OSC_PULSE_ON, 0.0f);
+    voice.set_param((int)ParamId::SUB_LEVEL, 0.0f);
+    voice.set_param((int)ParamId::NOISE_LEVEL, level);
+    voice.set_param((int)ParamId::FILTER_CUTOFF, 2000.0f);
+    voice.set_param((int)ParamId::FILTER_RES, 0.0f);
+    voice.set_param((int)ParamId::VCF_ENV_DEPTH, 0.0f);
+    voice.set_param((int)ParamId::VCF_KEY_TRACK, 0.0f);
+    voice.set_param((int)ParamId::VCF_LFO_DEPTH, 0.0f);
+    voice.set_param((int)ParamId::VCA_GATE_MODE, 1.0f);
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+    voice.note_on(69, 127, expr);
+}
+
+static float render_noise_level(float level, const float* noise, size_t n) {
+    JunoVoice voice;
+    configure_noise_voice(voice, level);
+    float out[64] = {};
+    voice.set_noise_input(noise, n);
+    voice.render(out, n);
+    return rms(out, (int)n);
+}
+
+static float expected_j106_noise_gain(float level) {
+    if (level <= 0.0f) return 0.0f;
+    const float d = level - 0.0594f;
+    return 1.0632f * (sqrtf(d * d + 0.0146f * 0.0146f) + d) * 0.5f;
+}
+
+void test_voice_shared_kr106_noise() {
+    test_begin("KR-106 noise is deterministic, block-stable, shared, and tapered");
+
+    kr106::Noise fresh_a;
+    kr106::Noise fresh_b;
+    kr106::Noise split;
+    fresh_a.SetSampleRate(kSampleRate);
+    fresh_b.SetSampleRate(kSampleRate);
+    split.SetSampleRate(kSampleRate);
+    float noise[64];
+    for (int i = 0; i < 64; ++i) {
+        noise[i] = fresh_a.Process();
+        TEST_ASSERT(noise[i] == fresh_b.Process(), "fresh KR-106 noise generators must be sample-identical");
+    }
+    for (int i = 0; i < 17; ++i)
+        TEST_ASSERT(noise[i] == split.Process(), "split noise prefix must match one-shot output");
+    for (int i = 17; i < 64; ++i)
+        TEST_ASSERT(noise[i] == split.Process(), "split noise suffix must match one-shot output");
+
+    JunoVoice voice_a;
+    JunoVoice voice_b;
+    configure_noise_voice(voice_a, 1.0f);
+    configure_noise_voice(voice_b, 1.0f);
+    float out_a[64] = {};
+    float out_b[64] = {};
+    voice_a.set_noise_input(noise, 64);
+    voice_b.set_noise_input(noise, 64);
+    voice_a.render(out_a, 64);
+    voice_b.render(out_b, 64);
+    TEST_ASSERT(memcmp(out_a, out_b, sizeof(out_a)) == 0, "equivalent voices must render identical shared noise");
+
+    float quiet_noise[64];
+    for (int i = 0; i < 64; ++i) quiet_noise[i] = noise[i];
+    const float silent = render_noise_level(0.0f, quiet_noise, 64);
+    const float mid    = render_noise_level(0.5f, quiet_noise, 64);
+    const float full   = render_noise_level(1.0f, quiet_noise, 64);
+    TEST_ASSERT(silent < 1e-7f, "noise level zero must be silent");
+    TEST_ASSERT(mid > silent && full > mid, "mid/full noise levels must be monotonic");
+
+    const float mid_gain  = expected_j106_noise_gain(0.5f);
+    const float full_gain = expected_j106_noise_gain(1.0f);
+    TEST_ASSERT(mid_gain < full_gain * 0.5f, "J106 noise slider taper must be nonlinear");
+    float compensated_noise[64];
+    for (int i = 0; i < 64; ++i) compensated_noise[i] = noise[i] * (full_gain / mid_gain);
+    const float compensated_mid = render_noise_level(0.5f, compensated_noise, 64);
+    TEST_ASSERT(fabsf(compensated_mid - full) < 1e-5f, "voice output must follow the exact pinned J106 noise taper");
+    test_pass();
+}
+
+void test_kr106_noise_long_ftz_off() {
+    test_begin("KR-106 shared noise stays finite and non-subnormal with FTZ off");
+    kr106::Noise noise;
+    noise.SetSampleRate(kSampleRate);
+    for (int i = 0; i < 500000; ++i) {
+        const float sample = noise.Process();
+        TEST_ASSERT(isfinite(sample) && fpclassify(sample) != FP_SUBNORMAL,
+                    "noise output must be finite and non-subnormal");
+        TEST_ASSERT(isfinite(noise.mLPState) && fpclassify(noise.mLPState) != FP_SUBNORMAL,
+                    "noise LP state must be finite and non-subnormal");
+        TEST_ASSERT(isfinite(noise.mHPState) && fpclassify(noise.mHPState) != FP_SUBNORMAL,
+                    "noise HP state must be finite and non-subnormal");
+        for (float state : noise.mFlickerState) {
+            TEST_ASSERT(isfinite(state) && fpclassify(state) != FP_SUBNORMAL,
+                        "noise flicker state must be finite and non-subnormal");
+        }
+    }
+    test_pass();
+}
+
 /* --- 7. HPF signal order + four positions (WO-13e-ii) --------------------
  * The VCF is forced wide open (cutoff at the param max, res 0, all panel
  * mods off) so it is near-transparent at these low test frequencies. What
@@ -534,6 +635,8 @@ void test_voice_suite() {
     test_voice_zero_sustain_retrigger();
     test_voice_kr106_amp_components();
     test_voice_amp_public_extremes_finite();
+    test_voice_shared_kr106_noise();
+    test_kr106_noise_long_ftz_off();
     test_voice_hpf_signal_order_and_positions();
     test_voice_hpf_switch_bounded();
     test_voice_kr106_phase_coherence();

@@ -2253,6 +2253,30 @@ idle within the tested 30 s bound. The VCA curve comes from Boaris clone-chip
 measurements, matching pinned upstream provenance rather than a population of
 original BA662 hardware.
 
+## 2026-07-20 — WO-14c-i: shared KR-106 J106 noise (COMPLETE)
+
+Vendored pinned Ultramaster KR-106 `KR106Noise.h` verbatim. The engine now owns
+one deterministically reset, continuously running J106 noise generator and one
+fixed 256-frame buffer; every voice receives that same block through the
+default-no-op `IVoice::set_noise_input` seam. `JunoVoice` no longer contains a
+PRNG/noise generator and applies the exact pinned J106 panel taper plus
+`kNoiseAmpJ106`; null/short input fails silent and the WO-14a VCF-floor mute is
+preserved.
+
+Tests prove fresh/split-block generator determinism, identical output from two
+equivalent voices sharing one block, zero-level silence, monotonic nonlinear
+mid/full levels with exact taper compensation, and 500,000-sample FTZ-off
+finite/non-subnormal output and public state. `make format`, `make host`,
+`make test`, `make build`, `make size`, vendor byte comparison, membrane grep,
+and `git diff --check` pass. Total image 1,360,866 B (+726 B from WO-14b's
+1,360,140 B); DIRAM 261,236/576,464 B = 45.32% (+1,496 B, including the
+1,024 B shared buffer). `sizeof(JunoVoice)` is 712 B (+16 B from 696 B).
+
+Remaining risk: the upstream generator's state updates are not explicitly
+anti-denormal-biased, but long FTZ-off coverage found no subnormal public state
+or output. The shared noise is intentionally advanced even with no active
+voice/noise level, so its phase is session-time-dependent but deterministic.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

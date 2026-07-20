@@ -24,6 +24,7 @@
 #include "dsp/lfo.h"
 #include "dsp/limiter.h"
 #include "dsp/saturate.h"
+#include "dsp/vendor/kr106/KR106Noise.h"
 #include "juno_model.h"
 #include "param_desc.h"
 #include "param_id.h"
@@ -48,6 +49,8 @@ static inline float unison_gain(int count) {
 // 256 frames is the device platform ceiling (MAX_BLOCK in platform_device.c).
 static const size_t kMaxBlock = 256;
 static float        s_mono[kMaxBlock];
+static float        s_noise_buffer[kMaxBlock];
+static kr106::Noise s_noise;
 
 static JunoModel          s_juno_model;
 static VoiceAlloc         s_alloc;
@@ -156,6 +159,8 @@ static volatile uint32_t s_worst_master_cyc     = 0;
 
 void synth_init(uint32_t sample_rate, size_t block_size) {
     s_sample_rate = (float)sample_rate;
+    s_noise       = kr106::Noise{};
+    s_noise.SetSampleRate((float)sample_rate);
     s_juno_model.init((float)sample_rate);
     s_alloc.init(&s_juno_model);
     s_note_on_cooldown_blocks = 0;
@@ -469,6 +474,7 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     //     free-running regardless of voice activity) and inject into every voice.
     //     Stage 5c: also load channel-wide MIDI expression atomics once and inject.
     {
+        for (size_t i = 0; i < frames; ++i) s_noise_buffer[i] = s_noise.Process();
         float l1 = s_lfo1.process_block((uint32_t)frames);
         float l2 = s_lfo2.process_block((uint32_t)frames);
         float mw = s_mod_wheel.load(std::memory_order_relaxed);
@@ -476,6 +482,7 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
         float at = s_aftertouch.load(std::memory_order_relaxed);
         for (int v = 0; v < kNumVoices; v++) {
             slots[v].voice->set_lfo_inputs(l1, l2);
+            slots[v].voice->set_noise_input(s_noise_buffer, frames);
             slots[v].voice->set_expression(mw, pb, at);
         }
     }

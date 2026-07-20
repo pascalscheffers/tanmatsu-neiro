@@ -16,7 +16,6 @@
 //   apply_mod_outputs (private) — hot-path application of ModOutputs.
 #pragma once
 
-#include "Noise/whitenoise.h"
 #include "dsp/env.h"
 #include "dsp/juno106_hpf.h"
 #include "dsp/lfo.h"
@@ -64,6 +63,11 @@ public:
         lfo2_raw_ = lfo2_raw;
     }
 
+    void set_noise_input(const float* samples, size_t n) override {
+        noise_input_       = samples;
+        noise_input_count_ = n;
+    }
+
     // IVoice: inject channel-wide MIDI expression for this block (Stage 5c).
     // mod_wheel/aftertouch in [0,1]; pitch_bend bipolar [-1,+1].
     void set_expression(float mod_wheel, float pitch_bend, float aftertouch) override;
@@ -81,11 +85,10 @@ private:
 
     // WO-14a: one shared KR-106 phase accumulator drives saw, pulse, and the
     // CD4013-style octave-down sub, matching the Juno-106 DCO topology.
-    kr106::Oscillators  oscillators_;
-    daisysp::WhiteNoise noise_;
-    dsp::Juno106Hpf     hpf_;  // WO-13e-ii: per-voice, post-mix, pre-VCF (ADR 0026).
-    kr106::VCF          filter_;
-    kr106::ADSR         amp_env_;
+    kr106::Oscillators oscillators_;
+    dsp::Juno106Hpf    hpf_;  // WO-13e-ii: per-voice, post-mix, pre-VCF (ADR 0026).
+    kr106::VCF         filter_;
+    kr106::ADSR        amp_env_;
 
     // --- Stage 3a: second envelope ---
     dsp::Env env2_;
@@ -100,6 +103,10 @@ private:
     // block via set_lfo_inputs(). In [-1,+1] before per-note depth+delay scaling.
     float lfo1_raw_ = 0.0f;
     float lfo2_raw_ = 0.0f;
+
+    // Engine-owned shared noise block. Valid only for the immediately following render().
+    const float* noise_input_       = nullptr;
+    size_t       noise_input_count_ = 0;
 
     // Stage 5c: channel-wide MIDI expression, injected each block via set_expression().
     float p_mod_wheel_  = 0.0f;  // [0, 1]  CC1

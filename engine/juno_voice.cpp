@@ -108,7 +108,6 @@ void JunoVoice::init(float sample_rate) {
     oscillators_.mSawGain   = p_osc_saw_on_ ? 1.0f : 0.0f;
     oscillators_.mPulseGain = p_osc_pulse_on_ ? 1.0f : 0.0f;
     oscillators_.mSubGain   = p_sub_level_ > 0.0f ? 1.0f : 0.0f;
-    noise_.Init();
     hpf_.init(sample_rate);
     filter_.SetOversample(1);
     filter_.mJ106Res = true;
@@ -325,6 +324,10 @@ void JunoVoice::set_param(int id, float value) {
 }
 
 IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
+    const float* noise_input = (noise_input_ != nullptr && noise_input_count_ >= n) ? noise_input_ : nullptr;
+    noise_input_             = nullptr;
+    noise_input_count_       = 0;
+
     // Early exit when both envelopes are idle (post-release or pre-first-note).
     // ADR 0018: LFO phase is now engine-owned (free-running); the engine advances
     // the shared LFO unconditionally every block and injects via set_lfo_inputs().
@@ -430,6 +433,14 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
     if (eff_sub > 1.0f) eff_sub = 1.0f;
     if (eff_noise < 0.0f) eff_noise = 0.0f;
     if (eff_noise > 1.0f) eff_noise = 1.0f;
+    float noise_gain = 0.0f;
+    if (eff_noise > 0.0f) {
+        static constexpr float kNoiseScale  = 1.0632f;
+        static constexpr float kNoiseKnee   = 0.0146f;
+        static constexpr float kNoiseTurnOn = 0.0594f;
+        const float            d            = eff_noise - kNoiseTurnOn;
+        noise_gain                          = kNoiseScale * (sqrtf(d * d + kNoiseKnee * kNoiseKnee) + d) * 0.5f;
+    }
     static constexpr float kSilentLevel = 1e-10f;
     const bool             dco_enabled =
         (p_osc_saw_on_ != 0 || p_osc_pulse_on_ != 0) && (p_osc_level_ > kSilentLevel || amp_end > kSilentLevel);
@@ -463,7 +474,7 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
         float osc = oscillators_.Process(cur_freq / sample_rate_, pw, p_osc_saw_on_ != 0, p_osc_pulse_on_ != 0,
                                          eff_sub > 0.0f, kr106::Oscillators::AudioTaper(eff_sub), 0.0f, sync);
         if (p_osc_saw_on_ == 0 && p_osc_pulse_on_ == 0 && eff_sub <= 0.0f) osc = 0.0f;
-        float noise = noise_.Process() * eff_noise;
+        float noise = noise_input != nullptr ? noise_input[i] * noise_gain * kr106::kNoiseAmpJ106 : 0.0f;
         float mixed = osc + noise;
 
         // WO-13e-ii (ADR 0026): the 4-position HPF sits after osc/sub/noise mixing
