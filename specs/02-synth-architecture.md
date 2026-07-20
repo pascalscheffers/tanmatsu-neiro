@@ -4,7 +4,7 @@ Status: **ratified** (2026-06-27). The defining choices are locked in `specs/dec
 (ADRs 0001–0006); this document is the design they describe. Revisit by writing a new ADR.
 
 Locked: VA/hybrid digital target (0001) · Juno-106 hybrid voice (0002) · 8 voices +
-unison (0003) · permissive-only vendoring (0004) · USB-A host MIDI first (0005) · v1
+unison (0003) · GPL-3.0 KR-106 core pivot (0028, supersedes 0004) · USB-A host MIDI first (0005) · v1
 screen+keyboard only (0006) · host-first + platform HAL (0007) · swappable SynthModels,
 MPE-ready (0008) · modulation matrix (0009) · sample-accurate clock (0010).
 
@@ -67,8 +67,8 @@ The chorus is doing a lot of the "Juno" character and the stereo width — high 
 | UI rendering | **PAX graphics** | (lib) | All drawing. |
 | FM engine (if we want full DX-grade FM) | **Dexed/MSFA** (msfa) | Apache-2.0 | Optional, heavier. Only if 2-op isn't enough. |
 
-> If a sonic feature needs GPL code (Surge, ZynAddSubFX, Vital), **stop and ask** — it's
-> a licensing decision for `specs/decisions/`. We default to the MIT path above.
+> ADR 0028 authorizes GPL-3.0-only KR-106 DSP for the Juno voice and master chorus.
+> Import only the embedded-relevant DSP; plugin frameworks and desktop UI remain out.
 
 ## Layering (mirrors CLAUDE.md)
 ```
@@ -162,21 +162,20 @@ waveform animation — over raw count: **ADR 0015**.
 | SDL2 | system (brew `sdl2`) | Zlib | **host-only** window/present/input; never shipped to device |
 | RtMidi | system (brew `rtmidi`) | MIT-style (permissive) | **host-only** MIDI input via CoreMIDI/ALSA; never shipped to device (gate G6, Stage 5a) |
 | cJSON (ESP-IDF `json` component) | bundled with ESP-IDF v5.5.1 | MIT | preset/bank codec (ADR 0027) — no new firmware dependency, parses embedded + SD/AppFS JSON banks |
+| Ultramaster KR-106 | v2.5.13 / `bc15caee5843ab238a25d0969e68d57db2b1615f` | GPL-3.0-only | primary Juno voice and chorus DSP (ADR 0028); minimal adapted subset only |
 
-**MIT source gate (Stage 13, ADR 0026):** the 128 original Juno-106 factory patches may only
-be committed once their source payload carries explicit MIT/CC0/public-domain terms, an
-explicit redistribution grant, or a documented legal determination that an independently
-captured hardware dump is uncopyrightable parameter data — see
-`specs/stages/stage-13-juno106-factory-bank.md` for the full gate and source hierarchy. No
-GPL-derived bank data, decoder implementation, or generated output may enter the repository at
-any point.
+**KR-106 source gate (ADR 0028):** before importing code, record the exact source revision,
+retain GPL/copyright notices, and enumerate the copied/adapted files. Existing independently
+decoded factory-bank data remains usable; GPL-derived code and data are now permitted when
+their provenance is explicit.
 
 ---
 
 ## Resolved (was "the grill") — see `specs/decisions/`
 All five bootstrap questions are ratified: sonic base = Juno-106 hybrid (ADR 0002);
-polyphony = 8 + unison (0003); MIDI = USB-A host first (0005); licensing = permissive-only
-(0004); expansion/CV = out of scope for v1, screen+keyboard only (0006).
+polyphony = 8 + unison (0003); MIDI = USB-A host first (0005); licensing = GPL-3.0-only for
+the combined work (0028 supersedes 0004); expansion/CV = out of scope for v1,
+screen+keyboard only (0006).
 
 ## Open / deferred (not blocking)
 - Block size (start 64 @ 48 kHz) and final voice count — settle by profiling on hardware.

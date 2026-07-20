@@ -63,6 +63,8 @@ Paths are relative to repo root. Dependencies live in `managed_components/` (ESP
 - `dsp/saturate.h` — `soft_clip(float)`: the master soft-clip ceiling (ADR 0016).
 - `dsp/vendor/daisysp/` — vendored DaisySP (pinned SHA in MEMORY/ledger). Read-only; don't open
   unless a work-order points at a specific file.
+- `dsp/vendor/kr106/` — minimal GPL-3.0-only Ultramaster KR-106 DSP subset pinned by ADR
+  0028/stage 14. Vendored files remain unmodified; target adapters live in `engine/`/`dsp/`.
 
 ## platform/ — the HAL (the only place bsp/SDL/miniaudio may appear, ADR 0007)
 - `platform/audio_volume.{h,c}` — shared square-law listening-volume curve; host applies its

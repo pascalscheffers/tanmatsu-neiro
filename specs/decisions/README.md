@@ -26,3 +26,4 @@ decision, and the consequence. Supersede rather than rewrite history.
 | [0025](0025-side-buttons-control-codec-volume.md) | Dedicated side buttons control session-level codec volume (0–90%), independent of patch gain and MIDI CC7 |
 | [0026](0026-juno106-factory-bank-and-fidelity.md) | Juno-106 factory-bank fidelity pass: independent saw/pulse, hardwired panel modulation, square sub (narrow supersedes of 0002/0009/0020) |
 | [0027](0027-json-bank-format-and-6-voice.md) | JSON preset/bank format (cJSON), embedded factory banks + SD/AppFS user banks, 6-voice polyphony (supersedes spec 05's binary format) |
+| [0028](0028-gpl3-kr106-core.md) | GPL-3.0-only project pivot; replace the hand-built Juno DSP and chorus with a minimal Ultramaster KR-106 port (supersedes 0004 and ADR 0026's GPL exclusions) |

@@ -12,7 +12,7 @@
 
 A polyphonic **virtual-analog synthesizer** for the [Tanmatsu](https://tanmatsu.cloud) badge (Nicolai Electronics / badge.team, ESP32-P4). No analog in the signal path — it's all DSP modelling a classic Juno-style poly voice, played live from a USB MIDI keyboard, a DAW, or the badge's own keyboard, and tweaked on its screen.
 
-Reuse-first and dedup-first by design: vetted MIT DSP (DaisySP), and a single parameter table that drives the UI, MIDI, and presets alike. The DSP layer is pure C/C++ and runs on the desktop too, so you can hack on it without the hardware.
+Reuse-first and dedup-first by design: a minimal GPL-3.0 Ultramaster KR-106 port supplies the Juno character DSP, and a single parameter table drives the UI, MIDI, and presets alike. The DSP layer is pure C/C++ and runs on the desktop too, so you can hack on it without the hardware.
 
 ## What it can do (today)
 
@@ -126,4 +126,4 @@ Bigger features that are designed-for but not yet built (see [`specs/06-feature-
 
 ## License
 
-Original code is [MIT](https://opensource.org/license/mit). Built on the [`tanmatsu-template`](https://github.com/Nicolai-Electronics/tanmatsu-template) (CC0-1.0) and the [PAX graphics](https://github.com/robotman2412/pax-graphics) library; vendored DSP (DaisySP and others) retains its own permissive licenses — see [`specs/02-synth-architecture.md`](specs/02-synth-architecture.md).
+The combined project is licensed **GPL-3.0-only** (ADR 0028). Existing third-party components retain their own licenses and notices, including [`tanmatsu-template`](https://github.com/Nicolai-Electronics/tanmatsu-template) (CC0-1.0), [PAX graphics](https://github.com/robotman2412/pax-graphics), DaisySP, and Ultramaster KR-106. See [`specs/02-synth-architecture.md`](specs/02-synth-architecture.md).

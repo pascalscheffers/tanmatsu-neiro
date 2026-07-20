@@ -65,6 +65,16 @@ Next: still waiting on WO-13g-i tape decode before 13h/13i can proceed. If
 user-bank browsing becomes a real feature, wire `preset_user_*` into
 `preset.cpp` and UI as its own WO.
 
+## 2026-07-20 — ADR 0028: GPL/KR-106 pivot (DECIDED)
+
+Pascal explicitly chose GPL-3.0-only and a minimal port from the user-supplied Ultramaster
+KR-106 tree to reach a strong sound quickly. ADR 0028 supersedes ADR 0004 and ADR 0026's GPL
+exclusions. Source now available at `../ultramaster_kr106`, pinned to v2.5.13 /
+`bc15caee5843ab238a25d0969e68d57db2b1615f`. Keep the working platform/control/UI/allocator/
+preset/recording shell; WO-14a first replaces only the phase-coherent DCO/sub and optimized
+J106 VCF, then later slices bring ADSR/VCA, noise/variance, and BBD chorus. Remove unused
+hand-built DSP only after replacements are green.
+
 ## 2026-07-19 — WO-13e-ii: wire Juno-106 HPF before the VCF (COMPLETE)
 
 Per ADR 0026 and WO-13e-i's DSP block. `JunoVoice` gains one `dsp::Juno106Hpf hpf_` member
