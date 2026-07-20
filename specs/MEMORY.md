@@ -2198,6 +2198,33 @@ saw/pulse, PWM-mode, and four-position HPF controls.
 
 Next: **WO-13k** — calibrate mapped curves and complete final hardware acceptance.
 
+## 2026-07-20 — WO-14a: KR-106 DCO/sub + J106 VCF (COMPLETE)
+
+Vendored Ultramaster KR-106 v2.5.13's unmodified `KR106Oscillators.h` and
+`KR106VCF_OPTIMIZED.h` at pinned commit
+`bc15caee5843ab238a25d0969e68d57db2b1615f`, plus the exact upstream
+GPL-3.0-only `LICENSE`; provenance and authors are recorded in the vendor
+README. `JunoVoice` now uses one phase-coherent KR-106 DCO for saw/pulse/sub
+(J106 amplitudes, inverted pulse topology, CD4013-style sub) and the optimized
+J106 IR3109/BA662 VCF at 1x. Existing external noise, per-voice HPF, envelopes,
+modulation, VCA, expression, and `IVoice` behavior remain in place;
+`FILTER_MODE` is intentionally a no-op because the Juno VCF is low-pass only.
+The VCF still advances when all input sources are effectively off, but its
+intentional thermal-noise floor is muted at the voice output in that state to
+preserve the existing zero-level/switch-off contract.
+
+Added reset-deterministic coherent saw+pulse coverage and a full-range,
+high-resonance 1x VCF sweep (finite; peak 117.199 under the fixed 128 bound),
+while adapting the legacy SVF/ADSR-specific expectations. `make format`,
+`make host`, `make test`, `make build`, `make size`, and `git diff --check` pass;
+device math calls link. Total image 1,355,628 B (+1,322 B vs. WO-13i's
+1,354,306 B); DIRAM 258,838/576,464 B = 44.90% (+232 B).
+`sizeof(JunoVoice)` is 680 B (-64 B from 744 B).
+
+Remaining risk/follow-up: upstream KR-106 models the J106 HPF globally after
+the summed voices, whereas the retained pre-WO-14a HPF is per voice. WO-14a
+explicitly leaves it untouched; correct that topology in a later closed WO.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

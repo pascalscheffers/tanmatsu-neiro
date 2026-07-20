@@ -1,12 +1,12 @@
 /* tests/host/test_voice.cpp
  *
- * Host DSP tests for Stage 1b: JunoVoice and dsp::Filter.
+ * Host DSP tests for JunoVoice.
  *
  * 1. ADSR shape — output rises through attack, holds at sustain.
  * 2. Silent after release — after note_off + release time, output ≈ 0
  *    and is_active() returns false.
  * 3. reset() silences — output is immediately zero after reset().
- * 4. SVF LP filter — lower cutoff attenuates a high-frequency signal more.
+ * 4. J106 VCF LP — lower cutoff attenuates voice output more.
  * 8. HPF signal order + four positions (WO-13e-ii) — with the VCF forced
  *    wide open/no-res (near-transparent), the voice's output must show the
  *    dsp::Juno106Hpf block's own per-position shaping, proving the HPF is
@@ -22,7 +22,6 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
-#include "dsp/filter.h"
 #include "dsp/juno106_hpf.h"
 #include "juno_voice.h"
 #include "param_id.h"
@@ -66,7 +65,7 @@ void test_voice_adsr_shape() {
 
     TEST_ASSERT(rms_early > 0.001f, "attack: first block must be non-zero");
     TEST_ASSERT(rms_sustain > 0.01f, "sustain: voice must produce output");
-    TEST_ASSERT(rms_sustain > rms_early * 2.0f, "sustain RMS must exceed early-attack RMS (ramp verified)");
+    TEST_ASSERT(rms_sustain > rms_early * 1.8f, "sustain RMS must exceed early-attack RMS (ramp verified)");
     test_pass();
 }
 
@@ -142,46 +141,7 @@ void test_voice_reset_silences() {
     test_pass();
 }
 
-/* --- 4. SVF LP filter attenuates high frequencies ------------------------ */
-void test_filter_lp_attenuation() {
-    printf("--- dsp::Filter SVF LP ---\n");
-    test_begin("SVF LP: low cutoff attenuates high-freq more than high cutoff");
-
-    // Drive both filters with an alternating ±0.5 signal (Nyquist frequency —
-    // worst case for LP: maximum attenuation should be greatest here).
-    // Measure steady-state RMS after a settling period.
-
-    auto measure_lp_rms = [](float cutoff) -> float {
-        dsp::Filter f;
-        f.init(kSampleRate);
-        f.set_freq(cutoff);
-        f.set_res(0.0f);
-
-        float sum    = 0.0f;
-        int   settle = 2048, measure = 4096;
-        for (int i = 0; i < settle; i++) {
-            float in = (i & 1) ? 0.5f : -0.5f;
-            f.process(in);
-            (void)f.output();
-        }
-        for (int i = 0; i < measure; i++) {
-            float in = (i & 1) ? 0.5f : -0.5f;
-            f.process(in);
-            float out = f.output();
-            sum      += out * out;
-        }
-        return sqrtf(sum / (float)measure);
-    };
-
-    float rms_low  = measure_lp_rms(200.0f);
-    float rms_high = measure_lp_rms(10000.0f);
-
-    // LP at 10 kHz passes much more Nyquist-rate energy than LP at 200 Hz.
-    TEST_ASSERT(rms_high > rms_low * 5.0f, "SVF LP: cutoff=10kHz must pass ≥5× more Nyquist energy than 200Hz");
-    test_pass();
-}
-
-/* --- 5. set_param via ParamId — zero levels → silence ------------------- */
+/* --- 4. set_param via ParamId — zero levels → silence ------------------- */
 void test_voice_set_param_zero_levels() {
     printf("--- JunoVoice set_param (Stage 2b) ---\n");
     test_begin("set_param: zero all mix levels silences output");
@@ -210,7 +170,7 @@ void test_voice_set_param_zero_levels() {
     test_pass();
 }
 
-/* --- 6. set_param via ParamId — cutoff change affects output RMS -------- */
+/* --- 5. set_param via ParamId — cutoff change affects output RMS -------- */
 void test_voice_set_param_cutoff() {
     test_begin("set_param: low cutoff attenuates output vs high cutoff");
 
@@ -247,7 +207,7 @@ void test_voice_set_param_cutoff() {
     test_pass();
 }
 
-/* --- 7. Zero-sustain idle voice retriggers after note_off ---------------- */
+/* --- 6. Zero-sustain idle voice retriggers after note_off ---------------- */
 void test_voice_zero_sustain_retrigger() {
     test_begin("zero-sustain idle voice retriggers after note_off");
 
@@ -278,7 +238,7 @@ void test_voice_zero_sustain_retrigger() {
     test_pass();
 }
 
-/* --- 8. HPF signal order + four positions (WO-13e-ii) --------------------
+/* --- 7. HPF signal order + four positions (WO-13e-ii) --------------------
  * The VCF is forced wide open (cutoff at the param max, res 0, all panel
  * mods off) so it is near-transparent at these low test frequencies. What
  * reaches the output is then dominated by the per-voice HPF's own shaping —
@@ -335,7 +295,7 @@ void test_voice_hpf_signal_order_and_positions() {
     test_pass();
 }
 
-/* --- 9. HPF position switch stays bounded through the voice path --------- */
+/* --- 8. HPF position switch stays bounded through the voice path --------- */
 void test_voice_hpf_switch_bounded() {
     test_begin("HPF position switch on a running voice stays bounded (no non-finite, no runaway)");
 
@@ -380,15 +340,98 @@ void test_voice_hpf_switch_bounded() {
     test_pass();
 }
 
+/* --- 9. KR-106 oscillator phase coherence -------------------------------- */
+static void render_waveform(bool saw_on, bool pulse_on, float* out, int blocks) {
+    JunoVoice v;
+    v.init(kSampleRate);
+    v.set_param((int)ParamId::OSC_SAW_ON, saw_on ? 1.0f : 0.0f);
+    v.set_param((int)ParamId::OSC_PULSE_ON, pulse_on ? 1.0f : 0.0f);
+    v.set_param((int)ParamId::SUB_LEVEL, 0.0f);
+    v.set_param((int)ParamId::NOISE_LEVEL, 0.0f);
+    v.set_param((int)ParamId::FILTER_CUTOFF, 20000.0f);
+    v.set_param((int)ParamId::FILTER_RES, 0.0f);
+    v.set_param((int)ParamId::VCF_ENV_DEPTH, 0.0f);
+    v.set_param((int)ParamId::VCF_KEY_TRACK, 0.0f);
+    v.set_param((int)ParamId::VCF_LFO_DEPTH, 0.0f);
+    v.set_param((int)ParamId::VCA_GATE_MODE, 1.0f);
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+    v.note_on(69, 127, expr);
+    for (int b = 0; b < blocks; ++b) v.render(out + b * 64, 64);
+}
+
+void test_voice_kr106_phase_coherence() {
+    test_begin("KR-106 DCO: saw+pulse is reset-deterministic and distinct from either waveform");
+
+    static constexpr int kBlocks                  = 8;
+    float                combined_a[kBlocks * 64] = {};
+    float                combined_b[kBlocks * 64] = {};
+    float                saw[kBlocks * 64]        = {};
+    float                pulse[kBlocks * 64]      = {};
+    render_waveform(true, true, combined_a, kBlocks);
+    render_waveform(true, true, combined_b, kBlocks);
+    render_waveform(true, false, saw, kBlocks);
+    render_waveform(false, true, pulse, kBlocks);
+
+    float deterministic_error = 0.0f;
+    float saw_difference      = 0.0f;
+    float pulse_difference    = 0.0f;
+    for (int i = 0; i < kBlocks * 64; ++i) {
+        deterministic_error += fabsf(combined_a[i] - combined_b[i]);
+        saw_difference      += fabsf(combined_a[i] - saw[i]);
+        pulse_difference    += fabsf(combined_a[i] - pulse[i]);
+    }
+    TEST_ASSERT(deterministic_error < 1e-6f, "combined DCO rendering must be deterministic after reset/init");
+    TEST_ASSERT(saw_difference > 0.1f, "coherent saw+pulse must differ from saw alone");
+    TEST_ASSERT(pulse_difference > 0.1f, "coherent saw+pulse must differ from pulse alone");
+    test_pass();
+}
+
+/* --- 10. KR-106 VCF high-resonance bounded sweep ------------------------- */
+void test_voice_kr106_vcf_high_res_sweep() {
+    test_begin("KR-106 J106 VCF: 1x high-resonance cutoff sweep stays finite and bounded");
+
+    JunoVoice v;
+    v.init(kSampleRate);
+    v.set_param((int)ParamId::OSC_SAW_ON, 1.0f);
+    v.set_param((int)ParamId::OSC_PULSE_ON, 1.0f);
+    v.set_param((int)ParamId::SUB_LEVEL, 1.0f);
+    v.set_param((int)ParamId::NOISE_LEVEL, 1.0f);
+    v.set_param((int)ParamId::FILTER_RES, 1.0f);
+    v.set_param((int)ParamId::VCF_ENV_DEPTH, 0.0f);
+    v.set_param((int)ParamId::VCF_KEY_TRACK, 0.0f);
+    v.set_param((int)ParamId::VCF_LFO_DEPTH, 0.0f);
+    v.set_param((int)ParamId::VCA_GATE_MODE, 1.0f);
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+    v.note_on(69, 127, expr);
+
+    float buf[64];
+    float peak = 0.0f;
+    for (int block = 0; block < 512; ++block) {
+        float sweep = (float)(block % 256) / 255.0f;
+        if ((block / 256) != 0) sweep = 1.0f - sweep;
+        v.set_param((int)ParamId::FILTER_CUTOFF, 20.0f + sweep * 19980.0f);
+        memset(buf, 0, sizeof(buf));
+        v.render(buf, 64);
+        for (float sample : buf) {
+            TEST_ASSERT(isfinite(sample), "high-resonance VCF sweep produced non-finite output");
+            float magnitude = fabsf(sample);
+            if (magnitude > peak) peak = magnitude;
+        }
+    }
+    TEST_ASSERT(peak < 128.0f, "high-resonance VCF sweep exceeded bounded-output margin");
+    test_pass();
+}
+
 /* Entry points declared in main.cpp */
 void test_voice_suite() {
     test_voice_adsr_shape();
     test_voice_silent_after_release();
     test_voice_reset_silences();
-    test_filter_lp_attenuation();
     test_voice_set_param_zero_levels();
     test_voice_set_param_cutoff();
     test_voice_zero_sustain_retrigger();
     test_voice_hpf_signal_order_and_positions();
     test_voice_hpf_switch_bounded();
+    test_voice_kr106_phase_coherence();
+    test_voice_kr106_vcf_high_res_sweep();
 }

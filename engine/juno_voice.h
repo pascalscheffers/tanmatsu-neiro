@@ -1,6 +1,6 @@
 // engine/juno_voice.h — Juno-106-inspired voice (ADR 0002, ADR 0008).
-// Signal chain: PolyBLEP saw + pulse (independent switches, ADR 0026/WO-13c)
-// + square sub (−1 oct) + noise → SVF LP → ADSR VCA.
+// Signal chain: KR-106 phase-coherent saw + pulse + sub + external noise
+// → four-position HPF → KR-106 J106 VCF → ADSR VCA.
 // set_param() uses ParamId::* values (see param_id.h) — the param store
 // pushes smoothed physical values from the table every block (Stage 2b).
 //
@@ -18,10 +18,10 @@
 
 #include "Noise/whitenoise.h"
 #include "dsp/env.h"
-#include "dsp/filter.h"
 #include "dsp/juno106_hpf.h"
 #include "dsp/lfo.h"
-#include "dsp/osc.h"
+#include "dsp/vendor/kr106/KR106Oscillators.h"
+#include "dsp/vendor/kr106/KR106VCF_OPTIMIZED.h"
 #include "mod_matrix.h"
 #include "param_id.h"
 #include "voice.h"
@@ -77,17 +77,12 @@ private:
     // Stage 3b-i: mod matrix instance (one per voice).
     ModMatrix mod_matrix_;
 
-    // WO-13c (ADR 0026): saw + pulse are independent, phase-coherent oscillators that
-    // can both sound at once (replaces the old mutually-exclusive osc_main_). Their
-    // outputs are gated by p_osc_saw_on_/p_osc_pulse_on_ (contribution only — toggling
-    // never resets phase). osc_sub_ is a fixed square one octave below (ADR 0026,
-    // supersedes ADR 0020's saw sub).
-    dsp::Osc            osc_saw_;
-    dsp::Osc            osc_pulse_;
-    dsp::Osc            osc_sub_;
+    // WO-14a: one shared KR-106 phase accumulator drives saw, pulse, and the
+    // CD4013-style octave-down sub, matching the Juno-106 DCO topology.
+    kr106::Oscillators  oscillators_;
     daisysp::WhiteNoise noise_;
     dsp::Juno106Hpf     hpf_;  // WO-13e-ii: per-voice, post-mix, pre-VCF (ADR 0026).
-    dsp::Filter         filter_;
+    kr106::VCF          filter_;
     dsp::Env            env_;
 
     // --- Stage 3a: second envelope ---

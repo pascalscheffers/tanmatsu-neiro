@@ -20,23 +20,28 @@ void JunoVoice::init(float sample_rate) {
     gate_        = false;
     vel_scale_   = 1.0f;
 
-    osc_saw_.init(sample_rate);
-    osc_pulse_.init(sample_rate);
-    osc_pulse_.set_waveform(1);  // pulse osc is always WAVE_POLYBLEP_SQUARE
-    osc_sub_.init(sample_rate);
-    osc_sub_.set_waveform(1);  // WO-13c/ADR 0026: sub is a fixed square, one octave below
-    osc_sub_.set_pw(0.5f);     // fixed 50% duty — not user-editable
+    oscillators_.mPulseInvert = true;
+    oscillators_.mSawAmp      = kr106::kSawAmpJ106;
+    oscillators_.mPulseAmp    = kr106::kPulseAmpJ106;
+    oscillators_.mSubAmp      = kr106::kSubAmpJ106;
+    oscillators_.mNoiseAmp    = kr106::kNoiseAmpJ106;
+    oscillators_.Init(sample_rate);
+    oscillators_.mSawGain   = p_osc_saw_on_ ? 1.0f : 0.0f;
+    oscillators_.mPulseGain = p_osc_pulse_on_ ? 1.0f : 0.0f;
+    oscillators_.mSubGain   = p_sub_level_ > 0.0f ? 1.0f : 0.0f;
     noise_.Init();
     hpf_.init(sample_rate);
-    filter_.init(sample_rate);
+    filter_.SetOversample(1);
+    filter_.mJ106Res = true;
+    filter_.SetSampleRate(sample_rate);
+    filter_.Reset();
     env_.init(sample_rate);
 
     // Stage 3a: init second envelope.
     // ADR 0018: LFOs moved to engine (shared free-running); no per-voice init.
     env2_.init(sample_rate);
 
-    filter_.set_freq(p_cutoff_);
-    filter_.set_res(p_res_);
+    filter_.UpdateCoeffs(p_cutoff_ / (sample_rate_ * 0.5f), p_res_);
     env_.set_attack(p_attack_);
     env_.set_decay(p_decay_);
     env_.set_sustain(p_sustain_);
@@ -52,11 +57,6 @@ void JunoVoice::note_on(uint8_t pitch, uint8_t velocity, NoteExpression expr) {
     (void)expr;  // MPE fields wired in Stage 5
 
     midi_note_ = pitch;
-    float freq = daisysp::mtof((float)pitch);
-    osc_saw_.set_freq(freq);
-    osc_pulse_.set_freq(freq);
-    osc_sub_.set_freq(freq * 0.5f);  // -1 octave sub
-
     vel_scale_ = (float)velocity / 127.0f;
     gate_      = true;
 
@@ -91,9 +91,8 @@ void JunoVoice::reset() {
     vel_scale_ = 1.0f;
     env_.reset();  // re-init to IDLE: no release tail, instant silence
     env2_.reset();
-    osc_saw_.reset();
-    osc_pulse_.reset();
-    osc_sub_.reset();  // Reset() only rewinds phase; waveform/pw set at init() persist
+    oscillators_.Reset();
+    filter_.Reset();
     // ADR 0018: per-voice LFOs removed; engine owns the shared free-running LFO.
     env2_value_ = 0.0f;
     lfo1_value_ = 0.0f;
@@ -141,14 +140,12 @@ void JunoVoice::set_param(int id, float value) {
         // --- FILTER ---
         case ParamId::FILTER_CUTOFF:
             p_cutoff_ = value;
-            filter_.set_freq(value);
             break;
         case ParamId::FILTER_RES:
             p_res_ = value;
-            filter_.set_res(value);
             break;
         case ParamId::FILTER_MODE:
-            filter_.set_mode((dsp::FilterMode)(int)value);
+            // The Juno-106 VCF is low-pass only.
             break;
         case ParamId::VCF_ENV_DEPTH:
             p_vcf_env_depth_ = value;
@@ -280,8 +277,6 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
     float eff_res = p_res_ + mout.res_mod;
     if (eff_res < 0.0f) eff_res = 0.0f;
     if (eff_res > 1.0f) eff_res = 1.0f;
-    filter_.set_res(eff_res);
-
     // --- Audio-rate mod: compute start/end values for per-sample interpolation.
     // Pitch (semitone offset → freq). OSC_RANGE adds a fixed offset in semitones.
     // p_pitch_offset_ is a portamento glide semitone offset set by VoiceAlloc each
@@ -327,7 +322,7 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
 
     // PWM: apply once per block (block-rate, ~750 Hz @ 64/48k — ample for a slow LFO sweep).
     // Clamp [0.05, 0.95] to avoid degenerate silent/full-duty pulse at the extremes.
-    // Only affects osc_pulse_ (osc_saw_ ignores pw; osc_sub_ is fixed at 0.5).
+    // Only affects the pulse output; saw and sub share the same DCO phase.
     // WO-13d: PWM_MODE selects the direct panel interpretation of OSC_PWM —
     // LFO mode reads it as a modulation amount swung around the hardware-neutral
     // 50% center by the shared LFO1; Manual mode reads it as the fixed width.
@@ -345,8 +340,6 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
     }
     if (pw < 0.05f) pw = 0.05f;
     if (pw > 0.95f) pw = 0.95f;
-    osc_pulse_.set_pw(pw);
-
     // Sub / noise level mods (also once per block — fast enough):
     float eff_sub   = p_sub_level_ + mout.osc_sub;
     float eff_noise = p_noise_level_ + mout.osc_noise;
@@ -354,12 +347,14 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
     if (eff_sub > 1.0f) eff_sub = 1.0f;
     if (eff_noise < 0.0f) eff_noise = 0.0f;
     if (eff_noise > 1.0f) eff_noise = 1.0f;
+    static constexpr float kSilentLevel = 1e-10f;
+    const bool             dco_enabled =
+        (p_osc_saw_on_ != 0 || p_osc_pulse_on_ != 0) && (p_osc_level_ > kSilentLevel || amp_end > kSilentLevel);
+    const bool source_enabled = dco_enabled || eff_sub > kSilentLevel || eff_noise > kSilentLevel;
 
-    // Filter cutoff updated once per block (block-rate): SetFreq computes sinf+powf,
-    // so calling it per sample is prohibitively expensive on RISC-V without hw trig.
-    // At 64-sample blocks (48 kHz) this gives 750 Hz mod bandwidth — inaudible limit
-    // for Juno-style filter sweeps. Must follow set_res() because SetFreq reads res_.
-    filter_.set_freq(cutoff_end);
+    // KR-106 VCF control-rate update. Its frequency input is normalized to
+    // Nyquist; coefficients are held for the whole block at 1x oversampling.
+    filter_.UpdateCoeffs(cutoff_end / (sample_rate_ * 0.5f), eff_res);
 
     // Block-smooth audio-rate dests: linear interpolation from prev to end
     // value over n samples (avoids zipper noise on fast LFO modulation).
@@ -376,29 +371,26 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
         float cur_freq = base_freq + freq_step * (float)i;
         float cur_amp  = p_osc_level_ + amp_step * (float)i;
 
-        osc_saw_.set_freq(cur_freq);
-        osc_pulse_.set_freq(cur_freq);
-        osc_sub_.set_freq(cur_freq * 0.5f);
-        // filter_.set_freq is called once per block above (block-rate cutoff).
-
-        // WO-13c (ADR 0026): saw and pulse are independent switches that sum when both
-        // are on. Both oscillators always advance (process() is always called on each,
-        // whether or not it contributes) so toggling a switch never causes a phase jump.
-        float saw_out   = osc_saw_.process();
-        float pulse_out = osc_pulse_.process();
-        float osc       = (p_osc_saw_on_ ? saw_out : 0.0f) + (p_osc_pulse_on_ ? pulse_out : 0.0f);
-        osc             = osc * cur_amp;
-        float sub       = osc_sub_.process() * eff_sub;
-        float noise     = noise_.Process() * eff_noise;
-        float mixed     = osc + sub + noise;
+        // WO-14a: saw, pulse, and sub are generated from one phase accumulator.
+        // Keep the independent target level on the main waveforms; KR-106 applies
+        // its calibrated J106 mix ratios and the tapered sub level internally.
+        oscillators_.mSawAmp   = kr106::kSawAmpJ106 * cur_amp;
+        oscillators_.mPulseAmp = kr106::kPulseAmpJ106 * cur_amp;
+        bool  sync             = false;
+        float osc = oscillators_.Process(cur_freq / sample_rate_, pw, p_osc_saw_on_ != 0, p_osc_pulse_on_ != 0,
+                                         eff_sub > 0.0f, kr106::Oscillators::AudioTaper(eff_sub), 0.0f, sync);
+        if (p_osc_saw_on_ == 0 && p_osc_pulse_on_ == 0 && eff_sub <= 0.0f) osc = 0.0f;
+        float noise = noise_.Process() * eff_noise;
+        float mixed = osc + noise;
 
         // WO-13e-ii (ADR 0026): the 4-position HPF sits after osc/sub/noise mixing
         // and before the VCF, per-voice — matching the Juno-106's signal chain
         // (front-panel HPF switch feeds straight into the VCF).
         float hpf_out = hpf_.process(mixed);
 
-        filter_.process(hpf_out);  // anti-denormal inside filter.h
-        float filtered = filter_.output();
+        filter_.TrackInputEnv(hpf_out);
+        float filtered = filter_.ProcessSample(hpf_out);
+        if (!source_enabled) filtered = 0.0f;
 
         // VCA: gate-mode selects between envelope output and raw gate (1.0).
         float env_val;
