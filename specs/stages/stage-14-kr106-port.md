@@ -287,3 +287,107 @@ chorus while preserving fixed memory, the current master-chain order, and modes 
 - Do not remove calibrated analog behavior merely to hit a CPU estimate. If an attached
   device later exceeds 70% of the block period or reports `over>0`, return a CPU gate for a
   profiled optimization WO.
+
+## WO-14f-i — Relocate HPF to the global master path
+
+**Goal:** Correct the Juno-106 topology by moving the existing four-position HPF from every
+voice to one processor after voice summing and before the KR-106 chorus. This slice changes
+ownership/order only; WO-14f-ii replaces its approximate response with pinned KR behavior.
+
+### Touch list (only these six paths)
+
+1. `engine/juno_voice.h`
+2. `engine/juno_voice.cpp`
+3. `engine/synth.cpp`
+4. `engine/param_desc.cpp`
+5. `tests/host/test_voice.cpp`
+6. `specs/MEMORY.md`
+
+### Read list
+
+1. This work-order.
+2. Target `engine/juno_voice.{h,cpp}` HPF member/init/param/render sites.
+3. Target `engine/synth.cpp:{static DSP state,synth_init,changed-param loop,master loop}`.
+4. Target `engine/param_desc.cpp:HPF_CUTOFF`.
+5. Target `tests/host/test_voice.cpp` HPF integration/order tests only.
+
+### Implementation pins
+
+- Remove `Juno106Hpf` ownership, init, `HPF_CUTOFF` handling, and processing from
+  `JunoVoice`; feed its oscillator/sub/noise mix directly into the KR VCF.
+- Own one `dsp::Juno106Hpf s_hpf` in `synth.cpp`; initialize it at the engine sample rate.
+  Route changed `ParamId::HPF_CUTOFF` values to it after clamp `[0,3]`.
+- Process each `s_mono[i]` through `s_hpf` exactly once before both the KR chorus-on path
+  and dry path. Final order becomes voice sum → global HPF → KR chorus → gain → DC block →
+  limiter → soft clip → recorder.
+- Keep the stable param ID/range/default; remove `FLAG_PER_VOICE` and document global
+  post-sum ownership. Do not change response values yet.
+- Remove only tests whose premise is per-voice/pre-VCF placement; do not weaken standalone
+  HPF response/switch/finite coverage.
+
+### Acceptance
+
+- Source-order audit proves one global HPF call before both chorus branches and none in
+  `JunoVoice`. `sizeof(JunoVoice)` drops by the old HPF member size.
+- `make format`, `make host`, `make test`, `make build`, `make size`, membrane grep, and
+  `git diff --check` pass. Record image/DIRAM/voice-size deltas and commit atomically.
+
+### Split-if
+
+- Stop if master processing needs allocation, persisted values must change, HPF cannot run
+  before both branches, another file is required, or any non-HPF voice behavior changes.
+
+## WO-14f-ii — Replace HPF response with pinned KR-106 behavior
+
+**Goal:** Replace the old hand-derived HPF internals with the pinned KR-106 J106 global HPF:
+positions bass/flat/236 Hz/754 Hz, common 0.35 Hz AC coupling, and click-safe 64-sample mode
+crossfade.
+
+### Touch list (only these seven paths)
+
+1. `dsp/juno106_hpf.h`
+2. `dsp/juno106_hpf.cpp`
+3. `tests/host/test_juno106_hpf.cpp`
+4. `dsp/vendor/kr106/README.md`
+5. `specs/02-synth-architecture.md`
+6. `specs/MAP.md`
+7. `specs/MEMORY.md`
+
+### Read list
+
+1. This work-order.
+2. Source `Source/DSP/KR106_HPF.h:{getJuno106HPFFreq,BassBoostFilter}` and only
+   `Source/DSP/KR106_DSP.h:HPF` at the pinned commit.
+3. Target `dsp/juno106_hpf.{h,cpp}:Juno106Hpf`.
+4. Target `tests/host/test_juno106_hpf.cpp`.
+5. Vendor README provenance format and `specs/02` HPF signal-flow text only.
+
+### Implementation pins
+
+- Keep existing target paths/API/build registrations, but replace internals with an
+  attributed J106-only extraction/adaptation. Record exact source sections/modifications in
+  vendor README. No J6/J60/model/plugin/orchestrator code.
+- Preserve upstream positions: 0=circuit bass filter; 1=flat; 2=236 Hz; 3=754 Hz. Every
+  position includes the 0.35 Hz AC-coupling blocker. Mode changes snapshot state and
+  crossfade old/new processors over exactly 64 samples.
+- Preserve upstream bass circuit constants and response. At 48 kHz target approximately:
+  +10.10 dB @20 Hz, +7.42 dB @70 Hz, +5.86 dB @103 Hz, +1.41 dB @5 kHz; low/high shelf
+  difference about 9.1 dB. Retire the old +3 dB @70 Hz target.
+- Adapt upstream `double` bass states to `float` for RV32F. Sanitize non-finite input before
+  feedback; apply software anti-denormal hygiene to bass, DC, current and previous cut-filter
+  states. Coefficient/libm work stays outside per-sample processing.
+
+### Acceptance
+
+- Tests cover positions 2/3 at -3.01 dB near 236/754 Hz; common 0.35 Hz blocker; bass
+  response at 20/70/103/5000 Hz; deterministic split vs contiguous processing; exact
+  64-sample and rapid repeated switching; NaN/Inf input recovery; all modes bounded; long
+  FTZ-off silence with observable output normal-or-zero.
+- `make format`, `make host`, `make test`, `make build`, `make size`, membrane grep, and
+  `git diff --check` pass. Record HPF size/image/DIRAM and commit atomically.
+
+### Split-if
+
+- Stop if float state misses response tolerance, any mode is non-finite/unbounded, exact
+  crossfade semantics require another file, or adaptation exceeds the existing module's
+  focused responsibility/500-line limit.
