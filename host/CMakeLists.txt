@@ -119,7 +119,7 @@ if(SYNTH_FREEZE_DISPLAY)
 endif()
 
 target_include_directories(tanmatsu-synth-host PRIVATE
-    # Repo root: resolves "dsp/osc.h", "engine/voice.h" etc.
+    # Repo root: resolves shared DSP/vendor and engine headers.
     "${REPO_ROOT}"
     "${REPO_ROOT}/platform"
     "${REPO_ROOT}/platform/host"

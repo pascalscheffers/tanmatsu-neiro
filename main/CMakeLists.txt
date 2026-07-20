@@ -100,7 +100,7 @@ idf_component_register(
 		"../engine"
 		"../ui"
 		"../app"
-		# Repo root: resolves "dsp/osc.h", "engine/voice.h" etc.
+		# Repo root: resolves shared DSP/vendor and engine headers.
 		".."
 		# DaisySP Source root: resolves "Synthesis/oscillator.h",
 		# "Utility/dsp.h", "Noise/whitenoise.h" etc.

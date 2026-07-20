@@ -85,7 +85,7 @@ add_executable(tanmatsu-tests
 
 target_include_directories(tanmatsu-tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
-    # Repo root: resolves "dsp/osc.h", "engine/juno_voice.h" etc.
+    # Repo root: resolves shared DSP/vendor and engine headers.
     "${REPO_ROOT}"
     # Engine layer (juno_voice.h includes voice.h by short name).
     "${REPO_ROOT}/engine"
