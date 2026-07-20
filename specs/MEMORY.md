@@ -2225,6 +2225,34 @@ Remaining risk/follow-up: upstream KR-106 models the J106 HPF globally after
 the summed voices, whereas the retained pre-WO-14a HPF is per voice. WO-14a
 explicitly leaves it untouched; correct that topology in a later closed WO.
 
+## 2026-07-20 — WO-14b: KR-106 J106 ADSR + measured VCA (COMPLETE)
+
+Vendored Ultramaster KR-106 v2.5.13's unmodified `KR106ADSR.h` and
+`KR106VCA.h` at pinned commit `bc15caee5843ab238a25d0969e68d57db2b1615f`.
+`JunoVoice` now uses the firmware-ticked 14-bit J106 amp ADSR, its smoothed
+gate envelope, and the hardware-measured J106 VCA transfer curve; ENV2 and
+all public parameter IDs/physical-second semantics remain unchanged. Two
+monotonic 128-entry read-only timing maps (1,024 B total) were generated
+offline from the pinned `AttackMs`/`DecRelMs` helpers, keeping their simulation
+and libm out of the audio path. Notes born and released entirely between audio
+blocks are discarded silently instead of fabricating an inaudible release tail.
+
+Coverage now checks quantized firmware attack ticks, decay-to-sustain,
+release-to-idle including the longest bounded release, gate-edge slew, measured
+VCA nonlinearity, reset silence, finite output, and the public 1 ms/5 s A/D/R
+endpoints. `make format`, `make host`, `make test`, `make build`, `make size`,
+RT membrane grep, vendor-byte comparison, timing-table monotonicity, and
+`git diff --check` pass. Total image 1,360,140 B (+4,512 B from WO-14a's
+1,355,628 B); DIRAM 259,740/576,464 B = 45.06% (+902 B).
+`sizeof(JunoVoice)` is 696 B (+16 B from 680 B).
+
+Remaining risk/follow-up: `DecRelMs` defines perceived time to -20 dB, so
+firmware busy state intentionally outlives the public release time while the
+measured VCA suppresses the tail; maximum release nevertheless reaches digital
+idle within the tested 30 s bound. The VCA curve comes from Boaris clone-chip
+measurements, matching pinned upstream provenance rather than a population of
+original BA662 hardware.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

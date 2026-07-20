@@ -10,15 +10,94 @@
 #endif
 
 #include "Utility/dsp.h"  // daisysp::mtof
+#include "dsp/vendor/kr106/KR106VCA.h"
 #include "juno_voice.h"
 #include "mod_matrix.h"
 #include "param_id.h"
 #include "synth_config.h"  // kPitchBendRangeSemis (Stage 5c)
 
+namespace {
+
+// Generated offline from pinned KR-106 commit
+// bc15caee5843ab238a25d0969e68d57db2b1615f by evaluating
+// ADSR::AttackMs(i / 127) and ADSR::DecRelMs(i / 127), then converting ms
+// to seconds. Both tables are monotonic; together they occupy exactly 1 KiB.
+static constexpr float kJ106AttackSeconds[128] = {
+    0.00100000005f, 0.00523350015f, 0.0137005011f, 0.0221675001f, 0.0306345019f, 0.0433350019f, 0.0518020056f,
+    0.0602690056f,  0.0645025074f,  0.0772030056f, 0.0856700018f, 0.0899035111f, 0.0983704999f, 0.111071005f,
+    0.119538009f,   0.128005013f,   0.132238507f,  0.140705511f,  0.153406009f,  0.161873013f,  0.166106507f,
+    0.17880702f,    0.187274009f,   0.195741013f,  0.204208016f,  0.208441511f,  0.221142009f,  0.229608998f,
+    0.233842507f,   0.246543005f,   0.255010009f,  0.263476998f,  0.267710537f,  0.280411035f,  0.284644514f,
+    0.297345012f,   0.301578492f,   0.31427902f,   0.318512529f,  0.331213027f,  0.335446507f,  0.343913525f,
+    0.356614023f,   0.360847533f,   0.373548031f,  0.38201502f,   0.390482008f,  0.398949027f,  0.403182507f,
+    0.415883005f,   0.420116514f,   0.428583503f,  0.437050521f,  0.44551751f,   0.453984529f,  0.462451518f,
+    0.475152045f,   0.479385525f,   0.492086023f,  0.496319503f,  0.504786551f,  0.517487049f,  0.525954008f,
+    0.534421027f,   0.538654506f,   0.555588543f,  0.568289042f,  0.58098954f,   0.597923577f,  0.606390536f,
+    0.623324573f,   0.640258491f,   0.661426067f,  0.674126565f,  0.691060543f,  0.71222806f,   0.737629056f,
+    0.763030052f,   0.77996403f,    0.805365026f,  0.834999561f,  0.864634037f,  0.890035033f,  0.923903048f,
+    0.962004542f,   1.00433958f,    1.05090797f,   1.08054256f,   1.10170996f,   1.13557804f,   1.15674555f,
+    1.19484711f,    1.21601462f,    1.25834954f,   1.28375053f,   1.33455253f,   1.35995352f,   1.41498911f,
+    1.44462359f,    1.50812602f,    1.54199409f,   1.60973001f,   1.65206504f,   1.73250151f,   1.77907002f,
+    1.87220716f,    1.92724264f,    2.03731346f,   2.10081601f,   2.10081601f,   2.1643188f,    2.1643188f,
+    2.23628831f,    2.23628831f,    2.31249118f,   2.31249118f,   2.38869429f,   2.38869429f,   2.47759748f,
+    2.47759748f,    2.56650114f,    2.56650114f,   2.66810513f,   2.77394247f,   2.88824725f,   3.01525211f,
+    3.15072417f,    3.30313015f};
+
+static constexpr float kJ106DecRelSeconds[128] = {
+    0.00423349999f, 0.00846699998f, 0.00846699998f, 0.0127005f,    0.0211674999f, 0.0211674999f, 0.0254009999f,
+    0.0296345018f,  0.0296345018f,  0.0381015018f,  0.0423349999f, 0.0508019999f, 0.0592690036f, 0.0762030035f,
+    0.101604f,      0.152406007f,   0.156639501f,   0.16510652f,   0.16934f,      0.173573509f,  0.182040513f,
+    0.190507516f,   0.194741026f,   0.203207999f,   0.211675018f,  0.224375516f,  0.232842505f,  0.245543018f,
+    0.258243501f,   0.275177538f,   0.287878036f,   0.309045523f,  0.325979501f,  0.351380497f,  0.376781553f,
+    0.410649538f,   0.444517553f,   0.495319545f,   0.546121538f,  0.618091047f,  0.698527575f,  0.821299076f,
+    0.973705113f,   1.22771502f,    1.23618209f,    1.26158321f,   1.29121757f,   1.329319f,     1.35895371f,
+    1.39282155f,    1.42668951f,    1.47325814f,    1.50712621f,   1.55369449f,   1.600263f,     1.64683163f,
+    1.69763362f,    1.74843562f,    1.80770469f,    1.88390768f,   1.93470967f,   2.00667906f,   2.09558272f,
+    2.17601919f,    2.23105454f,    2.43849611f,    2.46389699f,   2.4977653f,    2.53163314f,   2.56973481f,
+    2.60360265f,    2.6671052f,     2.69673991f,    2.75600863f,   2.81104398f,   2.85761261f,   2.904181f,
+    2.94228292f,    2.99731827f,    3.0819881f,     3.10738897f,   3.1666584f,    3.23862791f,   3.31059742f,
+    3.35293198f,    3.4587698f,     3.51803875f,    3.61964273f,   3.67891169f,   3.75934839f,   3.83555126f,
+    3.9540894f,     4.04299307f,    4.14883041f,    4.22926664f,   4.47480965f,   4.5044446f,    4.60604858f,
+    4.74575424f,    4.89392662f,    5.05903244f,    5.2072053f,    5.36384487f,   5.60092115f,   5.75332689f,
+    5.93960094f,    6.25711298f,    6.45608759f,    6.71009779f,   7.04877758f,   7.35782337f,   7.8362093f,
+    8.06905079f,    8.5220356f,     8.91151905f,    9.49574184f,   10.0418625f,   10.7869596f,   11.7140951f,
+    12.8190384f,    13.8393126f,    15.1601648f,    16.7942963f,   19.1269531f,   19.651907f,    20.1726303f,
+    20.8965569f,    21.7474918f};
+
+static int nearest_timing_index(const float (&table)[128], float seconds) {
+    if (seconds <= table[0]) return 0;
+    if (seconds >= table[127]) return 127;
+
+    int lo = 0;
+    int hi = 127;
+    while (lo + 1 < hi) {
+        const int mid = lo + (hi - lo) / 2;
+        if (table[mid] < seconds) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    return (seconds - table[lo] <= table[hi] - seconds) ? lo : hi;
+}
+
+static void configure_amp_envelope(kr106::ADSR& env, float sample_rate, float attack, float decay, float sustain,
+                                   float release) {
+    env.mModel = kr106::kJ106;
+    env.SetSampleRate(sample_rate);
+    env.Set106Attack((float)nearest_timing_index(kJ106AttackSeconds, attack) / 127.0f);
+    env.Set106Decay(nearest_timing_index(kJ106DecRelSeconds, decay));
+    env.SetSustain(std::clamp(sustain, 0.0f, 1.0f));
+    env.Set106Release(nearest_timing_index(kJ106DecRelSeconds, release));
+}
+
+}  // namespace
+
 void JunoVoice::init(float sample_rate) {
-    sample_rate_ = sample_rate;
-    gate_        = false;
-    vel_scale_   = 1.0f;
+    sample_rate_  = sample_rate;
+    gate_         = false;
+    amp_rendered_ = false;
+    vel_scale_    = 1.0f;
 
     oscillators_.mPulseInvert = true;
     oscillators_.mSawAmp      = kr106::kSawAmpJ106;
@@ -35,18 +114,13 @@ void JunoVoice::init(float sample_rate) {
     filter_.mJ106Res = true;
     filter_.SetSampleRate(sample_rate);
     filter_.Reset();
-    env_.init(sample_rate);
+    configure_amp_envelope(amp_env_, sample_rate_, p_attack_, p_decay_, p_sustain_, p_release_);
 
     // Stage 3a: init second envelope.
     // ADR 0018: LFOs moved to engine (shared free-running); no per-voice init.
     env2_.init(sample_rate);
 
     filter_.UpdateCoeffs(p_cutoff_ / (sample_rate_ * 0.5f), p_res_);
-    env_.set_attack(p_attack_);
-    env_.set_decay(p_decay_);
-    env_.set_sustain(p_sustain_);
-    env_.set_release(p_release_);
-
     env2_.set_attack(p_env2_attack_);
     env2_.set_decay(p_env2_decay_);
     env2_.set_sustain(p_env2_sustain_);
@@ -56,9 +130,10 @@ void JunoVoice::init(float sample_rate) {
 void JunoVoice::note_on(uint8_t pitch, uint8_t velocity, NoteExpression expr) {
     (void)expr;  // MPE fields wired in Stage 5
 
-    midi_note_ = pitch;
-    vel_scale_ = (float)velocity / 127.0f;
-    gate_      = true;
+    midi_note_    = pitch;
+    vel_scale_    = (float)velocity / 127.0f;
+    gate_         = true;
+    amp_rendered_ = false;
 
     // Reset LFO delay fade-in counters on each new note.
     lfo1_delay_pos_ = 0.0f;
@@ -67,13 +142,19 @@ void JunoVoice::note_on(uint8_t pitch, uint8_t velocity, NoteExpression expr) {
     // doesn't see a stale value from a previous note (ADR 0018).
     lfo1_raw_       = 0.0f;
     lfo2_raw_       = 0.0f;
+    amp_env_.NoteOn();
 }
 
 void JunoVoice::note_off() {
     gate_ = false;
-    // Deliver the falling edge now: an already-idle voice will no longer be rendered,
-    // but DaisySP still needs gate=false before the slot can retrigger.
-    env_.process(false);
+    if (amp_rendered_) {
+        amp_env_.NoteOff();
+    } else {
+        // A note born and released entirely between audio blocks was never
+        // audible, so it must not leave a synthetic release tail behind.
+        amp_env_ = kr106::ADSR{};
+        configure_amp_envelope(amp_env_, sample_rate_, p_attack_, p_decay_, p_sustain_, p_release_);
+    }
     env2_.process(false);
 }
 
@@ -87,9 +168,11 @@ void JunoVoice::set_expression(float mod_wheel, float pitch_bend, float aftertou
 }
 
 void JunoVoice::reset() {
-    gate_      = false;
-    vel_scale_ = 1.0f;
-    env_.reset();  // re-init to IDLE: no release tail, instant silence
+    gate_         = false;
+    amp_rendered_ = false;
+    vel_scale_    = 1.0f;
+    amp_env_      = kr106::ADSR{};
+    configure_amp_envelope(amp_env_, sample_rate_, p_attack_, p_decay_, p_sustain_, p_release_);
     env2_.reset();
     oscillators_.Reset();
     filter_.Reset();
@@ -174,19 +257,19 @@ void JunoVoice::set_param(int id, float value) {
         // --- ENV ---
         case ParamId::ENV_ATTACK:
             p_attack_ = value;
-            env_.set_attack(value);
+            amp_env_.Set106Attack((float)nearest_timing_index(kJ106AttackSeconds, value) / 127.0f);
             break;
         case ParamId::ENV_DECAY:
             p_decay_ = value;
-            env_.set_decay(value);
+            amp_env_.Set106Decay(nearest_timing_index(kJ106DecRelSeconds, value));
             break;
         case ParamId::ENV_SUSTAIN:
             p_sustain_ = value;
-            env_.set_sustain(value);
+            amp_env_.SetSustain(std::clamp(value, 0.0f, 1.0f));
             break;
         case ParamId::ENV_RELEASE:
             p_release_ = value;
-            env_.set_release(value);
+            amp_env_.Set106Release(nearest_timing_index(kJ106DecRelSeconds, value));
             break;
 
         // --- Stage 3a: ENV2 ---
@@ -245,7 +328,7 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
     // Early exit when both envelopes are idle (post-release or pre-first-note).
     // ADR 0018: LFO phase is now engine-owned (free-running); the engine advances
     // the shared LFO unconditionally every block and injects via set_lfo_inputs().
-    if (!gate_ && env_.is_idle() && env2_.is_idle()) {
+    if (!amp_env_.GetBusy() && env2_.is_idle()) {
         return;
     }
 
@@ -392,14 +475,18 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
         float filtered = filter_.ProcessSample(hpf_out);
         if (!source_enabled) filtered = 0.0f;
 
-        // VCA: gate-mode selects between envelope output and raw gate (1.0).
+        // The firmware envelope always advances at audio rate. Gate mode uses
+        // its BA662-style edge smoothing; envelope mode passes through the
+        // measured J106 VCA transfer curve.
+        const float amp_env = std::clamp(amp_env_.Process(), 0.0f, 1.0f);
+        amp_rendered_       = true;
         float env_val;
         if (p_vca_gate_mode_ != 0) {
-            env_val = gate_ ? vel_scale_ : 0.0f;  // gate mode: hard on/off
+            env_val = amp_env_.mGateEnv;
         } else {
-            env_val = env_.process(gate_) * vel_scale_;
+            env_val = kr106::VCAGainJ106(amp_env);
         }
-        buf[i] += filtered * env_val * p_vca_level_;
+        buf[i] += filtered * env_val * vel_scale_ * p_vca_level_;
 
         // Stage 3a: advance ENV2 at audio rate so its per-sample state machine
         // is exact; cache the last sample for the next block's mod-matrix eval.
@@ -440,5 +527,5 @@ IRAM_ATTR void JunoVoice::render(float* buf, size_t n) {
 
 bool JunoVoice::is_active() const {
     // Active while gate is held OR the release tail is still running.
-    return gate_ || !env_.is_idle();
+    return amp_env_.GetBusy();
 }

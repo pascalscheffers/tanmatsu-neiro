@@ -20,6 +20,7 @@
 #include "dsp/env.h"
 #include "dsp/juno106_hpf.h"
 #include "dsp/lfo.h"
+#include "dsp/vendor/kr106/KR106ADSR.h"
 #include "dsp/vendor/kr106/KR106Oscillators.h"
 #include "dsp/vendor/kr106/KR106VCF_OPTIMIZED.h"
 #include "mod_matrix.h"
@@ -70,6 +71,7 @@ public:
 private:
     float   sample_rate_    = 48000.0f;
     bool    gate_           = false;
+    bool    amp_rendered_   = false;  // current note reached the audio path
     float   vel_scale_      = 1.0f;
     uint8_t midi_note_      = 69;    // MIDI pitch from last note_on (for key_track)
     float   p_pitch_offset_ = 0.0f;  // portamento glide offset (semitones, from alloc)
@@ -83,7 +85,7 @@ private:
     daisysp::WhiteNoise noise_;
     dsp::Juno106Hpf     hpf_;  // WO-13e-ii: per-voice, post-mix, pre-VCF (ADR 0026).
     kr106::VCF          filter_;
-    dsp::Env            env_;
+    kr106::ADSR         amp_env_;
 
     // --- Stage 3a: second envelope ---
     dsp::Env env2_;

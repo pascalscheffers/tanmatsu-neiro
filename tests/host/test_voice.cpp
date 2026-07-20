@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "dsp/juno106_hpf.h"
+#include "dsp/vendor/kr106/KR106VCA.h"
 #include "juno_voice.h"
 #include "param_id.h"
 #include "runner.h"
@@ -48,8 +49,7 @@ void test_voice_adsr_shape() {
 
     float buf[64];
 
-    // First block (0-64 samples): attack is 0.01 s = 480 samples, so we're
-    // at the very start of the ramp — output should be small but rising.
+    // The public 10 ms attack maps to the nearest firmware slider step.
     memset(buf, 0, sizeof(buf));
     v.render(buf, 64);
     float rms_early = rms(buf, 64);
@@ -77,9 +77,6 @@ void test_voice_silent_after_release() {
     v.init(kSampleRate);
 
     // Short release for a deterministic test: 0.05 s.
-    // DaisySP ADSR uses an RC time constant; the envelope reaches ~0.014× of
-    // sustain after ~4.26 × time_constant samples, which for 0.05 s at 48 kHz
-    // is ~10 240 samples (~160 blocks).  Run 220 blocks to be safe.
     v.set_param((int)ParamId::ENV_RELEASE, 0.05f);
 
     NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
@@ -94,8 +91,8 @@ void test_voice_silent_after_release() {
 
     v.note_off();
 
-    // Run 220 blocks (14 080 samples) through the release tail.
-    for (int b = 0; b < 220; b++) {
+    // Run at most two seconds through the firmware-timed release tail.
+    for (int b = 0; b < 1500 && v.is_active(); b++) {
         memset(buf, 0, sizeof(buf));
         v.render(buf, 64);
     }
@@ -138,6 +135,18 @@ void test_voice_reset_silences() {
     v.render(buf, 64);
     TEST_ASSERT(rms(buf, 64) < 0.0001f, "output must be zero immediately after reset()");
     TEST_ASSERT(!v.is_active(), "is_active() must return false after reset()");
+    test_pass();
+}
+
+void test_voice_unrendered_note_has_no_tail() {
+    test_begin("note_on/note_off between audio blocks leaves no amp tail");
+
+    JunoVoice v;
+    v.init(kSampleRate);
+    NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+    v.note_on(69, 127, expr);
+    v.note_off();
+    TEST_ASSERT(!v.is_active(), "an unrendered note must finish silently on note_off");
     test_pass();
 }
 
@@ -220,8 +229,8 @@ void test_voice_zero_sustain_retrigger() {
     v.note_on(69, 127, expr);
 
     float buf[64];
-    // Fixed-duration render is well beyond attack + short decay, leaving the
-    // DaisySP envelope idle while JunoVoice remains active via its held gate.
+    // Fixed-duration render is well beyond attack + short decay. A held J106
+    // envelope remains busy at zero sustain until it receives NoteOff.
     for (int b = 0; b < 200; b++) {
         memset(buf, 0, sizeof(buf));
         v.render(buf, 64);
@@ -229,12 +238,104 @@ void test_voice_zero_sustain_retrigger() {
     TEST_ASSERT(v.is_active(), "held gate must keep an idle-envelope voice active");
 
     v.note_off();
-    TEST_ASSERT(!v.is_active(), "note_off must deactivate the already-idle voice");
+    for (int b = 0; b < 8 && v.is_active(); ++b) {
+        memset(buf, 0, sizeof(buf));
+        v.render(buf, 64);
+    }
+    TEST_ASSERT(!v.is_active(), "zero-level release must reach firmware idle promptly");
 
     v.note_on(69, 127, expr);
     memset(buf, 0, sizeof(buf));
     v.render(buf, 64);
     TEST_ASSERT(rms(buf, 64) > 0.001f, "reused zero-sustain voice must retrigger");
+    test_pass();
+}
+
+/* --- KR-106 firmware envelope and measured VCA --------------------------- */
+void test_voice_kr106_amp_components() {
+    test_begin("KR-106 ADSR: tick timing, sustain, release, gate slew, and VCA curve");
+
+    kr106::ADSR env;
+    env.mModel = kr106::kJ106;
+    env.SetSampleRate(kSampleRate);
+    env.Set106Attack(1.0f / 127.0f);
+    env.Set106Decay(0);
+    env.SetSustain(0.5f);
+    env.Set106Release(0);
+    env.NoteOn();
+
+    const uint16_t first_tick = env.mEnvInt;
+    TEST_ASSERT(first_tick > 0 && first_tick < kr106::ADSR::kEnvMax, "note-on must apply one quantized attack tick");
+    for (int i = 0; i < 100; ++i) env.Process();
+    TEST_ASSERT(env.mEnvInt == first_tick, "integer attack must wait for the next firmware tick");
+    for (int i = 0; i < 200; ++i) env.Process();
+    TEST_ASSERT(env.mEnvInt > first_tick, "integer attack must advance at the next firmware tick");
+
+    env.Set106Attack(0.0f);
+    env.NoteOn();
+    TEST_ASSERT(env.mState == kr106::ADSR::kDecay, "shortest attack must enter decay on the note-on tick");
+    for (int i = 0; i < 1000; ++i) env.Process();
+    TEST_ASSERT(env.mEnvInt == env.mSusInt, "fast decay must settle exactly at the quantized sustain level");
+
+    env.NoteOff();
+    for (int i = 0; i < 1000 && env.GetBusy(); ++i) env.Process();
+    TEST_ASSERT(!env.GetBusy(), "fast release must terminate at firmware idle");
+
+    kr106::ADSR gate_env;
+    gate_env.mModel = kr106::kJ106;
+    gate_env.SetSampleRate(kSampleRate);
+    gate_env.Set106Attack(0.0f);
+    gate_env.Set106Decay(0);
+    gate_env.SetSustain(1.0f);
+    gate_env.Set106Release(0);
+    gate_env.NoteOn();
+    gate_env.Process();
+    TEST_ASSERT(gate_env.mGateEnv > 0.0f && gate_env.mGateEnv < 1.0f, "gate-mode attack edge must be smoothed");
+    for (int i = 0; i < 31; ++i) gate_env.Process();
+    TEST_ASSERT(fabsf(gate_env.mGateEnv - 1.0f) < 1e-6f, "gate-mode attack slew must reach unity in 32 samples");
+    gate_env.NoteOff();
+    gate_env.Process();
+    TEST_ASSERT(gate_env.mGateEnv > 0.0f && gate_env.mGateEnv < 1.0f, "gate-mode release edge must be smoothed");
+
+    TEST_ASSERT(kr106::VCAGainJ106(0.0f) == 0.0f, "measured VCA curve must be silent at zero envelope");
+    TEST_ASSERT(fabsf(kr106::VCAGainJ106(1.0f) - 1.0f) < 1e-6f, "measured VCA curve must reach unity at full envelope");
+    TEST_ASSERT(kr106::VCAGainJ106(0.05f) < 0.04f, "measured VCA curve must be nonlinear in its low-level region");
+
+    kr106::ADSR longest;
+    longest.mModel = kr106::kJ106;
+    longest.SetSampleRate(kSampleRate);
+    longest.Set106Attack(1.0f);
+    longest.Set106Decay(127);
+    longest.SetSustain(0.0f);
+    longest.Set106Release(127);
+    longest.NoteOn();
+    for (int i = 0; i < (int)(4.0f * kSampleRate) && longest.mState == kr106::ADSR::kAttack; ++i) longest.Process();
+    TEST_ASSERT(longest.mState == kr106::ADSR::kDecay, "longest attack slider must complete in bounded time");
+    longest.NoteOff();
+    for (int i = 0; i < (int)(30.0f * kSampleRate) && longest.GetBusy(); ++i) longest.Process();
+    TEST_ASSERT(!longest.GetBusy(), "longest release slider must reach idle in bounded time");
+    test_pass();
+}
+
+void test_voice_amp_public_extremes_finite() {
+    test_begin("JunoVoice amp envelope: public 1 ms and 5 s A/D/R endpoints stay finite");
+
+    const float endpoints[2] = {0.001f, 5.0f};
+    for (float seconds : endpoints) {
+        JunoVoice v;
+        v.init(kSampleRate);
+        v.set_param((int)ParamId::ENV_ATTACK, seconds);
+        v.set_param((int)ParamId::ENV_DECAY, seconds);
+        v.set_param((int)ParamId::ENV_RELEASE, seconds);
+        NoteExpression expr{0.0f, 0.0f, 0.0f, 1};
+        v.note_on(69, 127, expr);
+        float buf[64] = {};
+        for (int block = 0; block < 64; ++block) {
+            memset(buf, 0, sizeof(buf));
+            v.render(buf, 64);
+            for (float sample : buf) TEST_ASSERT(isfinite(sample), "public A/D/R endpoint produced non-finite output");
+        }
+    }
     test_pass();
 }
 
@@ -427,9 +528,12 @@ void test_voice_suite() {
     test_voice_adsr_shape();
     test_voice_silent_after_release();
     test_voice_reset_silences();
+    test_voice_unrendered_note_has_no_tail();
     test_voice_set_param_zero_levels();
     test_voice_set_param_cutoff();
     test_voice_zero_sustain_retrigger();
+    test_voice_kr106_amp_components();
+    test_voice_amp_public_extremes_finite();
     test_voice_hpf_signal_order_and_positions();
     test_voice_hpf_switch_bounded();
     test_voice_kr106_phase_coherence();
