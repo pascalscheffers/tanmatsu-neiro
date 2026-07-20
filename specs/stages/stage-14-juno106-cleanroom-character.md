@@ -1,7 +1,8 @@
 # Stage 14 — Juno-106 clean-room character pass
 
-**Status: authored 2026-07-19. Implementation-ready through WO-CR-2; WO-CR-3..8 need
-their analysis note before dispatch (see per-WO "Analysis gate").**
+**Status: authored 2026-07-19. WO-CR-1b dispatchable once its analysis note lands; WO-CR-2
+blocks on stage 13 WO-13h (which owns the control-curve note CR-2 consumes); WO-CR-3..8 need
+their own analysis note before dispatch (see per-WO "Analysis gate").**
 
 Stage 13 loads all 128 factory patches *correctly* (the data is faithful). This stage makes
 them *sound* like a Juno-106: the analog-character DSP the patches assume — a 4-pole
@@ -70,6 +71,7 @@ HPF-analysis-shaped note for this bit."
 |---|---|---|---|
 | VCF topology & order | CR-1 | sonic + CPU-budget | Replace 2-pole SVF with 4-pole 24 dB/oct self-oscillating ladder for the Juno model? CPU cost of 2× oversampling on 6 voices. |
 | Each analysis note | CR-3..8 | sonic + licensing | The TARGET values themselves (they define the sound) and that every cited source is ALLOWED. Sign-off is an Opus gate. |
+| Control-curve note | CR-2 | — | **Not owned here** — that note is stage 13 **WO-13h**'s deliverable + gate. CR-2 only consumes it; do not dispatch CR-2 until 13h's curve note is landed and signed. |
 | Self-osc level compensation | CR-1 | sonic | How resonance→self-oscillation gain is normalised against master soft-clip (ADR 0016/0021). |
 
 Everything else (file layout, which test, internal state) is decide-with-default.
@@ -113,29 +115,31 @@ Produce `specs/notes/juno106-vcf-analysis.md` (HPF-note shape). Distil from ALLO
 
 ---
 
-### WO-CR-2 — Control-curve calibration (byte 0..127 → real units)
+### WO-CR-2 — Runtime control-curve fidelity (consumes WO-13h's note)
 
-The `juno106-parameter-set.md` §B item 1 — the biggest *coverage* gap. Every continuous param
-currently maps roughly linearly; real Juno curves are non-linear (exponential env times,
-exponential cutoff).
+> **Not a new note — depends on stage 13 WO-13h.** The control-curve *physics* note,
+> `specs/notes/juno106-control-curves.md`, is **WO-13h's deliverable** (stage 13 §WO-13h touch
+> list), authored on the *import* side: raw Juno byte `0..127` → decoded `PresetPatch` units.
+> This WO does **not** re-author it. WO-CR-2 covers only the **runtime** layer WO-13h does not
+> touch: whether the engine's `ParamDesc` normalized→DSP-unit mapping in `JUNO_PARAM_TABLE`
+> reproduces the note's TARGET units live (exponential cutoff Hz, exponential ADSR seconds,
+> etc.). If the generic `ParamDesc` curves already hit TARGET for every Juno row, this WO is a
+> verification test only; where they don't, it fills the gap with Juno-specific curve fields.
 
-**Phase 2a — analysis note (Opus-led, gated).**
-Produce `specs/notes/juno106-control-curves.md` (the WO-13h note that §B says is not yet
-written). One TARGET row per continuous param: LFO rate (Hz) + delay (s), DCO/VCF LFO depths,
-VCF cutoff (Hz) + res, VCF env depth, key-follow slope, ADSR A/D/S/R (s), VCA/sub/noise levels
-— each as a `byte → unit` law (linear / exponential / piecewise), cited to Roland doc +
-measurement, **never a borrowed table** (ADR 0026 bans clone-generated curve tables).
-🛑 OPUS GATE — the curve TARGETs are sonic; sign off before dispatch.
+**Prerequisite (hard):** `specs/notes/juno106-control-curves.md` exists and its curve TARGETs
+are gate-signed — i.e. **WO-13h has landed** (or at minimum its curve note is committed and
+Opus-approved). Do not dispatch CR-2 before then; without the note there is nothing to verify
+against. This is the CR-2 analysis gate — it resolves in stage 13, not here.
 
-**Phase 2b — implementation (Sonnet worker).**
+**Implementation (Sonnet worker).**
 | Field | Value |
 |---|---|
-| **Touch list** | `engine/param_desc.cpp` (curve fields in `JUNO_PARAM_TABLE`), a small `dsp/curve.h` if a shared exp/piecewise helper is warranted, `tests/host/test_juno_curves.cpp`. |
-| **Read list** | `specs/notes/juno106-control-curves.md` (TARGET laws); `engine/param_desc.h` (`ParamDesc` curve field); spec 05 param-table section; `engine/param_id.h` (the IDs). |
-| **Reuse** | The existing `ParamDesc` curve mechanism — this is table data + one helper, not new engine wiring. |
-| **Don't-read** | KR-106 anything, GPL clone source, live web. |
-| **Acceptance** | Builds/tests green. Test checks each param's byte 0/64/127 maps to the note's TARGET unit within tolerance. Load a known factory patch, assert resulting cutoff Hz / env seconds match TARGET. Membrane clean. `make size`. |
-| **Split-if** | > ~8 params need bespoke (non-shared) curves → split by section (LFO+DCO / VCF / ENV+VCA). |
+| **Touch list** | `engine/param_desc.cpp` (Juno curve fields in `JUNO_PARAM_TABLE`, only where generic curve misses TARGET), a small `dsp/curve.h` if a shared exp/piecewise helper is warranted, `tests/host/test_juno_curves.cpp`. |
+| **Read list** | `specs/notes/juno106-control-curves.md` (13h's TARGET laws — the source of truth); `engine/param_desc.h` (`ParamDesc` curve field); spec 05 param-table section; `engine/param_id.h`. |
+| **Reuse** | The existing `ParamDesc` curve mechanism + WO-13h's already-authored conversion functions — reuse, don't re-derive. Table data + at most one helper, not new engine wiring. |
+| **Don't-read** | KR-106 anything, GPL clone source, live web; the WO-13h *implementation* (`juno106_patch.*`) — read its **note**, not its decoder. |
+| **Acceptance** | Builds/tests green. Test asserts each continuous Juno param's normalized 0/0.5/1 maps to the note's TARGET DSP unit within tolerance; load a known factory patch and assert live cutoff Hz / env seconds match TARGET. Membrane clean. `make size`. |
+| **Split-if** | > ~8 params need bespoke (non-shared) runtime curves → split by section (LFO+DCO / VCF / ENV+VCA). |
 
 ---
 
@@ -198,6 +202,8 @@ spread. Lowest priority — do after 1–7 land.
 
 - **CR-1 (VCF)** and **CR-2 (curves)** are the two that change how every patch sounds — do them
   first, in that order (CR-2's cutoff curve depends on CR-1's cutoff→Hz TARGET being fixed).
+  **CR-2 additionally blocks on stage 13 WO-13h** (it owns the `juno106-control-curves.md`
+  note CR-2 verifies against) — CR-1 can proceed independently.
 - **CR-3..7** are independent quality passes, any order, after CR-1/2.
 - **CR-8** is last (it layers imperfection on an otherwise-correct voice).
 - Each WO's **analysis note is committed before its implementation WO is dispatched** — that
