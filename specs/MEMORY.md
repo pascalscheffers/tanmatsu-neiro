@@ -2362,6 +2362,22 @@ is 1,377,042 B (34% app partition free); mapped flash 1,227,004 B; DIRAM
 BENCH-guarded firmware code, host tests, and unused wrapper headers changed. Next:
 WO-14e-ii removes the now-dead Daisy oscillator/SVF/chorus build and linker entries.
 
+## 2026-07-20 — WO-14e-ii: prune obsolete Daisy build/link entries (COMPLETE)
+
+Removed the superseded Daisy oscillator, SVF, and chorus sources from host, test, and
+device manifests, plus the stale oscillator/SVF noflash mappings and Daisy-chorus linker
+prose. Retained compiled ADSR (ENV2), DC blocker (master output), Utility math for `mtof`,
+all KR DSP, and live noflash mappings for synth, ADSR, ModMatrix, allocator, and libm.
+
+`make host`, `make test`, `make BENCH=1 build`, normal `make build`, `make size`, device-map
+audit, and `git diff --check` pass. The map contains no `oscillator.cpp.obj`, `svf.cpp.obj`,
+or `chorus.cpp.obj`; retained IRAM proof includes `synth_render` 0x4ff01ac2, ADSR Process
+0x4ff18bea, ModMatrix eval 0x4ff18d24, VoiceAlloc init 0x4ff1ad2c, KR chorus Process
+0x4ff19424, and libm leaves 0x4ff1824a–0x4ff18996. Image remains 1,377,042 B, mapped flash
+1,227,004 B, and DIRAM 260,018/576,464 B (45.11%): zero delta from WO-14e-i because the
+removed objects had no live sections. No gate opened. Next: WO-14e-iii deletes the now-
+unreferenced vendored Daisy source files.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

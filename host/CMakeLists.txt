@@ -76,11 +76,8 @@ set(HOST_SRCS
     "${REPO_ROOT}/dsp/vendor/cjson/cJSON.c"
     # WO-13-neiro-bank: generated host embed of engine/banks/neiro_factory.json.
     "${CMAKE_CURRENT_BINARY_DIR}/generated/factory_bank_embed.cpp"
-    # DaisySP modules (header-only: whitenoise, dsp wrappers).
-    "${DAISYSP}/Source/Synthesis/oscillator.cpp"
-    "${DAISYSP}/Source/Filters/svf.cpp"
+    # Live DaisySP modules (header-only: whitenoise, dsp wrappers, Utility math).
     "${DAISYSP}/Source/Control/adsr.cpp"
-    "${DAISYSP}/Source/Effects/chorus.cpp"
     "${DAISYSP}/Source/Utility/dcblock.cpp"
     # Stage 1d: musical-typing input.
     "${REPO_ROOT}/control/keyboard.c"

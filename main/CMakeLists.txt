@@ -51,11 +51,8 @@ idf_component_register(
 		# WO-13-neiro-bank: device embed of engine/banks/neiro_factory.json
 		# (bytes come from EMBED_TXTFILES below).
 		"factory_bank_embed.cpp"
-		# DaisySP modules.
-		"${DAISYSP}/Source/Synthesis/oscillator.cpp"
-		"${DAISYSP}/Source/Filters/svf.cpp"
+		# Live DaisySP modules (Utility math remains header-only).
 		"${DAISYSP}/Source/Control/adsr.cpp"
-		"${DAISYSP}/Source/Effects/chorus.cpp"
 		"${DAISYSP}/Source/Utility/dcblock.cpp"
 		# Stage 1d: musical-typing input.
 		"../control/keyboard.c"

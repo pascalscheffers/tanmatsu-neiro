@@ -7,16 +7,15 @@
 # blows the block deadline (the poly smash-crackle).
 #
 # JunoVoice::render is IRAM_ATTR, but IRAM_ATTR places only that function's own
-# code — its per-sample callees (the DaisySP Oscillator/Svf/Adsr leaves) stayed
-# in flash. This fragment maps those three vendor objects into IRAM (noflash =
-# .text→iram, .rodata→dram) with no vendor-source edits. ESP32-P4 DIRAM has
-# ample headroom (~418 KB free); these objects are a few KB of .text each.
+# code. The remaining compiled DaisySP leaf is Adsr (ENV2); the oscillator,
+# filter, and chorus are KR implementations. Whole-object noflash mapping keeps
+# live audio code and constants in internal RAM without vendor-source edits.
 #
 # Stage 8 (final): the earlier per-voice fix wasn't the whole story — the
-# ELF map still showed Chorus::Process (master chain), ModMatrix::eval and
-# voice_alloc.cpp (block-rate drain) running from flash, plus every libm
+# ELF map still showed the master chain, ModMatrix::eval and voice_alloc.cpp
+# (block-rate drain) running from flash, plus every libm
 # transcendental (sinf/cosf/powf/expf/exp2f/logf/log2f/sqrtf/fmodf) the audio
-# path calls (Svf::SetFreq, mtof, Chorus's LFO, dsp/lfo.h, dsp/limiter.h).
+# path calls (including mtof, dsp/lfo.h, and dsp/limiter.h).
 # Any of these executing from flash XIP can stall core 1 mid-block when a
 # core-0 present/blit burst contends the shared MSPI — the poly onset-crackle.
 # Whole-object noflash mapping also pulls each object's .rodata to DRAM, so
@@ -25,8 +24,6 @@
 [mapping:audio_dsp_iram]
 archive: libmain.a
 entries:
-    oscillator (noflash)
-    svf (noflash)
     adsr (noflash)
     synth (noflash)
     mod_matrix (noflash)
