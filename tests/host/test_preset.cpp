@@ -33,7 +33,7 @@ static int preset_eligible_param_count(void) {
     return count;
 }
 
-// WO-13i: the 140-span factory bank puts the 128 original Juno-106 patches
+// The 140-span factory bank puts the 128 imported Juno-106 patches
 // first (indices [0, 128)) and the 12 Neiro patches last ([128, 140)), so
 // "INIT" (a Neiro patch) is no longer index 0. Tests that care about INIT's
 // specific content look it up by name rather than hardcoding an index.
@@ -102,11 +102,8 @@ static void test_factory_master_gain_is_unity(void) {
 }
 
 // ---------------------------------------------------------------------------
-// WO-13i: unified 140-span factory provider (128 Juno-106 originals + 12
-// Neiro patches). Names/uncertain-slot marking are baked into
-// engine/banks/juno106_factory.json already (WO-13h) — these tests only
-// check the merged facade wires that data through correctly, never re-derive
-// or re-mark anything.
+// Unified 140-span factory provider (128 Juno-106 originals + 12 Neiro
+// patches). WO-14g replaces only the first span's data source and names.
 // ---------------------------------------------------------------------------
 
 static void test_factory_bank_is_140_span(void) {
@@ -116,22 +113,18 @@ static void test_factory_bank_is_140_span(void) {
 }
 
 static void test_factory_bank_boundary_names(void) {
-    test_begin("factory bank boundary names match juno106_factory.json slot labels");
-    TEST_ASSERT(strcmp(preset_factory_name(0), "A11") == 0, "index 0 must be A11");
-    TEST_ASSERT(strcmp(preset_factory_name(127), "B88 (uncertain)") == 0, "index 127 must be B88 (uncertain)");
+    test_begin("factory bank boundary names preserve KR-106 descriptions");
+    TEST_ASSERT(strcmp(preset_factory_name(0), "A11 Brass") == 0, "index 0 must be A11 Brass");
+    TEST_ASSERT(strcmp(preset_factory_name(127), "B88 Owgan") == 0, "index 127 must be B88 Owgan");
     test_pass();
 }
 
-static void test_factory_bank_has_uncertain_slot(void) {
-    test_begin("factory bank carries at least one (uncertain) slot");
-    bool found = false;
+static void test_factory_bank_has_no_tape_uncertainty(void) {
+    test_begin("KR-106 factory span carries no tape uncertainty suffixes");
     for (int i = 0; i < 128; i++) {
-        if (strstr(preset_factory_name(i), "(uncertain)") != nullptr) {
-            found = true;
-            break;
-        }
+        TEST_ASSERT(strstr(preset_factory_name(i), "(uncertain)") == nullptr,
+                    "KR-106 factory name must not carry tape uncertainty");
     }
-    TEST_ASSERT(found, "expected at least one (uncertain)-suffixed original slot");
     test_pass();
 }
 
@@ -486,7 +479,7 @@ void test_preset_suite(void) {
     test_factory_master_gain_is_unity();
     test_factory_bank_is_140_span();
     test_factory_bank_boundary_names();
-    test_factory_bank_has_uncertain_slot();
+    test_factory_bank_has_no_tape_uncertainty();
     test_factory_bank_neiro_span_in_order();
     test_factory_params_valid_for_original_and_neiro();
     test_factory_params_deterministic_for_original();

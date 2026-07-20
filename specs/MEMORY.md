@@ -2489,3 +2489,14 @@ root cause was the I2S slot-format mismatch, fixed and device-verified in WO-12a
 - Verify: `make format`, `make host`, `make test`, `make build`, and `make size` pass;
   membrane check has no new portable-layer violations. Flash 1,056,278 B; DIRAM
   241,474/576,464 B (41.89%); image 1,186,536 B.
+## 2026-07-20 — WO-14g KR-106 Juno factory bank
+
+- Replaced the tape-derived 128-patch span with pinned KR-106 v2.5.13 J106
+  entries, preserving descriptive names and raw 44-controller provenance.
+- Builder now maps the KR ABI, exact port ADSR tables, direct switches, and
+  corrected octave/chorus semantics; long D/R clamp to Neiro's 5 s seam.
+- Documented bank-only LFO/cutoff/modulation/PWM/VCA approximations; exact
+  sonic parity remains separate runtime/public-seam work.
+- Gates green: format, host, test, device build, size (1,363,226-byte image),
+  deterministic `--check`, membrane, and diff checks. UI name assertion was
+  added by orchestrator-approved acceptance-test scope amendment.

@@ -113,3 +113,33 @@ All other Neiro-only rows (LFO2, arp, unison, portamento, free chorus rate/depth
 clock, etc.) are simply absent from each generated patch's `params` object — per
 `engine/bank_json.h`, absent keys are not an error; WO-13i / the engine's own defaults
 own filling them in, not this offline mapper.
+# KR-106 factory-bank conversion (WO-14g)
+
+The generated factory bank now consumes the committed J106 entries 128–255
+from Ultramaster KR-106 v2.5.13 at commit
+`bc15caee5843ab238a25d0969e68d57db2b1615f`. The raw artifact preserves all
+44 controller integers and descriptive names; the builder maps only KR
+indices 3–19 and 23–35.
+
+Direct semantics are preserved for HPF, pulse, saw, PWM mode, VCF envelope
+polarity, VCA gate mode, octave (`0/1/2` → `-12/0/+12` semitones), and chorus
+(I → 1, II → 2, neither → 0). Sub level is zero when KR's sub switch is off.
+Normalized depth and level controls retain `raw / 127`. The one Juno ADSR is
+duplicated into ENV1 and ENV2 because Neiro's filter modulation reads ENV2.
+KR's derived chorus-off field and LFO-mode field have no stored Neiro
+counterpart and are omitted, as are Neiro's legacy Filter Mode and chorus
+rate/depth/delay no-ops. Osc Level and Master Gain use neutral unity values.
+
+This is a preset-data conversion, not a claim of bit-identical audio. Neiro's
+physical-value seam needs bank-only approximations for LFO rate
+(`0.01 * 2000^(raw/127)` Hz), LFO delay (`5 * raw/127` seconds), and cutoff
+(`20 * 1000^(raw/127)` Hz). Attack, decay, and release use the exact timing
+tables already generated from the pinned KR-106 port, but values above the
+public 5-second envelope ceiling clamp to 5 seconds. Those long raw decay and
+release indices therefore collapse and do not select their original KR timing
+index at runtime.
+
+Exact sonic parity would require separate runtime/public-seam work. Current
+DCO-LFO and PWM depth laws, additive Hz-domain VCF modulation, linear LFO
+delay fade, and VCA level/gate behavior differ from KR-106's runtime laws.
+Those differences are explicit approximations here; WO-14g does not alter DSP.

@@ -315,9 +315,10 @@ static void test_boundary_and_middle_rows_reachable(void) {
     const int n        = factory_n + 1;
 
     // Slot-order sanity: A11 .. A88 .. B11 .. B88 (canonical Juno-106 order).
-    TEST_ASSERT(strcmp(preset_factory_name(0), "A11") == 0, "row 0 should be A11");
+    TEST_ASSERT(strcmp(preset_factory_name(0), "A11 Brass") == 0, "row 0 should be A11 Brass");
     TEST_ASSERT(strncmp(preset_factory_name(63), "A88", 3) == 0, "row 63 should be A88 (last A-group slot)");
-    TEST_ASSERT(strcmp(preset_factory_name(64), "B11") == 0, "row 64 should be B11 (first B-group slot)");
+    TEST_ASSERT(strcmp(preset_factory_name(64), "B11 Strings") == 0,
+                "row 64 should be B11 Strings (first B-group slot)");
     TEST_ASSERT(strncmp(preset_factory_name(127), "B88", 3) == 0, "row 127 should be B88 (last original slot)");
     // Neiro bank follows immediately after the 128 originals.
     TEST_ASSERT(strcmp(preset_factory_name(128), "INIT") == 0, "row 128 should be the first Neiro patch");
