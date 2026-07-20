@@ -503,3 +503,87 @@ updating current user/architecture docs without rewriting historical ADRs/log en
   separate UI/preset-compatibility decision. Do not silently remap them.
 - `make host`, `make test`, `make build`, `make size`, README user-control consistency check,
   `rg` for stale current claims, and diff check pass. Append MEMORY and commit.
+
+## WO-14g — Rebuild the Juno-106 factory bank from KR-106
+
+**Goal:** Replace the tape-derived/calibration-fallback values in Neiro's 128-patch
+Juno-106 span with the names and controller values shipped by pinned Ultramaster KR-106,
+converted offline into Neiro's physical-value JSON schema. Preserve the 12 Neiro-authored
+patches at indices 128–139 and the public 140-patch provider layout.
+
+### Authoritative source and boundary
+
+- Source only `Source/KR106_Presets_JUCE.h` at Ultramaster KR-106 v2.5.13 commit
+  `bc15caee5843ab238a25d0969e68d57db2b1615f`.
+- Import only entries 128–255, the header's explicitly labelled J106 bank. Do not import
+  entries 0–127 (J6/J60), the obsolete root `KR106_Presets.h` 211-preset array, user CSVs,
+  JUCE/plugin code, or the sibling checkout's working-tree state.
+- Preserve each J106 entry's slot-prefixed descriptive name (`A11 Brass` … `B88 Owgan`)
+  and its 44 raw integer controller values. GPL-3.0-only use is already authorized by ADR
+  0028, but the imported data must carry exact file/commit/license provenance.
+
+### Touch list (only these eight paths)
+
+1. `third_party/kr106-presets/juno106_factory_raw.json` (new; exact 128-entry extracted data + provenance)
+2. `tools/build_juno106_bank.py`
+3. `engine/banks/juno106_factory.json` (regenerated)
+4. `tests/tools/test_build_juno106_bank.py`
+5. `tests/host/test_juno106_bank.cpp`
+6. `tests/host/test_preset.cpp`
+7. `specs/notes/juno106-control-curves.md`
+8. `specs/MEMORY.md`
+
+### Read list
+
+1. This work-order.
+2. Pinned source `Source/KR106_Presets_JUCE.h` header/entry layout and J106 entries 128–255 only.
+3. `tools/build_juno106_bank.py:{CONTINUOUS_MAP,ADSR_MAP,decode_switch16,decode_switch17,build_patch}`.
+4. `engine/param_desc.cpp:JUNO_PARAM_TABLE` and `engine/juno_voice.cpp:{set_param,render}` only.
+5. The named test files' current factory-bank assertions.
+
+### Conversion contract
+
+- The committed raw JSON is the reproducible GPL source artifact: metadata names the
+  upstream project, version, commit, source path, license, J106 source range, parameter
+  order, and extraction method; `patches` contains exactly 128 `{name, values}` records,
+  each with 44 integers byte-identical to the pinned header.
+- Refactor the existing offline builder to consume that raw JSON, not
+  `third_party/juno106-factory/records.json`. Keep the old tape evidence files intact as
+  historical evidence; they are no longer the generated bank input.
+- Map KR indices 3–19 and 23–35 to Neiro's corresponding Juno controls. Preserve raw
+  normalized controller intent (`raw / 127`) for normalized depth/level controls and
+  direct integer semantics for switches. Convert to physical units only where Neiro's
+  public seam requires them: LFO rate/delay, VCF cutoff, and ADSR seconds. Use the pinned
+  KR-106 J106 control laws/tables already represented by the port where available; do not
+  reuse the old generic declared-curve fallback for those fields. Duplicate the one Juno
+  ADSR into ENV1 and ENV2 because Neiro's filter modulation reads ENV2.
+- Map octave `0/1/2` to `-12/0/+12`, chorus Off/I/II to `0/1/2`, and keep Juno-only
+  switches (saw, pulse, PWM mode, VCF polarity, VCA gate, HPF) exact. Set Neiro-only
+  controls to neutral/default values. Do not emit stored legacy no-ops (`Filter Mode`,
+  chorus rate/depth/delay) merely to pad the record.
+- Keep the 128+12 provider ordering and default `Solo Lead`. Do not alter parameter IDs,
+  runtime DSP, UI, preset codec, or the Neiro JSON bank in this work-order.
+- Document any unavoidable semantic approximation where Neiro's current public control
+  differs from KR-106. Never claim bit-identical audio from a preset-data conversion.
+
+### Acceptance
+
+- Extraction tests prove 128 J106 records, 44 bounded integer values each, exact boundary
+  names, unique A11–B88 slot prefixes, and a pinned-source checksum recorded in metadata.
+- Builder `--check` is deterministic; generated bank has 128 descriptive names, finite
+  in-range values, no `(uncertain)` suffixes, no legacy no-op keys, and selected patches
+  spot-check against independently calculated KR values for cutoff, ADSR, waveform/range,
+  HPF, chorus, and modulation controls.
+- Provider tests prove total count 140, J106/Neiro boundary names, unchanged 12-patch
+  Neiro order/content, default `Solo Lead`, and deterministic repeated decode.
+- `make format`, `make host`, `make test`, `make build`, `make size`, builder `--check`,
+  membrane grep, and `git diff --check` pass. Append a tight MEMORY entry and commit atomically.
+
+### Split-if / stop conditions
+
+- Stop before editing if the pinned header does not identify exactly 128 J106 entries at
+  128–255, any extracted value is outside the declared raw range for its parameter kind,
+  or exact provenance cannot be recorded.
+- Stop and return a gate if faithful conversion requires changing a public parameter's
+  range/meaning, runtime DSP, provider count/order, or the 12 Neiro-authored patches. Those
+  are separate sonic/data-format decisions, not permission to improvise inside this WO.
