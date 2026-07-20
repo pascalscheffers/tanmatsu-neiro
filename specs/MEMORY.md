@@ -2378,6 +2378,18 @@ or `chorus.cpp.obj`; retained IRAM proof includes `synth_render` 0x4ff01ac2, ADS
 removed objects had no live sections. No gate opened. Next: WO-14e-iii deletes the now-
 unreferenced vendored Daisy source files.
 
+## 2026-07-20 — WO-14e-iii: delete superseded Daisy sources (COMPLETE)
+
+After proving no live include or build-manifest entry remained, deleted the seven now-unbuilt
+Daisy oscillator, SVF, chorus, and white-noise source/header files (812 deleted diff lines).
+Preserved the Daisy license plus live ADSR, DC blocker, delayline, and Utility DSP code.
+
+`make host`, `make test`, `make BENCH=1 build`, normal `make build`, `make size`, post-delete
+reference audit, and `git diff --check` pass. Normal image remains 1,377,042 B with 34% of
+the app partition free; mapped flash is 1,227,004 B and DIRAM is 260,018/576,464 B (45.11%,
+316,446 B free). No gate opened. Next: WO-14e-iv removes the dormant Daisy ladder and updates
+current architecture/user documentation.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
