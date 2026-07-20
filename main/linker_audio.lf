@@ -28,7 +28,7 @@ entries:
     oscillator (noflash)
     svf (noflash)
     adsr (noflash)
-    chorus (noflash)
+    synth (noflash)
     mod_matrix (noflash)
     voice_alloc (noflash)
 
@@ -64,3 +64,7 @@ entries:
     libm_a-ef_fmod (noflash)
     libm_a-sf_scalbn (noflash)
     libm_a-sf_finite (noflash)
+    libm_a-sf_tanh (noflash)
+    libm_a-sf_expm1 (noflash)
+    libm_a-sf_fabs (noflash)
+    libm_a-math_errf (noflash)

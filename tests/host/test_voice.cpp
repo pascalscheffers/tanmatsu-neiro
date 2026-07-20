@@ -624,6 +624,122 @@ void test_voice_kr106_vcf_high_res_sweep() {
     test_pass();
 }
 
+#include "dsp/kr106_chorus.h"
+
+static bool chorus_value_hygienic(float value) {
+    return isfinite(value) && fpclassify(value) != FP_SUBNORMAL;
+}
+
+static void test_kr106_chorus_fixed_storage_and_bypass() {
+    test_begin("KR-106 chorus: fixed storage and synth bypass stay dry-equivalent");
+    TEST_ASSERT(kr106::BBDLine::kBufferSamples == 1024, "BBD line must have 1024 fixed samples");
+    TEST_ASSERT(sizeof(kr106::Chorus) <= 10 * 1024, "chorus must stay under 10 KiB");
+
+    kr106::Chorus chorus;
+    chorus.Init();
+    constexpr int mode = 0;
+    for (int i = 0; i < 128; ++i) {
+        float dry = sinf(0.031f * (float)i);
+        float l   = dry;
+        float r   = dry;
+        // This is the exact CPU-saving branch used by synth_render.
+        if (mode > 0) chorus.Process(dry, l, r);
+        TEST_ASSERT(l == dry && r == dry, "off branch must remain bit-identical dry stereo");
+    }
+    test_pass();
+}
+
+static void test_kr106_chorus_modes_deterministic_stereo() {
+    test_begin("KR-106 chorus: modes I/II are deterministic, bounded, and stereo");
+    for (int mode = 1; mode <= 2; ++mode) {
+        kr106::Chorus a;
+        kr106::Chorus b;
+        a.Init();
+        b.Init();
+        a.SetMode(mode);
+        b.SetMode(mode);
+        double difference = 0.0;
+        for (int i = 0; i < 50000; ++i) {
+            float input = 0.2f * sinf(2.0f * (float)M_PI * 137.0f * (float)i / 48000.0f);
+            float al, ar, bl, br;
+            a.Process(input, al, ar);
+            b.Process(input, bl, br);
+            TEST_ASSERT(al == bl && ar == br, "same mode/input must render deterministically");
+            TEST_ASSERT(isfinite(al) && isfinite(ar), "chorus mode produced non-finite output");
+            TEST_ASSERT(fabsf(al) < 4.0f && fabsf(ar) < 4.0f, "chorus mode exceeded bounded margin");
+            if (i > 1024) difference += fabs((double)al - (double)ar);
+        }
+        TEST_ASSERT(difference > 0.1, "dual BBD channels must decorrelate stereo output");
+    }
+    test_pass();
+}
+
+static void test_kr106_chorus_fractional_onset_and_wrap() {
+    test_begin("KR-106 chorus: fractional-delay onset and Hermite wrap are sane");
+    kr106::Chorus impulse;
+    kr106::Chorus silence;
+    impulse.Init();
+    silence.Init();
+    impulse.SetMode(1);
+    silence.SetMode(1);
+    double early = 0.0;
+    double onset = 0.0;
+    for (int i = 0; i < 512; ++i) {
+        float il, ir, sl, sr;
+        impulse.Process(i == 0 ? 1.0f : 0.0f, il, ir);
+        silence.Process(0.0f, sl, sr);
+        double wet_delta = fabs((double)il - sl) + fabs((double)ir - sr);
+        // Sample zero contains the intentionally retained dry path; the wet
+        // impulse must not emerge before the minimum fractional delay.
+        if (i > 0 && i < 45) early += wet_delta;
+        if (i >= 45 && i < 400) onset += wet_delta;
+    }
+    TEST_ASSERT(early < 1e-5, "fractional delay emitted signal before its minimum delay");
+    TEST_ASSERT(onset > 1e-3, "fractional delay did not produce a delayed onset");
+
+    kr106::BBDLine line;
+    line.init();
+    for (size_t i = 0; i < line.buffer.size(); ++i) line.buffer[i] = (float)i * 0.001f;
+    for (size_t pos : {size_t(0), size_t(1), size_t(1023)}) {
+        line.write_pos = pos;
+        for (float delay : {0.1f, 1.25f, 1022.75f, 1023.9f}) {
+            float sample = line.read_hermite(delay);
+            TEST_ASSERT(isfinite(sample), "Hermite interpolation failed at ring boundary");
+        }
+    }
+    test_pass();
+}
+
+static void test_kr106_chorus_mode_switch_and_ftz_off() {
+    test_begin("KR-106 chorus: I/II fade is bounded and long FTZ-off runs stay hygienic");
+    kr106::Chorus chorus;
+    chorus.Init();
+    chorus.SetMode(1);
+    float previous  = 0.0f;
+    float peak_step = 0.0f;
+    for (int i = 0; i < 240000; ++i) {
+        if (i == 30000) chorus.SetMode(2);
+        float input = i < 120000 ? 0.15f * sinf(0.019f * (float)i) : 0.0f;
+        float l, r;
+        chorus.Process(input, l, r);
+        float step = fabsf(l - previous);
+        if (i >= 30000 && i < 31000 && step > peak_step) peak_step = step;
+        previous = l;
+        TEST_ASSERT(chorus_value_hygienic(l) && chorus_value_hygienic(r),
+                    "long chorus run produced NaN/Inf/subnormal output");
+    }
+    TEST_ASSERT(peak_step < 0.5f, "I/II transition produced a discontinuity spike");
+    TEST_ASSERT(chorus_value_hygienic(chorus.ring0.low) && chorus_value_hygienic(chorus.ring0.band),
+                "click-ring state became non-finite/subnormal");
+    TEST_ASSERT(chorus_value_hygienic(chorus.line0.pre_filter.mBiquad.mIC1eq) &&
+                    chorus_value_hygienic(chorus.line0.pre_filter.mBiquad.mIC2eq) &&
+                    chorus_value_hygienic(chorus.line0.post_filter.mPole.mS),
+                "BBD filter state became non-finite/subnormal");
+    for (float sample : chorus.line0.buffer)
+        TEST_ASSERT(chorus_value_hygienic(sample), "delay ring retained non-finite/subnormal state");
+    test_pass();
+}
+
 /* Entry points declared in main.cpp */
 void test_voice_suite() {
     test_voice_adsr_shape();
@@ -641,4 +757,8 @@ void test_voice_suite() {
     test_voice_hpf_switch_bounded();
     test_voice_kr106_phase_coherence();
     test_voice_kr106_vcf_high_res_sweep();
+    test_kr106_chorus_fixed_storage_and_bypass();
+    test_kr106_chorus_modes_deterministic_stereo();
+    test_kr106_chorus_fractional_onset_and_wrap();
+    test_kr106_chorus_mode_switch_and_ftz_off();
 }

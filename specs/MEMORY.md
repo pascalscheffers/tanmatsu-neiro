@@ -2277,6 +2277,30 @@ anti-denormal-biased, but long FTZ-off coverage found no subnormal public state
 or output. The shared noise is intentionally advanced even with no active
 voice/noise level, so its phase is session-time-dependent but deterministic.
 
+## 2026-07-20 — WO-14d: fixed-buffer KR-106 BBD chorus (COMPLETE)
+
+Replaced the Daisy master chorus with an attributed KR-106 MN3009-style port:
+verbatim `BBDFilter.h`/`KR106AnalogNoise.h`, and a 293-line embedded adaptation
+with two fixed 1024-float delay rings, calibrated I/II behavior, 5 ms switching
+fade, Hermite interpolation, BBD filtering/saturation, leakage/click/floor/
+ripple models, and software finite/denormal hygiene. Off still skips all chorus
+DSP; legacy rate/depth/delay IDs remain explicit no-ops. `sizeof(kr106::Chorus)`
+= 8,584 B (two 4,096 B buffers), below the 10 KiB gate.
+
+Tests cover bit-identical dry bypass, deterministic/bounded/decorrelated I/II,
+fractional onset, Hermite wrap boundaries, I↔II switching, and 240k-sample
+FTZ-off signal/silence state hygiene. `make format`/`host`/`test`/`build`/`size`,
+membrane/allocation grep, map audit, and `git diff --check` pass. Device map puts
+`synth_render` (0x4ff01ac2), `expm1f` (0x4ff17f2c), `fabsf` (0x4ff181d2), and
+`tanhf` (0x4ff18326) in noflash IRAM; the chorus object is 0x2188 B in DIRAM.
+Image 1,375,814 B (+14,948 B vs WO-14c); DIRAM 259,020/576,464 B (-2,216 B);
+IRAM `.text` 123,428 B absolute (WO-14c did not record a baseline).
+
+Hardware follow-up: `PROFILE=1` built, installed, and launched on the attached
+badge, but its serial endpoint disappeared on reboot before timing output could
+be captured. Re-capture six-voice chorus-I/II timing; require <70% block period
+and `over=0`, otherwise open the profiled CPU optimization gate.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

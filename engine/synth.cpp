@@ -15,12 +15,12 @@
 #include <math.h>
 #include <string.h>
 #include <atomic>
-#include "Effects/chorus.h"
 #include "arp.h"
 #include "arp_clock.h"
 #include "clock.h"
 #include "command_queue.h"
 #include "dsp/dcblock.h"
+#include "dsp/kr106_chorus.h"
 #include "dsp/lfo.h"
 #include "dsp/limiter.h"
 #include "dsp/saturate.h"
@@ -54,7 +54,7 @@ static kr106::Noise s_noise;
 
 static JunoModel          s_juno_model;
 static VoiceAlloc         s_alloc;
-static daisysp::Chorus    s_chorus;
+static kr106::Chorus      s_chorus;
 static dsp::LimiterStereo s_limiter;
 // Master-bus DC blockers (one per output channel). The rendered wave is
 // bottom-heavy (DC bias, envelope-proportional — see specs/MEMORY.md crackle
@@ -488,17 +488,14 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     }
 
     // 4. Update chorus (non-per-voice) from the param store.
-    // CHORUS_MODE: 0=off, 1=Chorus I (slow/lush), 2=Chorus II (fast/wide).
-    // Mode I/II differ in rate preset; depth and delay are user-tweakable on top.
+    // Calibrated KR-106 modes map directly: 0=off, 1=I, 2=II. The persisted
+    // rate/depth/delay IDs remain stable legacy no-ops; modes own calibration.
     int chorus_mode = (int)s_params.get(ParamId::CHORUS_MODE);
-    if (chorus_mode > 0) {
-        // Apply mode-specific rate preset, then user rate on top (additive).
-        // Mode I ≈ 0.5 Hz base; Mode II ≈ 1.0 Hz base (classic Juno behaviour).
-        float mode_rate = (chorus_mode == 2) ? 1.0f : 0.5f;
-        s_chorus.SetLfoFreq(mode_rate + s_params.get(ParamId::CHORUS_RATE) * 0.5f);
-        s_chorus.SetLfoDepth(s_params.get(ParamId::CHORUS_DEPTH));
-        s_chorus.SetDelay(s_params.get(ParamId::CHORUS_DELAY));
-    }
+    chorus_mode     = chorus_mode < 0 ? 0 : (chorus_mode > 2 ? 2 : chorus_mode);
+    (void)s_params.get(ParamId::CHORUS_RATE);
+    (void)s_params.get(ParamId::CHORUS_DEPTH);
+    (void)s_params.get(ParamId::CHORUS_DELAY);
+    s_chorus.SetMode(chorus_mode);
 
     // 5. Sum all active voices into the mono bus.
 #ifdef SYNTH_PROFILE
@@ -539,9 +536,11 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
         s_params.get(ParamId::MASTER_GAIN) * s_channel_vol.load(std::memory_order_relaxed) * unison_gain(unison_count);
     for (size_t i = 0; i < frames; i++) {
         if (chorus_mode > 0) {
-            s_chorus.Process(s_mono[i]);
-            float lg = s_dc_l.process(s_chorus.GetLeft() * gain);
-            float rg = s_dc_r.process(s_chorus.GetRight() * gain);
+            float chorus_l;
+            float chorus_r;
+            s_chorus.Process(s_mono[i], chorus_l, chorus_r);
+            float lg = s_dc_l.process(chorus_l * gain);
+            float rg = s_dc_r.process(chorus_r * gain);
             float gr = s_limiter.process(fmaxf(fabsf(lg), fabsf(rg)));
             left[i]  = soft_clip(lg * gr);
             right[i] = soft_clip(rg * gr);
