@@ -80,32 +80,100 @@ static void ensure_neiro_bank_loaded(void) {
     g_neiro_count = n;
 }
 
-int preset_factory_count(void) {
+// ---------------------------------------------------------------------------
+// Factory bank — unified 140-span provider (WO-13i, ADR 0027)
+// ---------------------------------------------------------------------------
+//
+// Indices [0, 128) are the original Juno-106 factory patches (offline-mapped
+// by tools/build_juno106_bank.py from tape-decoded records into
+// engine/banks/juno106_factory.json — names, including the 8 "(uncertain)"
+// slots, are already baked in there; this file never re-derives or re-marks
+// them). Indices [128, 140) delegate to the existing 12-patch Neiro bank
+// above unchanged.
+//
+// To avoid holding 128 expanded PresetPatch objects resident (~512 KB), only
+// a name index is kept for the originals — the params/routings for a given
+// original index are decoded on demand by re-parsing the embedded JSON for
+// just that one element (bank_json_patch_at). This is a control-path action
+// (boot listing, explicit audition/load in the UI) and is never called from
+// engine::process(); re-parsing per selection is cheap and fine here.
+static constexpr int kJuno106OriginalCount = 128;
+
+static char g_juno106_names[kJuno106OriginalCount][PRESET_NAME_LEN];
+static int  g_juno106_name_count  = -1;  // -1 = not yet loaded
+static bool g_juno106_load_failed = false;
+
+// Lazily parses just the name index out of the embedded Juno-106 bank on
+// first use. Idempotent; safe to call from every preset_factory_* entry
+// point.
+static void ensure_juno106_names_loaded(void) {
+    if (g_juno106_name_count >= 0 || g_juno106_load_failed) return;
+    size_t      len  = 0;
+    const char* json = juno106_factory_bank_json(&len);
+    int         n    = (json && len > 0) ? bank_json_names(json, len, g_juno106_names, kJuno106OriginalCount) : -1;
+    if (n < 0) {
+        g_juno106_load_failed = true;  // fail closed: those slots report as absent
+        return;
+    }
+    g_juno106_name_count = n;
+}
+
+// Total span: [0, juno106 count) originals + [juno106 count, +neiro count)
+// Neiro patches. Fails closed per-bank (a load failure in one bank doesn't
+// prevent the other from serving).
+static int juno106_count(void) {
+    ensure_juno106_names_loaded();
+    return g_juno106_name_count < 0 ? 0 : g_juno106_name_count;
+}
+
+static int neiro_count(void) {
     ensure_neiro_bank_loaded();
     return g_neiro_count < 0 ? 0 : g_neiro_count;
 }
 
+// Resolves `idx` across the 140-span to a fully decoded PresetPatch —
+// re-parsing the embedded JSON on demand for an original, or copying the
+// already-resident Neiro entry. Returns false if idx is out of range or the
+// original's JSON can't be decoded.
+static bool factory_patch_at(int idx, PresetPatch* out) {
+    const int juno_n = juno106_count();
+    const int total  = juno_n + neiro_count();
+    if (idx < 0 || idx >= total) return false;
+    if (idx < juno_n) {
+        size_t      len  = 0;
+        const char* json = juno106_factory_bank_json(&len);
+        if (!json || len == 0) return false;
+        return bank_json_patch_at(json, len, idx, out);
+    }
+    *out = g_neiro[idx - juno_n];
+    return true;
+}
+
+int preset_factory_count(void) {
+    return juno106_count() + neiro_count();
+}
+
 const char* preset_factory_name(int idx) {
-    ensure_neiro_bank_loaded();
-    if (idx < 0 || idx >= preset_factory_count()) return "";
-    return g_neiro[idx].name;
+    const int juno_n = juno106_count();
+    const int total  = juno_n + neiro_count();
+    if (idx < 0 || idx >= total) return "";
+    if (idx < juno_n) return g_juno106_names[idx];
+    return g_neiro[idx - juno_n].name;
 }
 
 int preset_factory_default(void) {
     static const char* k_default_name = "Solo Lead";
-    ensure_neiro_bank_loaded();
-    const int count = preset_factory_count();
+    const int          count          = preset_factory_count();
     for (int i = 0; i < count; i++) {
-        if (strcmp(g_neiro[i].name, k_default_name) == 0) return i;
+        if (strcmp(preset_factory_name(i), k_default_name) == 0) return i;
     }
     return 0;  // named patch missing — fall back to INIT
 }
 
 int preset_factory_params(int idx, uint16_t* ids_out, float* vals_out, int max_count) {
-    ensure_neiro_bank_loaded();
-    if (idx < 0 || idx >= preset_factory_count()) return -1;
-    const PresetPatch& p = g_neiro[idx];
-    int                n = (p.count < max_count) ? p.count : max_count;
+    PresetPatch p;
+    if (!factory_patch_at(idx, &p)) return -1;
+    int n = (p.count < max_count) ? p.count : max_count;
     for (int i = 0; i < n; i++) {
         ids_out[i]  = p.ids[i];
         vals_out[i] = p.vals[i];
@@ -114,9 +182,8 @@ int preset_factory_params(int idx, uint16_t* ids_out, float* vals_out, int max_c
 }
 
 int preset_factory_routings(int idx, Routing* routings_out, int max_count) {
-    ensure_neiro_bank_loaded();
-    if (idx < 0 || idx >= preset_factory_count()) return -1;
-    const PresetPatch& p = g_neiro[idx];
+    PresetPatch p;
+    if (!factory_patch_at(idx, &p)) return -1;
     if (p.route_count == 0) return 0;
     int n = (p.route_count < max_count) ? p.route_count : max_count;
     for (int i = 0; i < n; i++) {

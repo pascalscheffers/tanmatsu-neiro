@@ -59,6 +59,24 @@ struct PresetPatch {
 // JSON array or the JSON itself is malformed/unparseable.
 int bank_json_parse(const char* json, size_t len, PresetPatch* out, int max_patches);
 
+// Parse only the "name" field of each patch in a JSON bank, without
+// materializing full PresetPatch objects — for index-browsing large banks
+// (e.g. the 128-patch Juno-106 original bank, WO-13i) without holding every
+// patch's params/routings resident. Missing/non-string "name" fields yield
+// an empty string for that slot (never garbage). Fills up to `max_names`
+// entries into `names_out`. Returns the number of names parsed (>= 0), or
+// -1 if the root is not a JSON array or the JSON is malformed/unparseable.
+int bank_json_names(const char* json, size_t len, char (*names_out)[PRESET_NAME_LEN], int max_names);
+
+// Parse and decode a single patch at array index `idx` of a JSON bank,
+// without materializing the whole bank — the on-demand counterpart to
+// bank_json_names() for indices that need full params/routings (WO-13i).
+// Applies the same fail-closed/forward-compat rules as bank_json_parse().
+// Returns true on success, false if `json`/`out` are null, `idx` is out of
+// range, the element at `idx` isn't an object, or the JSON is
+// malformed/unparseable. Never reads OOB.
+bool bank_json_patch_at(const char* json, size_t len, int idx, PresetPatch* out);
+
 // Parse a single patch JSON object (as produced by bank_json_parse's per-
 // element iteration, or a standalone object) into `out`. Applies the same
 // fail-closed/forward-compat rules as bank_json_parse. Returns true on

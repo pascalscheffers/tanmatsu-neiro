@@ -33,6 +33,17 @@ static int preset_eligible_param_count(void) {
     return count;
 }
 
+// WO-13i: the 140-span factory bank puts the 128 original Juno-106 patches
+// first (indices [0, 128)) and the 12 Neiro patches last ([128, 140)), so
+// "INIT" (a Neiro patch) is no longer index 0. Tests that care about INIT's
+// specific content look it up by name rather than hardcoding an index.
+static int find_factory_index(const char* name) {
+    for (int i = 0; i < preset_factory_count(); i++) {
+        if (strcmp(preset_factory_name(i), name) == 0) return i;
+    }
+    return -1;
+}
+
 // ---------------------------------------------------------------------------
 // Factory tests
 // ---------------------------------------------------------------------------
@@ -44,19 +55,20 @@ static void test_factory_count_positive(void) {
 }
 
 static void test_factory_init_name(void) {
-    test_begin("factory preset 0 is INIT");
-    const char* name = preset_factory_name(0);
-    TEST_ASSERT(name != nullptr, "factory_name(0) returned null");
-    TEST_ASSERT(strcmp(name, "INIT") == 0, "factory preset 0 name should be INIT");
+    test_begin("factory bank contains an INIT preset (Neiro span)");
+    int idx = find_factory_index("INIT");
+    TEST_ASSERT(idx >= 0, "expected an INIT factory preset somewhere in the 140-span bank");
     test_pass();
 }
 
 static void test_factory_params_count(void) {
-    test_begin("factory_params returns all preset-eligible entries");
+    test_begin("factory_params returns all preset-eligible entries for INIT");
     /* Buffer must be at least kJunoParamCount large; use 64 to future-proof. */
     uint16_t ids[64];
     float    vals[64];
-    int      n = preset_factory_params(0, ids, vals, 64);
+    int      idx = find_factory_index("INIT");
+    TEST_ASSERT(idx >= 0, "INIT must exist");
+    int n = preset_factory_params(idx, ids, vals, 64);
     TEST_ASSERT(n == preset_eligible_param_count(), "factory INIT should have all preset-eligible params");
     test_pass();
 }
@@ -86,6 +98,82 @@ static void test_factory_master_gain_is_unity(void) {
         }
         TEST_ASSERT(found, "factory preset is missing master gain");
     }
+    test_pass();
+}
+
+// ---------------------------------------------------------------------------
+// WO-13i: unified 140-span factory provider (128 Juno-106 originals + 12
+// Neiro patches). Names/uncertain-slot marking are baked into
+// engine/banks/juno106_factory.json already (WO-13h) — these tests only
+// check the merged facade wires that data through correctly, never re-derive
+// or re-mark anything.
+// ---------------------------------------------------------------------------
+
+static void test_factory_bank_is_140_span(void) {
+    test_begin("factory bank spans 128 Juno-106 originals + 12 Neiro patches");
+    TEST_ASSERT(preset_factory_count() == 140, "expected 140 total factory presets (WO-13i)");
+    test_pass();
+}
+
+static void test_factory_bank_boundary_names(void) {
+    test_begin("factory bank boundary names match juno106_factory.json slot labels");
+    TEST_ASSERT(strcmp(preset_factory_name(0), "A11") == 0, "index 0 must be A11");
+    TEST_ASSERT(strcmp(preset_factory_name(127), "B88 (uncertain)") == 0, "index 127 must be B88 (uncertain)");
+    test_pass();
+}
+
+static void test_factory_bank_has_uncertain_slot(void) {
+    test_begin("factory bank carries at least one (uncertain) slot");
+    bool found = false;
+    for (int i = 0; i < 128; i++) {
+        if (strstr(preset_factory_name(i), "(uncertain)") != nullptr) {
+            found = true;
+            break;
+        }
+    }
+    TEST_ASSERT(found, "expected at least one (uncertain)-suffixed original slot");
+    test_pass();
+}
+
+static void test_factory_bank_neiro_span_in_order(void) {
+    test_begin("factory bank indices 128..139 are the 12 Neiro patches in order");
+    static const char* kNeiroNames[] = {
+        "INIT",    "Bass",      "Pad",        "Lead",     "106 Strings", "106 Brass",
+        "Juno EP", "Solo Lead", "8-Bit Lead", "Chip Arp", "8-Bit Bass",  "Chip Noise",
+    };
+    for (int i = 0; i < 12; i++) {
+        TEST_ASSERT(strcmp(preset_factory_name(128 + i), kNeiroNames[i]) == 0, "Neiro span name/order mismatch");
+    }
+    test_pass();
+}
+
+static void test_factory_params_valid_for_original_and_neiro(void) {
+    test_begin("factory_params valid for a sampled original and a Neiro index");
+    uint16_t ids[96];
+    float    vals[96];
+    int      n_orig = preset_factory_params(0, ids, vals, 96);
+    TEST_ASSERT(n_orig > 0, "original index 0 (A11) must yield params");
+    int n_neiro = preset_factory_params(128, ids, vals, 96);
+    TEST_ASSERT(n_neiro > 0, "Neiro index 128 (INIT) must yield params");
+    test_pass();
+}
+
+static void test_factory_params_deterministic_for_original(void) {
+    test_begin("repeated factory_params for the same original index is byte-identical");
+    uint16_t ids_a[96], ids_b[96];
+    float    vals_a[96], vals_b[96];
+    int      n_a = preset_factory_params(5, ids_a, vals_a, 96);
+    int      n_b = preset_factory_params(5, ids_b, vals_b, 96);
+    TEST_ASSERT(n_a == n_b && n_a > 0, "repeated calls must yield the same non-empty param count");
+    TEST_ASSERT(memcmp(ids_a, ids_b, sizeof(uint16_t) * (size_t)n_a) == 0, "repeated calls must yield identical ids");
+    TEST_ASSERT(memcmp(vals_a, vals_b, sizeof(float) * (size_t)n_a) == 0, "repeated calls must yield identical values");
+    test_pass();
+}
+
+static void test_factory_default_is_solo_lead(void) {
+    test_begin("factory default resolves to Solo Lead (unchanged by WO-13i)");
+    int def = preset_factory_default();
+    TEST_ASSERT(strcmp(preset_factory_name(def), "Solo Lead") == 0, "factory default must still be Solo Lead");
     test_pass();
 }
 
@@ -168,7 +256,9 @@ static void test_factory_init_values_match_defaults(void) {
     test_begin("factory INIT physical values match table defaults");
     uint16_t ids[64];
     float    vals[64];
-    int      n = preset_factory_params(0, ids, vals, 64);
+    int      idx = find_factory_index("INIT");
+    TEST_ASSERT(idx >= 0, "INIT must exist");
+    int n = preset_factory_params(idx, ids, vals, 64);
     TEST_ASSERT(n == preset_eligible_param_count(), "INIT should have all preset-eligible params");
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < kJunoParamCount; j++) {
@@ -275,8 +365,10 @@ static void test_factory_init_has_no_redundant_routings(void) {
     // "clean_106_routings" expectation from ADR 0009/Stage 3b-ii).
     test_begin("factory INIT preset carries no redundant panel-duplicating routings");
 
+    int idx = find_factory_index("INIT");
+    TEST_ASSERT(idx >= 0, "INIT must exist");
     Routing r[PRESET_MAX_ROUTINGS];
-    int     count = preset_factory_routings(0, r, PRESET_MAX_ROUTINGS);
+    int     count = preset_factory_routings(idx, r, PRESET_MAX_ROUTINGS);
     TEST_ASSERT(count == 0, "INIT should have zero matrix routings post-WO-13d");
     test_pass();
 }
@@ -392,6 +484,13 @@ void test_preset_suite(void) {
     test_factory_params_count();
     test_factory_oob_returns_minus1();
     test_factory_master_gain_is_unity();
+    test_factory_bank_is_140_span();
+    test_factory_bank_boundary_names();
+    test_factory_bank_has_uncertain_slot();
+    test_factory_bank_neiro_span_in_order();
+    test_factory_params_valid_for_original_and_neiro();
+    test_factory_params_deterministic_for_original();
+    test_factory_default_is_solo_lead();
     test_serialize_parse_roundtrip();
     test_serialize_bad_buf_too_small();
     test_parse_bad_magic();

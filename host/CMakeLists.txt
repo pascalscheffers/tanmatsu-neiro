@@ -13,14 +13,16 @@ set(CMAKE_CXX_STANDARD 17)
 get_filename_component(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 set(DAISYSP "${REPO_ROOT}/dsp/vendor/daisysp")
 
-# WO-13-neiro-bank: host/test builds embed the Neiro factory JSON bank by
-# wrapping the single source-of-truth file (engine/banks/neiro_factory.json)
-# in a generated C++ raw-string-literal source (engine/factory_bank_embed.cpp.in).
-# The device build instead uses ESP-IDF's EMBED_TXTFILES on the same .json
-# (main/CMakeLists.txt + main/factory_bank_embed.cpp) — see engine/factory_bank.h.
-# configure_file() tracks the .json as a configure-time dependency, so editing
-# the bank automatically regenerates this file on the next build.
+# WO-13-neiro-bank/WO-13i: host/test builds embed both factory JSON banks by
+# wrapping the single source-of-truth files (engine/banks/neiro_factory.json,
+# engine/banks/juno106_factory.json) in a generated C++ raw-string-literal
+# source (engine/factory_bank_embed.cpp.in). The device build instead uses
+# ESP-IDF's EMBED_TXTFILES on the same .json files (main/CMakeLists.txt +
+# main/factory_bank_embed.cpp) — see engine/factory_bank.h. configure_file()
+# tracks both .json files as configure-time dependencies, so editing either
+# bank automatically regenerates this file on the next build.
 file(READ "${REPO_ROOT}/engine/banks/neiro_factory.json" NEIRO_FACTORY_JSON_CONTENT)
+file(READ "${REPO_ROOT}/engine/banks/juno106_factory.json" JUNO106_FACTORY_JSON_CONTENT)
 configure_file(
     "${REPO_ROOT}/engine/factory_bank_embed.cpp.in"
     "${CMAKE_CURRENT_BINARY_DIR}/generated/factory_bank_embed.cpp"

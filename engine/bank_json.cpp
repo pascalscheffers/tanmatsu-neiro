@@ -200,12 +200,18 @@ bool bank_json_parse_patch(const cJSON* obj, PresetPatch* out) {
     return true;
 }
 
-int bank_json_parse(const char* json, size_t len, PresetPatch* out, int max_patches) {
-    if (!json || !out || max_patches <= 0) return -1;
+// Parses `json`/`len` and validates it's a well-formed JSON array (no
+// trailing garbage after the root value). Returns the parsed root on
+// success (caller owns it, must cJSON_Delete()), or nullptr on any failure.
+// Shared by bank_json_parse()/bank_json_names()/bank_json_patch_at() so the
+// "malformed/truncated/trailing-garbage/not-an-array" rules live in one
+// place.
+static cJSON* parse_bank_root(const char* json, size_t len) {
+    if (!json) return nullptr;
 
     const char* parse_end = nullptr;
     cJSON*      root      = cJSON_ParseWithLengthOpts(json, len, &parse_end, false);
-    if (!root) return -1;  // malformed/truncated JSON
+    if (!root) return nullptr;  // malformed/truncated JSON
     const char* const input_end = json + len;
     while (parse_end < input_end &&
            (*parse_end == ' ' || *parse_end == '\t' || *parse_end == '\r' || *parse_end == '\n')) {
@@ -213,12 +219,20 @@ int bank_json_parse(const char* json, size_t len, PresetPatch* out, int max_patc
     }
     if (parse_end != input_end) {
         cJSON_Delete(root);
-        return -1;  // a valid prefix followed by garbage is still malformed input
+        return nullptr;  // a valid prefix followed by garbage is still malformed input
     }
     if (!cJSON_IsArray(root)) {
         cJSON_Delete(root);
-        return -1;  // root must be an array
+        return nullptr;  // root must be an array
     }
+    return root;
+}
+
+int bank_json_parse(const char* json, size_t len, PresetPatch* out, int max_patches) {
+    if (!out || max_patches <= 0) return -1;
+
+    cJSON* root = parse_bank_root(json, len);
+    if (!root) return -1;
 
     int          n    = 0;
     const cJSON* elem = nullptr;
@@ -230,6 +244,53 @@ int bank_json_parse(const char* json, size_t len, PresetPatch* out, int max_patc
 
     cJSON_Delete(root);
     return n;
+}
+
+int bank_json_names(const char* json, size_t len, char (*names_out)[PRESET_NAME_LEN], int max_names) {
+    if (!names_out || max_names <= 0) return -1;
+
+    cJSON* root = parse_bank_root(json, len);
+    if (!root) return -1;
+
+    int          n    = 0;
+    const cJSON* elem = nullptr;
+    cJSON_ArrayForEach(elem, root) {
+        if (n >= max_names) break;
+        if (!cJSON_IsObject(elem)) continue;  // skip non-object entries, forward-compat
+
+        names_out[n][0]        = '\0';
+        const cJSON* name_node = cJSON_GetObjectItemCaseSensitive(elem, "name");
+        if (name_node && cJSON_IsString(name_node) && name_node->valuestring) {
+            strncpy(names_out[n], name_node->valuestring, PRESET_NAME_LEN - 1);
+            names_out[n][PRESET_NAME_LEN - 1] = '\0';
+        }
+        n++;
+    }
+
+    cJSON_Delete(root);
+    return n;
+}
+
+bool bank_json_patch_at(const char* json, size_t len, int idx, PresetPatch* out) {
+    if (!out || idx < 0) return false;
+
+    cJSON* root = parse_bank_root(json, len);
+    if (!root) return false;
+
+    int          n     = 0;
+    bool         found = false;
+    const cJSON* elem  = nullptr;
+    cJSON_ArrayForEach(elem, root) {
+        if (!cJSON_IsObject(elem)) continue;  // skip non-object entries, forward-compat (not index-counted)
+        if (n == idx) {
+            found = bank_json_parse_patch(elem, out);
+            break;
+        }
+        n++;
+    }
+
+    cJSON_Delete(root);
+    return found;
 }
 
 // ---------------------------------------------------------------------------

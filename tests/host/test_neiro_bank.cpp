@@ -1,7 +1,12 @@
 /* tests/host/test_neiro_bank.cpp — regression guard for the embedded Neiro
  * factory bank (WO-13-neiro-bank). Confirms the JSON-backed preset_factory_*
- * API still serves the same 12 patches, in the same order, with byte-identical
- * physical values to the old hardcoded FactoryPreset table it replaced. */
+ * API still serves the same 12 patches, in the same relative order, with
+ * byte-identical physical values to the old hardcoded FactoryPreset table it
+ * replaced. WO-13i merged the 128-patch original Juno-106 bank in ahead of
+ * these 12 (indices [0,128) originals, [128,140) Neiro), so this file
+ * locates the Neiro span by name instead of assuming it starts at index 0 —
+ * see tests/host/test_preset.cpp's WO-13i tests for the merged-bank
+ * boundary/count checks. */
 #include <math.h>
 #include <string.h>
 #include "engine/param_id.h"
@@ -24,11 +29,21 @@ static float find_param(int idx, uint16_t id) {
     return NAN;
 }
 
+// Locates the start of the 12-patch Neiro span within the merged 140-span
+// factory bank (WO-13i) by looking up the first expected name.
+static int find_neiro_span_base(void) {
+    for (int i = 0; i < preset_factory_count(); i++) {
+        if (strcmp(preset_factory_name(i), kExpectedNames[0]) == 0) return i;
+    }
+    return -1;
+}
+
 static void test_neiro_bank_count_and_names(void) {
-    test_begin("neiro bank: 12 patches, in the original order");
-    TEST_ASSERT(preset_factory_count() == kExpectedCount, "expected 12 factory patches");
+    test_begin("neiro bank: 12 patches present, in the original relative order");
+    int base = find_neiro_span_base();
+    TEST_ASSERT(base >= 0, "expected to find the Neiro span (starting at INIT)");
     for (int i = 0; i < kExpectedCount; i++) {
-        TEST_ASSERT(strcmp(preset_factory_name(i), kExpectedNames[i]) == 0, "patch name/order mismatch");
+        TEST_ASSERT(strcmp(preset_factory_name(base + i), kExpectedNames[i]) == 0, "patch name/order mismatch");
     }
     test_pass();
 }
@@ -42,12 +57,17 @@ static void test_neiro_bank_default_is_solo_lead(void) {
 }
 
 static void test_neiro_bank_all_patches_have_52_params(void) {
-    test_begin("neiro bank: every patch carries 52 params");
+    // WO-13i merged in the 128 original Juno-106 patches ahead of the Neiro
+    // span; those originals carry only their tape-decoded param subset (31),
+    // not the full 52 — so this check is scoped to the Neiro span only.
+    test_begin("neiro bank: every Neiro patch carries 52 params");
     uint16_t ids[64];
     float    vals[64];
-    for (int i = 0; i < preset_factory_count(); i++) {
+    int      base = find_neiro_span_base();
+    TEST_ASSERT(base >= 0, "expected to find the Neiro span (starting at INIT)");
+    for (int i = base; i < base + kExpectedCount; i++) {
         int n = preset_factory_params(i, ids, vals, 64);
-        TEST_ASSERT(n == 52, "expected 52 params per factory patch");
+        TEST_ASSERT(n == 52, "expected 52 params per Neiro factory patch");
     }
     test_pass();
 }

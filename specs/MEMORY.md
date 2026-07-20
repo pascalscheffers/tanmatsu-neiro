@@ -5,6 +5,46 @@ The **live** log: recent entries + open gates. Older history is in
 just above the "Open Opus gates" section** (which stays last). Lean — link to specs, don't
 restate. When this passes ~200 lines, rotate older entries into the archive.
 
+## 2026-07-20 — WO-13i: unified 140-span factory provider (COMPLETE)
+
+Merged the 128-patch original Juno-106 bank (`engine/banks/juno106_factory.json`, WO-13h) and
+the 12-patch Neiro bank into one `preset_factory_*` facade (`engine/preset.cpp`), indices
+`[0,128)` = originals, `[128,140)` = Neiro, unchanged. Per the reworked ADR 0027 design: no
+128 resident `PresetPatch` (~512 KB) — only a `char[128][32]` name index (~4 KB) stays
+resident (`ensure_juno106_names_loaded`/`bank_json_names`); an original's params/routings are
+decoded on demand by re-parsing the embedded JSON for just that one array element
+(`bank_json_patch_at`, new in `engine/bank_json.{h,cpp}`, alongside `bank_json_names` — both
+share a new `parse_bank_root()` helper factored out of `bank_json_parse`). Names/uncertain-slot
+marking were already baked into the bank by WO-13h's offline mapper — nothing here re-derives
+or re-marks them.
+
+Consolidated the accessor seam: `engine/factory_bank.h` now declares both
+`factory_bank_neiro_json()` and `juno106_factory_bank_json()`; `factory_bank_embed.cpp.in` and
+`main/factory_bank_embed.cpp` embed both banks (device: EMBED_TXTFILES symbols already listed
+in `main/CMakeLists.txt` since WO-13h, just previously unreferenced — see cost note below).
+Deleted the ad-hoc `tests/host/CMakeLists.txt` juno106-only generator in favor of the shared
+template; added the matching `file(READ)` + accessor to `host/CMakeLists.txt` since the host app
+target links `preset.cpp` and needs the same second accessor.
+
+Updated `tests/host/test_preset.cpp` for the new index layout (INIT is no longer index 0 —
+added a `find_factory_index()` name-lookup helper) and added WO-13i acceptance tests (140 count,
+boundary names A11/B88 (uncertain), an (uncertain)-slot presence check, Neiro span order,
+params validity for a sampled original + Neiro index, deterministic repeat, default still Solo
+Lead). Also had to touch `tests/host/test_neiro_bank.cpp` (not on the original touch list) —
+its pre-WO-13i assumption that the Neiro span starts at index 0 no longer holds now that the
+128 originals sit ahead of it; rescoped its "52 params per patch" check to just the Neiro span
+(originals carry only their tape-decoded ~31-param subset, not the full preset-eligible set).
+
+Verify: `make format`/`make host`/`make test`/`make build` all green. `make size`: flash
+1,354,306 B (+140,414 vs. 1,213,892 B baseline), DIRAM 258,606/576,464 = 44.86% (+4,096 B), .bss
+128,084 B (+4,096 B = exactly the new `g_juno106_names` index). The +140 KB flash jump is *not*
+new code — `juno106_factory.json`'s EMBED_TXTFILES section was already linked into
+`main/CMakeLists.txt` since WO-13h but never referenced by any C symbol, so the linker's
+`--gc-sections` was silently dropping the ~139.8 KB blob from every prior device image; adding
+the accessor that actually references those linker symbols pulls it back in for the first time.
+Device image still comfortably fits (35% flash free). Acceptance met; UI/storage callers land
+next in WO-13j (out of this WO's scope by design).
+
 ## 2026-07-20 — SD-card user preset bank loader (COMPLETE)
 
 While WO-13g-i (tape decode) is out-of-session: finished/cleaned up leftover
