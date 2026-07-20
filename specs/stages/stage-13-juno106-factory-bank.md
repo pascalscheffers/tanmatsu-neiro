@@ -547,10 +547,13 @@ the current Neiro bank provider.
 Original entries use canonical slot labels (`A11`, etc.); add descriptive names only if the
 resolved source grant explicitly covers them. Per `specs/notes/juno106-tape-format.md`
 ("Resolution — no further recordings available"), append ` (uncertain)` to the slot label for
-exactly these 8 slots: A50, A51, A61, A62, A63, B44, B51, B63 — the tape-decode residue that
-neither a second independent capture nor further recordings could clear. All other 120 slots
-are unmarked. Decode only the selected original patch on request. Delegate later indices to
-the Neiro provider.
+exactly these 8 canonical slots: A73, A74, A86, A87, A88, B65, B74, B88 — the tape-decode
+residue that neither a second independent capture nor further recordings could clear. (An
+earlier draft of this instruction and of the tape-format note misidentified these 8 by raw
+0-indexed record position rather than canonical slot label; corrected 2026-07-20 when
+`tools/decode_juno106_tape.py` generated the actual bank.) All other 120 slots are unmarked.
+Decode only the selected original patch on request. Delegate later indices to the Neiro
+provider.
 Keep boot default resolution by name; preserve the current default unless ADR 0026 names a
 different one. Do not cache 128 expanded patches or allocate.
 

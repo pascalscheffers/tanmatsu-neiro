@@ -2043,25 +2043,56 @@ aside, not used anywhere in this decode.
 
 **Resolved 2026-07-20 — no further recordings available; Pascal decided to proceed with what's
 in hand.** Final disposition (full reasoning + per-slot table in
-`specs/notes/juno106-tape-format.md`, "Resolution" section): **8/128 slots** — A50, A51, A61,
-A62, A63, B44, B51, B63 — get an ` (uncertain)` suffix on their canonical slot-label name at
-WO-13i (patch-name assignment); WO-13i's work-order text above now carries this instruction.
-For A63/B63 (tape lead-out) and A50/A51/A62 (unresolved two-capture disagreement), the newer
-(22050 Hz) capture's decode is used as the value; A61/B44/B51 are byte-identical across both
+`specs/notes/juno106-tape-format.md`, "Resolution" section): **8/128 slots** — canonical labels
+A73, A74, A86, A87, A88, B65, B74, B88 — get an ` (uncertain)` suffix on their slot-label name
+at WO-13i (patch-name assignment); WO-13i's work-order text above now carries this instruction.
+For A88/B88 (tape lead-out) and A73/A74/A87 (unresolved two-capture disagreement), the newer
+(22050 Hz) capture's decode is used as the value; A86/B65/B74 are byte-identical across both
 captures so there's nothing to choose between. The other 120/128 slots ship unmarked with
-two-independent-capture confirmation.
+two-independent-capture confirmation. (These 8 were first identified and recorded here by raw
+0-indexed record position — A50/A51/A61/A62/A63/B44/B51/B63 — not canonical slot label; caught
+and corrected 2026-07-20 below when the bank was actually generated.)
 
-**Next:** provenance/licensing gate below still separately open before WO-13g-ii can vendor any
-tape-derived bytes into the repo; WO-13a–13g-i work is otherwise complete.
+### 2026-07-20 — tape-decoder tooling + decoded bank brought into this repo
+
+Pascal: bring `../tape-decoder` in, but **decoded parameter records only — no audio**. Landed:
+- `tools/decode_juno106_tape.py` — the WO-13g-i clean-room decoder, generalized to both evidence
+  sample rates (11025/22050 Hz, constants scale with `fs`) and given a `bank` subcommand that
+  emits labeled JSON. numpy/scipy imports are lazy (function-local) so the pure record-layout
+  helpers stay testable without those deps.
+- `third_party/juno106-factory/records.json` — the 128 raw decoded 18-byte records (canonical
+  `A11`–`B88` slots, 8 flagged `uncertain`), generated from the newer 22050 Hz capture pair.
+  `SOURCE.md` alongside it documents what is/isn't vendored (bytes only, no WAV audio) and pins
+  all four source-capture SHA-256 hashes for reproducibility.
+- `tests/tools/test_decode_juno106_tape.py` — stdlib-only: field/slot-label/plausibility unit
+  tests plus structural checks on the committed `records.json` (count, unique slots, uncertain
+  set, 7-bit-clean fields).
+- **Bug caught while generating the bank:** the 8 uncertain-slot labels recorded in this file
+  and in stage-13's WO-13i text (`A50, A51, A61, ...`) were raw record-index shorthand, not the
+  canonical `A11`-style slot label a future WO-13i worker would need — would have flagged the
+  wrong 8 patches. Corrected in this file, `specs/notes/juno106-tape-format.md`, and
+  `specs/stages/stage-13-juno106-factory-bank.md`; verified against a fresh decode
+  (`sha256 cc740b95e55873e0f1427dc79befa5aa51c7d0ac6f58d131ad58e6bde1cddddc` for
+  `records.json`, sorted-keys JSON).
+- **WO-13g-ii gate scope resolved, for decoded records only** (see Open Opus gates below): the
+  gate blocked vendoring "tape-derived bytes" pending a redistribution grant for the WAV audio.
+  Pascal's direction today draws the line at the audio, not the decoded parameter bytes: no WAV,
+  in any form, enters the repo; the 128 decoded 18-byte records (his own hardware capture,
+  independently decoded by our own clean-room transport) do. `SOURCE.md` records that call and
+  its rationale.
+- **Next:** WO-13h (control-curve mapping to `PresetPatch`) and WO-13i (unified provider) are
+  unstarted — `records.json` is raw source bytes, not yet playable.
 
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
 
-**🛑 Permissive factory-bank provenance (stage-13 WO-13g-ii gate)** — still open, unaffected by
-WO-13g-i. Need explicit MIT/CC0/public-domain redistribution grant covering Edy Hinzen's two
-`TAPE SAVE` WAV recordings (or an equivalent independently-captured source) before any
-tape-derived bytes may be vendored into the repo. WO-13a–13g-i are not blocked by this.
+**✅ Factory-bank provenance (stage-13 WO-13g-ii gate) — narrowed and cleared for decoded
+records, 2026-07-20.** Original ask (redistribution grant for the WAV audio) is now moot:
+Pascal's call is to never vendor the audio at all, in exchange for shipping the decoded
+parameter bytes without waiting on a grant. See `third_party/juno106-factory/SOURCE.md`. If a
+future need arises to vendor the WAVs themselves (e.g. a from-scratch reproducible-build proof),
+that reopens this gate under the original terms.
 
 *(Stage 3d-ii CPU gate cleared 2026-06-29; see archive and `stage-3d-ii-results.md`.)*
 

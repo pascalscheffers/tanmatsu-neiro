@@ -137,18 +137,25 @@ evidence on hand rather than waiting further. **8/128 slots are marked uncertain
 the second capture pair's cross-validation in the section above both cleared 120 records to
 gold and surfaced 3 new ambiguous ones). Disposition, decided this session:
 
-| slot | issue | value used | confidence |
-|---|---|---|---|
-| A63, B63 | tape lead-out overwrites tail (fields 16/17); differs per capture, content genuinely lost | newer (22050 Hz) capture's decode | low — tail bytes are unrecoverable, rest of record is fine |
-| A61, B44, B51 | illegal switch-byte decode, but **byte-identical across two independent captures** | either capture (identical) | high that this is what's really on the tape; low that it's a *musically intended* patch — likely a genuine save-time or tape-print error preserved faithfully |
-| A50, A51, A62 | both captures individually plausible, but disagree — no checksum, no third capture to arbitrate | newer (22050 Hz) capture's decode, chosen as the more recent/independent re-digitization | medium — unresolved which capture is right; recorded as a judgment call, not a measurement |
+**Correction (2026-07-20, tools/decode_juno106_tape.py bank generation):** the table below was
+originally written with the raw 0-indexed record position (`A` + zero-padded record index
+within the file), not the canonical `groupN×patchN` slot label. Both are shown now; the
+canonical label is the one that must be used for `PresetPatch.name`.
+
+| record index | canonical slot | issue | value used | confidence |
+|---|---|---|---|---|
+| A-file rec 63, B-file rec 63 | **A88, B88** | tape lead-out overwrites tail (fields 16/17); differs per capture, content genuinely lost | newer (22050 Hz) capture's decode | low — tail bytes are unrecoverable, rest of record is fine |
+| A-file rec 61, B-file rec 44, B-file rec 51 | **A86, B65, B74** | illegal switch-byte decode, but **byte-identical across two independent captures** | either capture (identical) | high that this is what's really on the tape; low that it's a *musically intended* patch — likely a genuine save-time or tape-print error preserved faithfully |
+| A-file rec 50, rec 51, rec 62 | **A73, A74, A87** | both captures individually plausible, but disagree — no checksum, no third capture to arbitrate | newer (22050 Hz) capture's decode, chosen as the more recent/independent re-digitization | medium — unresolved which capture is right; recorded as a judgment call, not a measurement |
 
 **Naming convention (applies at WO-13h/13i, when raw records become named `PresetPatch`
 entries):** each of these 8 canonical slot labels ships with an ` (uncertain)` suffix appended
-to its name, e.g. `A63 (uncertain)`, `B44 (uncertain)`. This is a single flat marker — it does
+to its name, e.g. `A88 (uncertain)`, `B65 (uncertain)`. This is a single flat marker — it does
 not distinguish the three sub-causes in the UI; that detail lives here for anyone who goes
 looking. WO-13h's implementation must read this table before assigning `PresetPatch.name` for
-slots A50, A51, A61, A62, A63, B44, B51, B63.
+slots **A73, A74, A86, A87, A88, B65, B74, B88** (not the old `A50, A51, A61, A62, A63, B44,
+B51, B63` record-index shorthand that appeared in the first draft of this table and in
+stage-13's WO-13i text).
 
 The other 120/128 slots ship unmarked, with two-independent-capture confirmation — the
 strongest provenance any record in this bank has, checksum or not.
