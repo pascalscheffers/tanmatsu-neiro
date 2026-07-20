@@ -1,6 +1,7 @@
 // engine/juno_voice.h — Juno-106-inspired voice (ADR 0002, ADR 0008).
 // Signal chain: KR-106 phase-coherent saw + pulse + sub + external noise
-// → four-position HPF → KR-106 J106 VCF → ADSR VCA.
+// → KR-106 J106 VCF → ADSR VCA. The four-position HPF is global,
+// after voice summing (WO-14f-i).
 // set_param() uses ParamId::* values (see param_id.h) — the param store
 // pushes smoothed physical values from the table every block (Stage 2b).
 //
@@ -17,7 +18,6 @@
 #pragma once
 
 #include "dsp/env.h"
-#include "dsp/juno106_hpf.h"
 #include "dsp/lfo.h"
 #include "dsp/vendor/kr106/KR106ADSR.h"
 #include "dsp/vendor/kr106/KR106Oscillators.h"
@@ -86,7 +86,6 @@ private:
     // WO-14a: one shared KR-106 phase accumulator drives saw, pulse, and the
     // CD4013-style octave-down sub, matching the Juno-106 DCO topology.
     kr106::Oscillators oscillators_;
-    dsp::Juno106Hpf    hpf_;  // WO-13e-ii: per-voice, post-mix, pre-VCF (ADR 0026).
     kr106::VCF         filter_;
     kr106::ADSR        amp_env_;
 
@@ -129,12 +128,11 @@ private:
     int   p_pwm_mode_         = 1;  // default Manual
     float p_cutoff_           = 2000.0f;
     float p_res_              = 0.30f;
-    float p_vcf_env_depth_    = 0.35f;                    // ENV2 → VCF mod depth
-    int   p_vcf_env_polarity_ = 0;                        // 0=positive, 1=negative
-    float p_vcf_key_track_    = 0.50f;                    // key-follow amount (0..1)
-    float p_vcf_lfo_depth_    = 0.0f;                     // LFO1 → VCF panel mod depth
-    int   p_hpf_position_     = dsp::JUNO106_HPF_BYPASS;  // 4-position HPF switch (WO-13e-ii)
-    float p_attack_           = 0.010f;                   // seconds
+    float p_vcf_env_depth_    = 0.35f;   // ENV2 → VCF mod depth
+    int   p_vcf_env_polarity_ = 0;       // 0=positive, 1=negative
+    float p_vcf_key_track_    = 0.50f;   // key-follow amount (0..1)
+    float p_vcf_lfo_depth_    = 0.0f;    // LFO1 → VCF panel mod depth
+    float p_attack_           = 0.010f;  // seconds
     float p_decay_            = 0.100f;
     float p_sustain_          = 0.700f;
     float p_release_          = 0.300f;

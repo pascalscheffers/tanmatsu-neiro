@@ -20,6 +20,7 @@
 #include "clock.h"
 #include "command_queue.h"
 #include "dsp/dcblock.h"
+#include "dsp/juno106_hpf.h"
 #include "dsp/kr106_chorus.h"
 #include "dsp/lfo.h"
 #include "dsp/limiter.h"
@@ -54,6 +55,7 @@ static kr106::Noise s_noise;
 
 static JunoModel          s_juno_model;
 static VoiceAlloc         s_alloc;
+static dsp::Juno106Hpf    s_hpf;
 static kr106::Chorus      s_chorus;
 static dsp::LimiterStereo s_limiter;
 // Master-bus DC blockers (one per output channel). The rendered wave is
@@ -165,6 +167,7 @@ void synth_init(uint32_t sample_rate, size_t block_size) {
     s_alloc.init(&s_juno_model);
     s_note_on_cooldown_blocks = 0;
 
+    s_hpf.init((float)sample_rate);
     s_chorus.Init((float)sample_rate);
     s_limiter.init((float)sample_rate);  // ADR 0021: master-bus peak limiter
     s_dc_l.init((float)sample_rate);     // master-bus DC blocker (per channel)
@@ -464,6 +467,13 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
                 case ParamId::LFO2_SHAPE:
                     s_lfo2.set_waveform((dsp::LfoWave)(int)val);
                     break;
+                case ParamId::HPF_CUTOFF: {
+                    int position = (int)val;
+                    if (position < 0) position = 0;
+                    if (position > 3) position = 3;
+                    s_hpf.set_position((dsp::Juno106HpfPosition)position);
+                    break;
+                }
                 default:
                     break;
             }
@@ -524,7 +534,8 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     _ir_t3  = platform_instret_now();
 #endif
 
-    // 6. Mono bus → stereo chorus → master gain → peak limiter → soft-clip → output
+    // 6. Mono bus → global HPF → stereo chorus → master gain → peak limiter
+    //    → soft-clip → output
     //    (ADR 0016 / ADR 0021).
     // Gain = MASTER_GAIN (manual trim) × channel_vol (CC7 attenuation, ADR 0021) × 1/√U.
     // channel_vol is 0..1 (unity at 1.0, square-law taper from CC7 in the router).
@@ -535,10 +546,11 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
     float gain =
         s_params.get(ParamId::MASTER_GAIN) * s_channel_vol.load(std::memory_order_relaxed) * unison_gain(unison_count);
     for (size_t i = 0; i < frames; i++) {
+        const float hpf_out = s_hpf.process(s_mono[i]);
         if (chorus_mode > 0) {
             float chorus_l;
             float chorus_r;
-            s_chorus.Process(s_mono[i], chorus_l, chorus_r);
+            s_chorus.Process(hpf_out, chorus_l, chorus_r);
             float lg = s_dc_l.process(chorus_l * gain);
             float rg = s_dc_r.process(chorus_r * gain);
             float gr = s_limiter.process(fmaxf(fabsf(lg), fabsf(rg)));
@@ -558,7 +570,7 @@ IRAM_ATTR void synth_render(float* left, float* right, size_t n, void* user) {
         } else {
             // Chorus off: output mono signal to both channels (no stereo spread).
             // Single DC blocker (s_dc_l) drives both channels.
-            float m  = s_dc_l.process(s_mono[i] * gain);
+            float m  = s_dc_l.process(hpf_out * gain);
             float gr = s_limiter.process(fabsf(m));
             float v  = soft_clip(m * gr);
             left[i]  = v;

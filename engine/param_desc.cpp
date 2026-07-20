@@ -82,11 +82,11 @@ const ParamDesc JUNO_PARAM_TABLE[] = {
 
     // --- HPF ---
     // Juno-106 HPF: 4-position discrete switch on the original hardware (WO-13e-i/ii,
-    // ADR 0026). Stepped 0-3, matching dsp::Juno106Hpf's Juno106HpfPosition enum:
+    // WO-14f-i). Stepped 0-3, matching dsp::Juno106Hpf's Juno106HpfPosition enum:
     // 0=bass boost, 1=bypass (default, matches the DSP block's own init default),
-    // 2=225 Hz HPF, 3=700 Hz HPF. Wired per-voice ahead of the VCF (WO-13e-ii).
+    // 2=225 Hz HPF, 3=700 Hz HPF. One global processor owns it after voice summing.
     {ParamId::HPF_CUTOFF, GROUP_HPF, "HPF Position", "HPF", 0.0f, 3.0f, 1.0f, CURVE_STEPPED, UNIT_NONE, "%.0f", 0xFF,
-     0.0f, FLAG_PER_VOICE},
+     0.0f, 0},
 
     // --- ENV ---
     {ParamId::ENV_ATTACK, GROUP_ENV, "Attack", "Atk", 0.001f, 5.0f, 0.010f, CURVE_EXP, UNIT_SEC, "%.3f", 73, 10.0f,

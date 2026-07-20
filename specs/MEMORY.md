@@ -2301,6 +2301,25 @@ badge, but its serial endpoint disappeared on reboot before timing output could
 be captured. Re-capture six-voice chorus-I/II timing; require <70% block period
 and `over=0`, otherwise open the profiled CPU optimization gate.
 
+## 2026-07-20 — WO-14f-i: global post-sum HPF (COMPLETE)
+
+Moved the existing four-position `dsp::Juno106Hpf` from every `JunoVoice` to one
+engine-owned instance. Each mono sample is now filtered exactly once after voice
+summing and before both the KR chorus-on and dry branches; the voice feeds its
+oscillator/sub/noise mix directly into the KR VCF. `HPF_CUTOFF` keeps its stable
+0–3/default-1 semantics but is now global (`FLAG_PER_VOICE` removed), with changed
+values clamped and routed by `synth.cpp`. Removed only the two obsolete tests that
+asserted per-voice/pre-VCF placement; the standalone HPF response/switch/finite suite
+remains green.
+
+`make format`, `make host`, `make test`, `make build`, `make size`, RT membrane/source-
+order audit, and `git diff --check` pass. Image 1,375,774 B (-40 B from WO-14d's
+1,375,814 B); DIRAM 259,170/576,464 B = 44.96% (+150 B combined, including IRAM
+`.text` 123,562 B, +134 B). `sizeof(JunoVoice)` is 672 B (-40 B from 712 B); the
+removed HPF member itself is 28 B, with its 4-byte cached position and class-layout
+padding accounting for the rest. Next: WO-14f-ii replaces the approximate response
+with pinned KR-106 global HPF behavior.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
