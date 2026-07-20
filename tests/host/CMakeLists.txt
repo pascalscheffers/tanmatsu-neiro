@@ -48,6 +48,7 @@ add_executable(tanmatsu-tests
     test_sustain.cpp
     test_bank_json.cpp
     test_neiro_bank.cpp
+    test_user_bank.cpp
     "${CMAKE_CURRENT_BINARY_DIR}/generated/factory_bank_embed.cpp"
     # mono+unison voice-cap regression tests.
     test_alloc_unison_mono.cpp
@@ -73,6 +74,7 @@ add_executable(tanmatsu-tests
     "${REPO_ROOT}/engine/param_store.cpp"
     "${REPO_ROOT}/engine/preset.cpp"
     "${REPO_ROOT}/engine/bank_json.cpp"
+    "${REPO_ROOT}/engine/user_bank.cpp"
     "${REPO_ROOT}/dsp/vendor/cjson/cJSON.c"
     "${REPO_ROOT}/engine/record_ring.cpp"
     "${REPO_ROOT}/control/wav_recorder.cpp"

@@ -68,6 +68,7 @@ set(HOST_SRCS
     "${REPO_ROOT}/engine/param_store.cpp"
     # Stage 2d: preset serialisation + factory bank.
     "${REPO_ROOT}/engine/preset.cpp"
+    "${REPO_ROOT}/engine/user_bank.cpp"
     # WO-13-fmt: PresetPatch value object + JSON bank codec (ADR 0027).
     "${REPO_ROOT}/engine/bank_json.cpp"
     "${REPO_ROOT}/dsp/vendor/cjson/cJSON.c"

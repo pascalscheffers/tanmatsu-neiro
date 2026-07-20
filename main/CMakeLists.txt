@@ -45,6 +45,7 @@ idf_component_register(
 		"../engine/param_store.cpp"
 		# Stage 2d: preset serialisation + factory bank.
 		"../engine/preset.cpp"
+		"../engine/user_bank.cpp"
 		# WO-13-fmt: PresetPatch value object + JSON bank codec (ADR 0027).
 		"../engine/bank_json.cpp"
 		# WO-13-neiro-bank: device embed of engine/banks/neiro_factory.json
