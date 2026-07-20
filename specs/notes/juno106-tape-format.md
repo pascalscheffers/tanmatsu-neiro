@@ -130,6 +130,29 @@ recordings measured. The gap is a property of those two specific recordings (tap
 a few source bit errors), not missing knowledge of the format — a cleaner capture of the same
 two banks would be expected to decode 128/128 against this same transport description.
 
+## Resolution — no further recordings available; final slot disposition (2026-07-20)
+
+Pascal confirmed no additional tape captures are obtainable. This closes the residue with the
+evidence on hand rather than waiting further. **8/128 slots are marked uncertain** (not 5 —
+the second capture pair's cross-validation in the section above both cleared 120 records to
+gold and surfaced 3 new ambiguous ones). Disposition, decided this session:
+
+| slot | issue | value used | confidence |
+|---|---|---|---|
+| A63, B63 | tape lead-out overwrites tail (fields 16/17); differs per capture, content genuinely lost | newer (22050 Hz) capture's decode | low — tail bytes are unrecoverable, rest of record is fine |
+| A61, B44, B51 | illegal switch-byte decode, but **byte-identical across two independent captures** | either capture (identical) | high that this is what's really on the tape; low that it's a *musically intended* patch — likely a genuine save-time or tape-print error preserved faithfully |
+| A50, A51, A62 | both captures individually plausible, but disagree — no checksum, no third capture to arbitrate | newer (22050 Hz) capture's decode, chosen as the more recent/independent re-digitization | medium — unresolved which capture is right; recorded as a judgment call, not a measurement |
+
+**Naming convention (applies at WO-13h/13i, when raw records become named `PresetPatch`
+entries):** each of these 8 canonical slot labels ships with an ` (uncertain)` suffix appended
+to its name, e.g. `A63 (uncertain)`, `B44 (uncertain)`. This is a single flat marker — it does
+not distinguish the three sub-causes in the UI; that detail lives here for anyone who goes
+looking. WO-13h's implementation must read this table before assigning `PresetPatch.name` for
+slots A50, A51, A61, A62, A63, B44, B51, B63.
+
+The other 120/128 slots ship unmarked, with two-independent-capture confirmation — the
+strongest provenance any record in this bank has, checksum or not.
+
 ## Provenance
 
 Clean-room per stage-13 WO-13g-i: derived solely from measuring the two candidate evidence

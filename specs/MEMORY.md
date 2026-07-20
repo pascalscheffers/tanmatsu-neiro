@@ -2035,17 +2035,24 @@ record-by-record. Result is more nuanced than "123/128":
 Full reasoning and the record-level breakdown are in `specs/notes/juno106-tape-format.md`
 ("Cross-validation" section).
 
-**Open question for Pascal:**
-1. The 3 ambiguous records (A:50/51/62) need a tiebreak this analysis can't supply alone —
-   options: a third capture, closer SNR/segment inspection of the two existing captures around
-   those records, or accept one capture as authoritative and note the uncertainty in-patch.
-2. How to treat the 2 unrecoverable tail slots (A:63/B:63) and, more confidently now, the 3
-   reproducible-but-illegal records (A:61, B:44, B:51) once the separate provenance/licensing
-   gate (below) clears — re-capture, substitute patches in those slots, or ship as-is with the
-   odd-but-genuine values. Transport description itself is final either way.
+A third file (`Juno-106-Factory_(1).106`) turned up in the evidence folder — inspected the
+header only (not consulted as a decode input, per clean-room rule): Java serialization magic
+(`AC ED 00 05`), class `Library`/`Patch` with `name`/`sysex` fields, descriptive (non-factory)
+patch names — structurally matches a JSynthLib (GPL) library save, not raw tape audio. Set
+aside, not used anywhere in this decode.
 
-**Next:** await Pascal's call on the above; provenance gate below still separately open before
-WO-13g-ii can vendor any tape-derived bytes into the repo.
+**Resolved 2026-07-20 — no further recordings available; Pascal decided to proceed with what's
+in hand.** Final disposition (full reasoning + per-slot table in
+`specs/notes/juno106-tape-format.md`, "Resolution" section): **8/128 slots** — A50, A51, A61,
+A62, A63, B44, B51, B63 — get an ` (uncertain)` suffix on their canonical slot-label name at
+WO-13i (patch-name assignment); WO-13i's work-order text above now carries this instruction.
+For A63/B63 (tape lead-out) and A50/A51/A62 (unresolved two-capture disagreement), the newer
+(22050 Hz) capture's decode is used as the value; A61/B44/B51 are byte-identical across both
+captures so there's nothing to choose between. The other 120/128 slots ship unmarked with
+two-independent-capture confirmation.
+
+**Next:** provenance/licensing gate below still separately open before WO-13g-ii can vendor any
+tape-derived bytes into the repo; WO-13a–13g-i work is otherwise complete.
 
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).

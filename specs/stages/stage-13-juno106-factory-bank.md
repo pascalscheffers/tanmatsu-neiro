@@ -545,8 +545,12 @@ the current Neiro bank provider.
 
 **Implementation:** expose 140 factory entries: original 128 first, current 12 afterward.
 Original entries use canonical slot labels (`A11`, etc.); add descriptive names only if the
-resolved source grant explicitly covers them. Decode only the selected original patch on
-request. Delegate later indices to the Neiro provider.
+resolved source grant explicitly covers them. Per `specs/notes/juno106-tape-format.md`
+("Resolution — no further recordings available"), append ` (uncertain)` to the slot label for
+exactly these 8 slots: A50, A51, A61, A62, A63, B44, B51, B63 — the tape-decode residue that
+neither a second independent capture nor further recordings could clear. All other 120 slots
+are unmarked. Decode only the selected original patch on request. Delegate later indices to
+the Neiro provider.
 Keep boot default resolution by name; preserve the current default unless ADR 0026 names a
 different one. Do not cache 128 expanded patches or allocate.
 
