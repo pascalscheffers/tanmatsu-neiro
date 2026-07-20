@@ -210,3 +210,80 @@ hardware topology and panel taper.
   upstream `M_PI`, or another target file is needed.
 - Do not fall back to one KR noise generator per voice; that defeats the hardware topology
   and dedup goal.
+
+## WO-14d — Fixed-buffer KR-106 BBD chorus
+
+**Goal:** Replace DaisySP's master chorus with the calibrated KR-106 MN3009-style stereo
+chorus while preserving fixed memory, the current master-chain order, and modes Off/I/II.
+
+### Touch list (only these eight paths)
+
+1. `dsp/vendor/kr106/BBDFilter.h` (new; verbatim tracked source)
+2. `dsp/vendor/kr106/KR106AnalogNoise.h` (new; verbatim tracked source)
+3. `dsp/kr106_chorus.h` (new; attributed source-derived embedded adaptation)
+4. `dsp/vendor/kr106/README.md`
+5. `engine/synth.cpp`
+6. `tests/host/test_voice.cpp`
+7. `main/linker_audio.lf`
+8. `specs/MEMORY.md`
+
+### Read list
+
+1. This work-order.
+2. Source `Source/DSP/{KR106Chorus.h,BBDFilter.h,KR106AnalogNoise.h}` at the pinned commit.
+3. Target `engine/synth.cpp:{s_chorus,synth_init,synth_render steps 4/6}`.
+4. Target `main/linker_audio.lf:audio_dsp_iram,audio_libm_iram`.
+5. Target `tests/host/test_voice.cpp` suite registration/footer only.
+
+### Reuse / implementation pins
+
+- Vendor `BBDFilter.h` and `KR106AnalogNoise.h` verbatim. `KR106Chorus.h` cannot be
+  vendored verbatim because `BBDLine::Init()` allocates a `std::vector`; derive
+  `dsp/kr106_chorus.h` from it, retain GPL/authorship/source-pin attribution, and list exact
+  modifications in the vendor README.
+- Pin the adapted chorus to the product's 48 kHz rate. Replace each dynamic delay line with
+  exactly `float[1024]` (or `std::array<float,1024>`), mask 1023: upstream requests
+  `48,000 * 20 ms + 4 = 964`, rounded to 1024. Two lines = 8192 bytes. No vector, heap, or
+  runtime size choice.
+- Keep the adapted header under 500 lines by retaining executable behavior and calibration
+  notes while removing stale/duplicated research prose. Preserve Hermite interpolation,
+  BBD filters/saturation, leakage/click/floor/ripple models, mode calibrations, and 5 ms
+  mode-change fade. Do not import plugin/UI code.
+- Add software denormal/finite hygiene to adapted feedback/filter/ring/control states:
+  `+1e-20f` or explicit epsilon snaps as appropriate; fail finite at stereo outputs.
+- Replace `daisysp::Chorus s_chorus` with the adapted fixed chorus. Map `CHORUS_MODE`
+  directly after clamp: 0=Off, 1=I, 2=II; upstream mode 3 remains unreachable.
+  `CHORUS_RATE`, `CHORUS_DEPTH`, and `CHORUS_DELAY` remain stable persisted IDs but become
+  explicit legacy no-ops because KR-106 modes use calibrated constants.
+- Preserve the current CPU-saving off branch: process the KR chorus only while mode > 0.
+  Mode I↔II transitions still use upstream's fade. The first engagement fills its delay
+  naturally; do not pay full BBD/transcendental cost while bypassed.
+- Preserve master order: summed mono → chorus → master/channel/unison gain → DC block →
+  limiter → soft clip → record ring.
+- Extend linker placement using the device map: map the `synth` object/audio leaves and exact
+  single-precision `tanhf` archive member(s) plus dependencies into noflash IRAM/DRAM. Do not
+  guess names; build, inspect the map, then add only linked members. Existing sin/exp leaves
+  stay mapped.
+
+### Acceptance
+
+- Compile-time/static assertions prove two 1024-float buffers and bounded chorus size
+  (expected about 8.5 KiB, hard stop above 10 KiB). No vector/allocation in the adapted DSP.
+- Tests prove: bypass output path remains dry-equivalent at the synth branch; modes I/II are
+  deterministic, finite, bounded, and stereo-decorrelated; fractional-delay onset is sane;
+  I↔II switching has no discontinuity spike; ring wrap/Hermite boundaries remain valid; long
+  FTZ-off silence and signal runs produce no NaN/Inf/subnormal observable state/output.
+- `make format`, `make host`, `make test`, `make build`, `make size`, map audit, allocation/
+  logging/blocking grep, and `git diff --check` pass. Record image, IRAM, DIRAM,
+  `sizeof(kr106::Chorus)`, and the fact that on-device `PROFILE=1` timing remains a hardware
+  follow-up if no badge is attached. Commit atomically.
+
+### Split-if / stop conditions
+
+- Stop if adapted behavior cannot fit under 500 lines/10 KiB, device audio leaves remain in
+  flash, mode-on device build grows DIRAM instead of shrinking from Daisy's two 2400-float
+  lines, output becomes unbounded/non-finite, another file is required, or source licensing/
+  attribution is unclear.
+- Do not remove calibrated analog behavior merely to hit a CPU estimate. If an attached
+  device later exceeds 70% of the block period or reports `over>0`, return a CPU gate for a
+  profiled optimization WO.
