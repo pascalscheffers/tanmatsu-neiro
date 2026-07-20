@@ -2174,6 +2174,20 @@ Next: **WO-13i** — unified factory-bank provider selecting between Neiro/Juno-
 (runtime seam), then retune/calibrate the flagged curves above against real hardware
 (WO-13k or folded into 13i).
 
+## 2026-07-20 — WO-13j: 141-row preset browser integration (COMPLETE)
+
+The existing virtual list now renders full three-digit factory indices for the unified
+140-patch span plus User. Host smoke coverage walks only through the public preset-page event
+handler, proves both end wraps, and independently exercises audition/revert and
+audition/confirm at A11, A88, B11, B88, both Neiro endpoints, User, and representative middle
+rows. README/spec 03 now document the original 128 + 12 Neiro layout and the independent
+saw/pulse, PWM-mode, and four-position HPF controls.
+
+`make format` / `make host` / `make test` / `make build` / `make size` green; device image
+1,354,306 B (unchanged from WO-13i). Diff membrane grep and `git diff --check` clean.
+
+Next: **WO-13k** — calibrate mapped curves and complete final hardware acceptance.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

@@ -16,7 +16,8 @@ Reuse-first and dedup-first by design: vetted MIT DSP (DaisySP), and a single pa
 
 ## What it can do (today)
 
-- **8-voice Juno voice** — PolyBLEP saw + sub + noise → state-variable filter → ADSR amp. Fat bass, sparkling highs.
+- **8-voice Juno voice** — PolyBLEP saw + sub + noise → HPF (4-position Juno switch) → state-variable filter → ADSR amp. Fat bass, sparkling highs.
+- **Independent DCO controls** — saw and pulse are separate on/off switches (not one waveform picker), pulse width has its own LFO/Manual mode, and the 4-position HPF is a live, navigable control — matching the real Juno-106 panel rather than a simplified stand-in.
 - **Modulation** — 2 envelopes, 2 shared free-running LFOs (authentic Juno-106), and a 16-slot mod matrix.
 - **Play modes** — poly / mono / legato, portamento, and unison with detune.
 - **Chorus** — the Juno BBD chorus (modes I & II).
@@ -24,7 +25,7 @@ Reuse-first and dedup-first by design: vetted MIT DSP (DaisySP), and a single pa
 - **Clock** — internal master clock with adjustable BPM.
 - **MIDI I/O** — USB-A host (plug in a keyboard), USB-C device (play from a DAW), plus expression: pitch-bend, mod wheel, aftertouch, sustain (CC64), and panic.
 - **Controller follow** — 8 hardware pots (CC 21–28) map to key parameters; turning a knob jumps the screen to that parameter's page and tracks the value live.
-- **Presets** — factory bank + save-your-own.
+- **Presets** — the original 128 Juno-106 factory patches (slots A11–B88) plus the 12 Neiro factory patches, browsable in one scrolling list, plus a save-your-own user slot.
 - **Musical typing** — make sound standalone with nothing plugged in.
 - **Side volume buttons** — session-only codec volume from 0–90%, independent of patch gain.
 - **SD recording** — capture the stereo master as 48 kHz/16-bit PCM WAV without blocking audio.

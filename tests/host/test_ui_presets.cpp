@@ -281,6 +281,103 @@ static void test_page_nav_reverts_and_passes_through(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Test 7: WO-13j — the 141-row list (140 factory + User) reaches every
+// boundary and a representative sample of middle rows without overflow.
+// Navigation goes through ui_presets_handle_event() only; the test never
+// assigns UIState::row to skip across the bank.
+// ---------------------------------------------------------------------------
+static void press_preset_key(UIState* s, int key) {
+    platform_event_t ev = key_press(key);
+    ui_presets_handle_event(s, &ev);
+}
+
+static void browse_down_to(UIState* s, int target, int total) {
+    int moves = 0;
+    while (s->row != target && moves <= total) {
+        press_preset_key(s, PLATFORM_KEY_DOWN);
+        moves++;
+    }
+    TEST_ASSERT(s->row == target, "browse should reach the requested row before wrapping twice");
+    TEST_ASSERT(moves <= total, "browse should not overflow or loop past one complete list span");
+}
+
+static void reaudition_current_row(UIState* s) {
+    press_preset_key(s, PLATFORM_KEY_UP);
+    press_preset_key(s, PLATFORM_KEY_DOWN);
+}
+
+static void test_boundary_and_middle_rows_reachable(void) {
+    test_begin("140-row factory span + User: boundaries and middle rows reachable, no overflow");
+
+    const int factory_n = preset_factory_count();
+    TEST_ASSERT(factory_n == 140, "factory count should be 140 (128 Juno-106 + 12 Neiro)");
+    const int user_row = factory_n;
+    const int n        = factory_n + 1;
+
+    // Slot-order sanity: A11 .. A88 .. B11 .. B88 (canonical Juno-106 order).
+    TEST_ASSERT(strcmp(preset_factory_name(0), "A11") == 0, "row 0 should be A11");
+    TEST_ASSERT(strncmp(preset_factory_name(63), "A88", 3) == 0, "row 63 should be A88 (last A-group slot)");
+    TEST_ASSERT(strcmp(preset_factory_name(64), "B11") == 0, "row 64 should be B11 (first B-group slot)");
+    TEST_ASSERT(strncmp(preset_factory_name(127), "B88", 3) == 0, "row 127 should be B88 (last original slot)");
+    // Neiro bank follows immediately after the 128 originals.
+    TEST_ASSERT(strcmp(preset_factory_name(128), "INIT") == 0, "row 128 should be the first Neiro patch");
+    TEST_ASSERT(strcmp(preset_factory_name(139), "Chip Noise") == 0, "row 139 should be the last Neiro patch");
+
+    UIState s;
+    init_state(&s);
+
+    // Prove both list-end wraps before walking the ordered boundary sample.
+    press_preset_key(&s, PLATFORM_KEY_UP);
+    TEST_ASSERT(s.row == user_row, "Up from A11 should wrap to User");
+    press_preset_key(&s, PLATFORM_KEY_DOWN);
+    TEST_ASSERT(s.row == 0, "Down from User should wrap to A11");
+    press_preset_key(&s, PLATFORM_KEY_F3);
+
+    // Canonical boundaries plus representative middle rows. Each factory row
+    // gets two independent transactions: audition -> revert, then audition ->
+    // confirm. The final User row exercises the same commands safely with the
+    // test's intentional "no saved user preset" storage stub.
+    const int rows_to_visit[] = {0, 32, 63, 64, 95, 127, 128, 133, 139, user_row};
+    for (size_t i = 0; i < sizeof(rows_to_visit) / sizeof(rows_to_visit[0]); i++) {
+        int target = rows_to_visit[i];
+        if (s.row == target) reaudition_current_row(&s);
+        browse_down_to(&s, target, n);
+
+        bool is_user_row = (target == user_row);
+        if (!is_user_row) {
+            TEST_ASSERT(s.auditioning, "browsing to a factory row should start an audition");
+            TEST_ASSERT(strcmp(s.preset_name, preset_factory_name(target)) == 0,
+                        "audition at a factory row should load that row's name into UIState");
+            TEST_ASSERT(s.preset_idx == target, "audition should retain the full factory row index");
+        }
+        TEST_ASSERT(s.row == target, "row should stay exactly at the requested index (no wrap/overflow)");
+
+        int  before_revert_idx = s.audition_preset_idx;
+        char before_revert_name[PRESET_NAME_LEN + 1];
+        strncpy(before_revert_name, s.audition_preset_name, sizeof(before_revert_name));
+        before_revert_name[sizeof(before_revert_name) - 1] = '\0';
+        press_preset_key(&s, PLATFORM_KEY_F3);
+        TEST_ASSERT(!s.auditioning, "revert should clear auditioning at every sampled row");
+        TEST_ASSERT(s.preset_idx == before_revert_idx, "revert should restore the previously-confirmed index");
+        TEST_ASSERT(strcmp(s.preset_name, before_revert_name) == 0,
+                    "revert should restore the previously-confirmed name");
+
+        reaudition_current_row(&s);
+        TEST_ASSERT(s.row == target, "re-audition should return to the same full-width row index");
+        press_preset_key(&s, PLATFORM_KEY_F4);
+        TEST_ASSERT(!s.auditioning, "confirm should clear auditioning at every sampled row");
+        if (!is_user_row) {
+            TEST_ASSERT(s.preset_idx == target, "confirm should retain the selected factory row index");
+            TEST_ASSERT(s.audition_preset_idx == target, "confirm should snapshot the selected factory row index");
+            TEST_ASSERT(strcmp(s.audition_preset_name, preset_factory_name(target)) == 0,
+                        "confirm should snapshot the selected factory name");
+        }
+    }
+
+    test_pass();
+}
+
+// ---------------------------------------------------------------------------
 // Suite entry point
 // ---------------------------------------------------------------------------
 
@@ -292,4 +389,6 @@ void test_ui_presets_suite(void) {
     test_esc_alias_reverts();
     test_enter_alias_confirms();
     test_page_nav_reverts_and_passes_through();
+    printf("--- WO-13j: 140-row factory span browser reachability ---\n");
+    test_boundary_and_middle_rows_reachable();
 }

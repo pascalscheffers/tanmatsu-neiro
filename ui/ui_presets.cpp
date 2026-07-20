@@ -125,8 +125,10 @@ extern "C" void ui_presets_draw(pax_buf_t* fb, const UIState* s) {
             row_name = preset_factory_name(i);
         }
 
-        // Index prefix (right-aligned in a fixed field).
-        snprintf(idx_buf, sizeof(idx_buf), is_user ? "  " : "%2d", i + 1);
+        // Index prefix (right-aligned in a fixed field). Width 3 accommodates
+        // the full 140-row factory span (indices 1..140); idx_buf[8] leaves
+        // headroom well beyond that so a wider bank never truncates silently.
+        snprintf(idx_buf, sizeof(idx_buf), is_user ? "   " : "%3d", i + 1);
         pax_draw_text(fb, COL_DIM, pax_font_sky_mono, FONT_SM, 48.0f, mid_y - FONT_SM * 0.5f, idx_buf);
         pax_draw_text(fb, is_cursor ? COL_TEXT : COL_DIM, pax_font_sky_mono, FONT_MD, 80.0f, mid_y - FONT_MD * 0.5f,
                       row_name);

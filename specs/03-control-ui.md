@@ -85,9 +85,12 @@ The PRESET page (page 1, home) is a special-purpose page, not a param-page:
 - **Navigate away (← / →):** reverts first (if auditioning), then passes the page-switch
   through to the navigation handler.
 
-Factory presets are listed first; a "User" row at the bottom refers to the NVS-stored user
-preset. The committed preset is indicated with a cyan dot; an audition-in-progress behind a
-different committed preset shows a magenta dot.
+The list is 141 rows: the 128 original Juno-106 factory patches in canonical slot order
+(A11..A88, then B11..B88 — some names carry a ` (uncertain)` suffix where the tape decode
+couldn't fully verify a slot; see `specs/stages/stage-13-juno106-factory-bank.md`), followed
+by the 12 existing Neiro factory patches, followed by a "User" row at the bottom that refers
+to the NVS-stored user preset. The committed preset is indicated with a cyan dot; an
+audition-in-progress behind a different committed preset shows a magenta dot.
 
 ## Key-guide overlay (F5)
 
@@ -158,16 +161,30 @@ updates the norm shadow so the value bar tracks the knob live.
   (PAX-free; compiled separately to allow host unit tests), `app/app.c` (wire-up).
 
 ## Presets (data detail in `specs/05`)
-- **Storage:** NVS under key `"user"` for the single user slot. Factory presets are compiled
-  in as `const` arrays in `engine/preset.cpp`.
+- **Storage:** NVS under key `"user"` for the single user slot. Factory presets are two
+  embedded JSON banks (cJSON) baked into flash: the 128 original Juno-106 patches
+  (`engine/banks/juno106_factory.json`) and the 12 Neiro patches
+  (`engine/banks/neiro_factory.json`). `engine/preset.cpp` presents both as one 140-entry
+  span — see `preset_factory_count()`/`preset_factory_name()`.
 - **Format:** v2 blob — magic "TNMT" header, param pairs (id:u16 + value:f32), then a
   routings block (`count:u16` + N × 8-byte routing records).
 - **At boot:** loads the default factory preset by name ("Solo Lead") and applies params +
   routings. If a user preset exists in NVS, it overrides the factory default.
 
+## Independent DCO controls (OSC / FILTER pages)
+The Juno-106 panel has no single "waveform" knob — saw and pulse are independent switches,
+pulse width has its own LFO/Manual mode, and the HPF is a separate 4-position switch ahead of
+the VCF. The UI mirrors that directly (all live, navigable rows, not inert placeholders):
+- **`OSC_SAW_ON` / `OSC_PULSE_ON`** (GROUP_OSC, OSC page) — independent on/off switches; both
+  can be on at once (the retired combined `OSC_WAVEFORM` selector, `0x14`, is no longer used).
+- **`OSC_PWM` + `PWM_MODE`** (GROUP_OSC) — pulse width amount, interpreted either as an
+  LFO-modulation depth around the hardware-neutral 50% centre (`PWM_MODE`=0, default) or as a
+  fixed manual width (`PWM_MODE`=1).
+- **`HPF_CUTOFF`** (GROUP_HPF, FILTER page) — the Juno's 4-position high-pass switch, wired
+  ahead of the VCF in `JunoVoice::render()` (`dsp/juno106_hpf.{h,cpp}`); live DSP, not a
+  stand-in.
+
 ## Still deferred
 - MIDI-learn (assignable CC) — easy on top of the param table; schedule with a later stage.
-- HPF DSP wiring — `HPF_CUTOFF` is a navigable row but the SVF block behind it is still
-  inert (needs a second `dsp::Filter` in `JunoVoice`; its own sub-stage).
 - Tap tempo in the UI (the engine clock already supports `engine_tap_tempo()`; no button
   assigned yet).
