@@ -391,3 +391,115 @@ crossfade.
 - Stop if float state misses response tolerance, any mode is non-finite/unbounded, exact
   crossfade semantics require another file, or adaptation exceeds the existing module's
   focused responsibility/500-line limit.
+
+## WO-14e-i — Retire obsolete wrappers/tests and modernize bench
+
+**Goal:** Remove the hand-built/Daisy oscillator and SVF wrappers/tests now superseded by
+KR-106, while retargeting the on-device benchmark to the live KR blocks. Keep Daisy ADSR for
+ENV2, shared custom LFO, ModMatrix, and DC blocker.
+
+### Touch list (only these eight paths)
+
+1. `engine/bench_blocks.cpp`
+2. `tests/host/test_osc.cpp` (delete)
+3. `tests/host/test_osc_waveform.cpp`
+4. `tests/host/main.cpp`
+5. `tests/host/CMakeLists.txt`
+6. `dsp/osc.h` (delete)
+7. `dsp/filter.h` (delete)
+8. `specs/MEMORY.md`
+
+### Read list
+
+1. This work-order.
+2. `engine/bench_blocks.cpp` benchmark row definitions only.
+3. `tests/host/{test_osc.cpp,test_osc_waveform.cpp,main.cpp,CMakeLists.txt}` oscillator entries.
+4. `dsp/vendor/kr106/{KR106Oscillators.h,KR106VCF_OPTIMIZED.h,KR106Noise.h}` public APIs.
+5. `dsp/{osc.h,filter.h,env.h,lfo.h}` includes/API only.
+
+### Implementation / acceptance
+
+- Replace obsolete benchmark rows with current KR oscillator, 1x J106 VCF, shared noise,
+  and measured VCA where useful. Retain ENV2 ADSR, shared LFO, and ModMatrix rows. Fixed
+  state/buffers only; no benchmark code enters normal render.
+- Delete `test_osc.cpp`; remove only `dsp::Osc`-specific cases/helpers from
+  `test_osc_waveform.cpp`, retaining ModMatrix PWM and JunoVoice/KR coherent saw/pulse/sub
+  cases. Remove corresponding suite registration/source entry.
+- Delete `dsp/osc.h` and `dsp/filter.h`; production and updated bench must have no refs.
+- `make format`, `make host`, `make test`, `make BENCH=1 build`, normal `make build`,
+  `make size`, grep for deleted includes, and `git diff --check` pass. Append MEMORY and
+  commit atomically. Stop if another file references either wrapper.
+
+## WO-14e-ii — Prune obsolete Daisy build/link entries
+
+**Goal:** Stop compiling/link-mapping the Daisy oscillator, SVF, and chorus implementations
+after all live callers are gone.
+
+### Touch list
+
+1. `host/CMakeLists.txt`
+2. `tests/host/CMakeLists.txt`
+3. `main/CMakeLists.txt`
+4. `main/linker_audio.lf`
+5. `specs/MEMORY.md`
+
+### Read / implementation / acceptance
+
+- Read only those manifests' Daisy source lists and linker's `audio_dsp_iram` prose/entries.
+- Remove `oscillator.cpp`, `svf.cpp`, and `chorus.cpp` entries. Retain `adsr.cpp` for ENV2,
+  `dcblock.cpp` for master output, all KR DSP, and Utility/dsp math for `mtof`.
+- Remove stale oscillator/SVF/Daisy-chorus noflash entries and rewrite the narrow linker
+  comment; keep `synth`, ADSR, ModMatrix, allocator, KR/libm leaves proven live by map.
+- `make host`, `make test`, `make BENCH=1 build`, normal `make build`, `make size`, device
+  map audit, and diff check pass. Append MEMORY; commit. Stop on any unresolved symbol.
+
+## WO-14e-iii — Delete superseded Daisy source files
+
+**Goal:** Physically remove the now-unbuilt oscillator/SVF/chorus/noise sources.
+
+### Touch list (only these eight paths)
+
+1. `dsp/vendor/daisysp/Source/Synthesis/oscillator.h` (delete)
+2. `dsp/vendor/daisysp/Source/Synthesis/oscillator.cpp` (delete)
+3. `dsp/vendor/daisysp/Source/Filters/svf.h` (delete)
+4. `dsp/vendor/daisysp/Source/Filters/svf.cpp` (delete)
+5. `dsp/vendor/daisysp/Source/Effects/chorus.h` (delete)
+6. `dsp/vendor/daisysp/Source/Effects/chorus.cpp` (delete)
+7. `dsp/vendor/daisysp/Source/Noise/whitenoise.h` (delete)
+8. `specs/MEMORY.md`
+
+### Acceptance
+
+- Before deletion, `rg` proves no live/build refs. Preserve Daisy license, ADSR, DC block,
+  delayline, and all still-used utility code.
+- `make host`, `make test`, `make BENCH=1 build`, `make build`, `make size`, and diff check
+  pass. Append MEMORY and commit. Stop if any file is referenced.
+
+## WO-14e-iv — Remove dormant ladder and make docs truthful
+
+**Goal:** Finish the pivot cleanup by removing the never-wired Daisy ladder candidate and
+updating current user/architecture docs without rewriting historical ADRs/log entries.
+
+### Touch list (only these eight paths)
+
+1. `dsp/vendor/daisysp/Source/Filters/ladder.h` (delete)
+2. `dsp/vendor/daisysp/Source/Filters/ladder.cpp` (delete)
+3. `specs/MAP.md`
+4. `specs/02-synth-architecture.md`
+5. `specs/06-feature-scope-and-roadmap.md`
+6. `specs/notes/juno106-hpf-analysis.md`
+7. `README.md`
+8. `specs/MEMORY.md`
+
+### Implementation / acceptance
+
+- Delete ladder only after `rg` proves it is unreferenced. Preserve Daisy license and live
+  ENV2/DC/delay utilities.
+- Update current architecture/MAP/README to KR oscillator, nonlinear J106 VCF,
+  firmware ADSR/measured VCA, shared noise, global KR HPF, and fixed BBD chorus. Remove stale
+  claims that amp uses Daisy ADSR/SVF/PolyBLEP wrappers or that HPF is unwired/per voice.
+- Mark the old HPF analysis as superseded historical work; do not erase provenance/history.
+- State that `FILTER_MODE` and chorus rate/depth/delay remain stored legacy no-ops pending a
+  separate UI/preset-compatibility decision. Do not silently remap them.
+- `make host`, `make test`, `make build`, `make size`, README user-control consistency check,
+  `rg` for stale current claims, and diff check pass. Append MEMORY and commit.
