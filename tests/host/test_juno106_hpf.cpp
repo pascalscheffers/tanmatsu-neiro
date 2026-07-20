@@ -1,164 +1,223 @@
-// test_juno106_hpf.cpp — host tests for dsp/juno106_hpf.h (WO-13e-i).
-//
-// Verifies the four switch positions against the ADR 0026 calibration targets
-// and the derivation in specs/notes/juno106-hpf-analysis.md: the two HPF
-// corners land within tolerance of -3 dB, bypass is flat unity, the bass-boost
-// shelf shows the expected +3 dB-ish lift at 70 Hz and unity up high, output
-// stays finite on silence/signal, position switches produce a bounded
-// transient (not a blow-up), and the state never leaks a denormal.
+// Host acceptance tests for the pinned KR-106 Juno-106 HPF adaptation.
 #include <math.h>
+#include <stdint.h>
 #include "dsp/juno106_hpf.h"
 #include "runner.h"
 
-static const float kFs = 48000.0f;
+static constexpr float kFs = 48000.0f;
+static constexpr float kPi = 3.14159265358979323846f;
 
-// Drives a steady-state sine through the filter and returns the settled
-// output peak amplitude in dB relative to a unity input sine (0 dB = unity
-// gain). Settles for `settle_cycles` full periods before measuring.
-static float measure_gain_db(dsp::Juno106Hpf& hpf, float freq) {
-    const float w       = 2.0f * (float)M_PI * freq / kFs;
-    // Settle: enough samples for the (slow, sub-Hz-ish at worst) transient
-    // to decay — first-order pole here is never near z=1, so a few thousand
-    // samples is ample; use a generous fixed window shared by all probes.
-    const int   settle  = 20000;
-    const int   measure = 20000;
-    for (int i = 0; i < settle; i++) hpf.process(sinf(w * (float)i));
-    float peak = 0.0f;
-    for (int i = settle; i < settle + measure; i++) {
-        float y = hpf.process(sinf(w * (float)i));
-        if (fabsf(y) > peak) peak = fabsf(y);
+static float sine_gain_db(dsp::Juno106HpfPosition position, float frequency, int settle_samples = 192000,
+                          int measure_samples = 48000) {
+    dsp::Juno106Hpf hpf;
+    hpf.init(kFs);
+    hpf.set_position(position);
+    float phase_step = 2.0f * kPi * frequency / kFs;
+    for (int i = 0; i < settle_samples; ++i) hpf.process(sinf(phase_step * i));
+
+    double in_sin = 0.0;
+    double in_cos = 0.0;
+    for (int i = settle_samples; i < settle_samples + measure_samples; ++i) {
+        float phase = phase_step * i;
+        float out   = hpf.process(sinf(phase));
+        in_sin     += static_cast<double>(out) * sinf(phase);
+        in_cos     += static_cast<double>(out) * cosf(phase);
     }
-    // Input sine has unity amplitude, so peak *is* the linear gain.
-    return 20.0f * log10f(peak > 1e-9f ? peak : 1e-9f);
+    double amplitude = (2.0 / measure_samples) * sqrt(in_sin * in_sin + in_cos * in_cos);
+    return 20.0f * log10f(static_cast<float>(amplitude));
 }
 
-static void test_position2_hpf_225_near_minus3db(void) {
-    test_begin("juno106_hpf: position 2 (225 Hz) ~ -3 dB at corner");
-    dsp::Juno106Hpf hpf;
-    hpf.init(kFs);
-    hpf.set_position(dsp::JUNO106_HPF_225HZ);
-    float g = measure_gain_db(hpf, 225.0f);
-    TEST_ASSERT(fabsf(g - (-3.0f)) < 0.5f, "225 Hz corner not within 0.5 dB of -3 dB");
+static void test_cut_positions(void) {
+    test_begin("juno106_hpf: pinned 236/754 Hz cut corners");
+    float g236 = sine_gain_db(dsp::JUNO106_HPF_236HZ, 236.0f);
+    float g754 = sine_gain_db(dsp::JUNO106_HPF_754HZ, 754.0f);
+    printf("  response cut: 236 Hz %.3f dB, 754 Hz %.3f dB\n", g236, g754);
+    TEST_ASSERT(fabsf(g236 + 3.0103f) < 0.08f, "236 Hz corner differs from -3.01 dB");
+    TEST_ASSERT(fabsf(g754 + 3.0103f) < 0.08f, "754 Hz corner differs from -3.01 dB");
     test_pass();
 }
 
-static void test_position3_hpf_700_near_minus3db(void) {
-    test_begin("juno106_hpf: position 3 (700 Hz) ~ -3 dB at corner");
-    dsp::Juno106Hpf hpf;
-    hpf.init(kFs);
-    hpf.set_position(dsp::JUNO106_HPF_700HZ);
-    float g = measure_gain_db(hpf, 700.0f);
-    TEST_ASSERT(fabsf(g - (-3.0f)) < 0.5f, "700 Hz corner not within 0.5 dB of -3 dB");
-    test_pass();
-}
+static void test_common_ac_coupling(void) {
+    test_begin("juno106_hpf: common 0.35 Hz AC coupling");
+    float g035 = sine_gain_db(dsp::JUNO106_HPF_BYPASS, 0.35f, 960000, 960000);
+    printf("  response AC: 0.35 Hz %.3f dB\n", g035);
+    TEST_ASSERT(fabsf(g035 + 3.0103f) < 0.08f, "0.35 Hz blocker corner differs from -3.01 dB");
 
-static void test_position2_below_corner_rolls_off(void) {
-    test_begin("juno106_hpf: position 2 rolls off well below 225 Hz");
-    dsp::Juno106Hpf hpf;
-    hpf.init(kFs);
-    hpf.set_position(dsp::JUNO106_HPF_225HZ);
-    float g = measure_gain_db(hpf, 70.0f);
-    TEST_ASSERT(g < -8.0f, "70 Hz should be well attenuated by the 225 Hz HPF");
-    test_pass();
-}
-
-static void test_position1_bypass_flat_unity(void) {
-    test_begin("juno106_hpf: position 1 (bypass) flat unity");
-    dsp::Juno106Hpf hpf;
-    hpf.init(kFs);
-    hpf.set_position(dsp::JUNO106_HPF_BYPASS);
-    static const float kProbeFreqs[] = {70.0f, 225.0f, 700.0f, 1000.0f, 5000.0f};
-    for (unsigned i = 0; i < sizeof(kProbeFreqs) / sizeof(kProbeFreqs[0]); i++) {
-        float g = measure_gain_db(hpf, kProbeFreqs[i]);
-        TEST_ASSERT(fabsf(g) < 0.05f, "bypass not flat unity at probed frequency");
+    for (int mode = 0; mode < 4; ++mode) {
+        dsp::Juno106Hpf hpf;
+        hpf.init(kFs);
+        hpf.set_position(static_cast<dsp::Juno106HpfPosition>(mode));
+        float out = 0.0f;
+        for (int i = 0; i < 576000; ++i) out = hpf.process(0.25f);
+        // With float state at a 0.35 Hz pole, accumulation eventually reaches
+        // RV32F precision near a 0.25 DC level; require strong rejection, not
+        // an unattainable double-precision zero.
+        TEST_ASSERT(fabsf(out) < 2.0e-3f, "mode did not reject DC through common blocker");
     }
     test_pass();
 }
 
-static void test_position0_bass_boost_shape(void) {
-    test_begin("juno106_hpf: position 0 bass boost ~+3 dB at 70 Hz, unity up high");
-    dsp::Juno106Hpf hpf;
-    hpf.init(kFs);
-    hpf.set_position(dsp::JUNO106_HPF_BASS_BOOST);
-    float g70 = measure_gain_db(hpf, 70.0f);
-    TEST_ASSERT(fabsf(g70 - 3.0f) < 0.5f, "70 Hz boost not within 0.5 dB of +3 dB");
-
-    dsp::Juno106Hpf hpf2;
-    hpf2.init(kFs);
-    hpf2.set_position(dsp::JUNO106_HPF_BASS_BOOST);
-    float g5k = measure_gain_db(hpf2, 5000.0f);
-    TEST_ASSERT(fabsf(g5k) < 0.2f, "position 0 should be ~flat/unity well above the shelf");
+static void test_bass_response(void) {
+    test_begin("juno106_hpf: pinned J106 bass circuit response");
+    const float g20  = sine_gain_db(dsp::JUNO106_HPF_BASS_BOOST, 20.0f);
+    const float g70  = sine_gain_db(dsp::JUNO106_HPF_BASS_BOOST, 70.0f);
+    const float g103 = sine_gain_db(dsp::JUNO106_HPF_BASS_BOOST, 103.0f);
+    const float g5k  = sine_gain_db(dsp::JUNO106_HPF_BASS_BOOST, 5000.0f);
+    printf("  response bass: 20 %.3f, 70 %.3f, 103 %.3f, 5000 %.3f dB\n", g20, g70, g103, g5k);
+    TEST_ASSERT(fabsf(g20 - 10.10f) < 0.15f, "20 Hz bass response outside tolerance");
+    TEST_ASSERT(fabsf(g70 - 7.42f) < 0.15f, "70 Hz bass response outside tolerance");
+    TEST_ASSERT(fabsf(g103 - 5.86f) < 0.15f, "103 Hz bass response outside tolerance");
+    TEST_ASSERT(fabsf(g5k - 1.41f) < 0.15f, "5 kHz bass response outside tolerance");
+    TEST_ASSERT(fabsf((g20 - g5k) - 8.69f) < 0.2f, "bass low/high response difference outside tolerance");
     test_pass();
 }
 
-static void test_silence_and_signal_finite(void) {
-    test_begin("juno106_hpf: finite output on silence and signal, all positions");
-    dsp::Juno106Hpf hpf;
-    hpf.init(kFs);
-    for (int pos = 0; pos < 4; pos++) {
-        hpf.set_position((dsp::Juno106HpfPosition)pos);
-        float y = 0.0f;
-        for (int i = 0; i < 5000; i++) y = hpf.process(0.0f);
-        TEST_ASSERT(isfinite(y), "non-finite output on silence");
-        for (int i = 0; i < 5000; i++) {
-            y = hpf.process(sinf(2.0f * (float)M_PI * 440.0f * (float)i / kFs));
+// Independent cut-mode oracle copied from the pinned KR-106 state-variable
+// equations. It makes the crossfade sample count and rapid-switch snapshot
+// behavior observable without exposing target internals.
+struct CutReference {
+    struct State {
+        float frequency = 0.0f;
+        float g         = 0.0f;
+        float hp        = 0.0f;
+        float dc        = 0.0f;
+    } current, previous;
+    float dc_g = tanf((0.35f / (kFs * 0.5f)) * kPi * 0.5f);
+    int   fade = 0;
+
+    void set_mode(int mode) {
+        float frequency = mode == 2 ? 236.0f : (mode == 3 ? 754.0f : 0.0f);
+        if (frequency == current.frequency) return;
+        previous          = current;
+        fade              = 64;
+        current.frequency = frequency;
+        current.g         = frequency > 0.0f ? tanf((frequency / (kFs * 0.5f)) * kPi * 0.5f) : 0.0f;
+    }
+
+    float path(float in, State& state) {
+        float v       = (in - state.dc) * dc_g / (1.0f + dc_g);
+        float lp      = state.dc + v;
+        state.dc      = lp + v;
+        float blocked = in - lp;
+        if (state.frequency <= 0.0f) return blocked;
+        v        = (blocked - state.hp) * state.g / (1.0f + state.g);
+        lp       = state.hp + v;
+        state.hp = lp + v;
+        return blocked - lp;
+    }
+
+    float process(float in) {
+        float out = path(in, current);
+        if (fade > 0) {
+            float old = path(in, previous);
+            float t   = static_cast<float>(fade) / 64.0f;
+            out       = out * (1.0f - t) + old * t;
+            --fade;
         }
-        TEST_ASSERT(isfinite(y), "non-finite output on signal");
+        return out;
     }
-    test_pass();
-}
+};
 
-// A position switch on a running filter must not produce a discontinuity
-// blow-up: the sample immediately after the switch stays within a small
-// bounded multiple of the pre-switch signal level (first-order pole here is
-// always stable/well inside the unit circle, so no ringing explosion).
-static void test_position_switch_bounded_transient(void) {
-    test_begin("juno106_hpf: position switch has bounded transient");
+static void test_exact_crossfade_and_rapid_switching(void) {
+    test_begin("juno106_hpf: exact 64-sample and repeated-switch crossfades");
     dsp::Juno106Hpf hpf;
+    CutReference    ref;
     hpf.init(kFs);
+    for (int i = 0; i < 600; ++i) {
+        float in = 0.4f * sinf(2.0f * kPi * 317.0f * i / kFs) + 0.1f;
+        TEST_ASSERT(fabsf(hpf.process(in) - ref.process(in)) < 2.0e-6f, "pre-switch oracle mismatch");
+    }
+    hpf.set_position(dsp::JUNO106_HPF_236HZ);
+    ref.set_mode(2);
+    for (int i = 0; i < 29; ++i) {
+        float in = 0.6f * sinf(2.0f * kPi * 541.0f * i / kFs);
+        TEST_ASSERT(fabsf(hpf.process(in) - ref.process(in)) < 2.0e-6f, "first crossfade mismatch");
+    }
+    hpf.set_position(dsp::JUNO106_HPF_754HZ);
+    ref.set_mode(3);
+    for (int i = 0; i < 17; ++i) {
+        float in = -0.3f + 0.2f * sinf(2.0f * kPi * 991.0f * i / kFs);
+        TEST_ASSERT(fabsf(hpf.process(in) - ref.process(in)) < 2.0e-6f, "rapid-switch crossfade mismatch");
+    }
     hpf.set_position(dsp::JUNO106_HPF_BYPASS);
-    const float w = 2.0f * (float)M_PI * 440.0f / kFs;
-    for (int i = 0; i < 4800; i++) hpf.process(sinf(w * (float)i));
-
-    float pre = hpf.process(sinf(w * 4800.0f));
-    hpf.set_position(dsp::JUNO106_HPF_BASS_BOOST);
-    float peak = fabsf(pre);
-    for (int i = 4801; i < 4801 + 200; i++) {
-        float y = hpf.process(sinf(w * (float)i));
-        TEST_ASSERT(isfinite(y), "position switch produced non-finite output");
-        if (fabsf(y) > peak) peak = fabsf(y);
+    ref.set_mode(1);
+    for (int i = 0; i < 65; ++i) {
+        float in = 0.25f * sinf(2.0f * kPi * 83.0f * i / kFs);
+        TEST_ASSERT(fabsf(hpf.process(in) - ref.process(in)) < 2.0e-6f, "64-sample completion mismatch");
     }
-    // Input amplitude is 1.0; even with the boldest position (bass boost,
-    // ~+4.76 dB asymptote) the transient should never exceed ~2x amplitude.
-    TEST_ASSERT(peak < 2.0f, "position switch transient exceeded bounded envelope");
     test_pass();
 }
 
-// After a long silence, state must not settle into a subnormal (denormal)
-// float — the anti-denormal bias (ADR 0012) should keep it clear.
-static void test_no_denormal_leak(void) {
-    test_begin("juno106_hpf: no denormal leak on silence, all positions");
-    dsp::Juno106Hpf hpf;
-    hpf.init(kFs);
-    for (int pos = 0; pos < 4; pos++) {
-        hpf.set_position((dsp::Juno106HpfPosition)pos);
-        hpf.process(1.0f);  // kick the state, then decay to silence
-        float y = 0.0f;
-        for (int i = 0; i < 200000; i++) y = hpf.process(0.0f);
-        TEST_ASSERT(isfinite(y), "non-finite after long silence");
-        TEST_ASSERT(fpclassify(y) != FP_SUBNORMAL, "output settled into a denormal");
+static void test_split_processing_deterministic(void) {
+    test_begin("juno106_hpf: split and contiguous processing deterministic");
+    dsp::Juno106Hpf contiguous;
+    dsp::Juno106Hpf split;
+    contiguous.init(kFs);
+    split.init(kFs);
+    contiguous.set_position(dsp::JUNO106_HPF_BASS_BOOST);
+    split.set_position(dsp::JUNO106_HPF_BASS_BOOST);
+    float expected[4096];
+    for (int i = 0; i < 4096; ++i) {
+        if (i == 1379) contiguous.set_position(dsp::JUNO106_HPF_754HZ);
+        float in    = 0.5f * sinf(2.0f * kPi * 113.0f * i / kFs);
+        expected[i] = contiguous.process(in);
+    }
+    for (int begin = 0; begin < 4096; begin += 1024) {
+        int end = begin + 1024;
+        for (int i = begin; i < end; ++i) {
+            if (i == 1379) split.set_position(dsp::JUNO106_HPF_754HZ);
+            float in = 0.5f * sinf(2.0f * kPi * 113.0f * i / kFs);
+            TEST_ASSERT(expected[i] == split.process(in), "split processing changed deterministic output");
+        }
+    }
+    test_pass();
+}
+
+static void test_nonfinite_recovery_and_bounds(void) {
+    test_begin("juno106_hpf: non-finite recovery and bounded modes");
+    for (int mode = 0; mode < 4; ++mode) {
+        dsp::Juno106Hpf hpf;
+        hpf.init(kFs);
+        hpf.set_position(static_cast<dsp::Juno106HpfPosition>(mode));
+        for (int i = 0; i < 12000; ++i) {
+            if ((i % 997) == 0) hpf.set_position(static_cast<dsp::Juno106HpfPosition>((mode + i) & 3));
+            float in  = 0.8f * sinf(2.0f * kPi * 31.0f * i / kFs);
+            float out = hpf.process(in);
+            TEST_ASSERT(isfinite(out), "mode produced non-finite output");
+            TEST_ASSERT(fabsf(out) < 4.0f, "mode exceeded bounded envelope");
+        }
+        TEST_ASSERT(isfinite(hpf.process(NAN)), "NaN input did not recover");
+        TEST_ASSERT(isfinite(hpf.process(INFINITY)), "+Inf input did not recover");
+        TEST_ASSERT(isfinite(hpf.process(-INFINITY)), "-Inf input did not recover");
+        TEST_ASSERT(isfinite(hpf.process(0.25f)), "finite input after poison did not recover");
+    }
+    test_pass();
+}
+
+static void test_long_silence_normal_or_zero(void) {
+    test_begin("juno106_hpf: FTZ-off silence remains normal or zero");
+    for (int mode = 0; mode < 4; ++mode) {
+        dsp::Juno106Hpf hpf;
+        hpf.init(kFs);
+        hpf.set_position(static_cast<dsp::Juno106HpfPosition>(mode));
+        hpf.process(1.0f);
+        float out = 0.0f;
+        for (int i = 0; i < 500000; ++i) out = hpf.process(0.0f);
+        int classification = fpclassify(out);
+        TEST_ASSERT(classification == FP_NORMAL || classification == FP_ZERO,
+                    "silence output is neither normal nor zero");
     }
     test_pass();
 }
 
 void test_juno106_hpf_suite(void) {
     printf("--- dsp/juno106_hpf.h ---\n");
-    test_position2_hpf_225_near_minus3db();
-    test_position3_hpf_700_near_minus3db();
-    test_position2_below_corner_rolls_off();
-    test_position1_bypass_flat_unity();
-    test_position0_bass_boost_shape();
-    test_silence_and_signal_finite();
-    test_position_switch_bounded_transient();
-    test_no_denormal_leak();
+    printf("  sizeof(dsp::Juno106Hpf): %zu bytes\n", sizeof(dsp::Juno106Hpf));
+    test_cut_positions();
+    test_common_ac_coupling();
+    test_bass_response();
+    test_exact_crossfade_and_rapid_switching();
+    test_split_processing_deterministic();
+    test_nonfinite_recovery_and_bounds();
+    test_long_silence_normal_or_zero();
 }

@@ -51,8 +51,12 @@ core dedup move) instead of three parallel oscillator types.
 
 ### Global / master bus
 ```
-  Σ voices ─► [Chorus (Juno-style I/II)] ─► [optional reverb/delay] ─► [soft clip] ─► I2S DAC (stereo)
+  Σ voices ─► [J106 HPF: bass/flat/236/754 Hz] ─► [Chorus (Juno-style I/II)]
+           ─► [optional reverb/delay] ─► [soft clip] ─► I2S DAC (stereo)
 ```
+The HPF is one global post-sum circuit, matching the Juno-106 hardware, and every position
+includes its 0.35 Hz AC-coupling pole. Position 0 retains the pinned KR-106 two-pole/two-zero
+bass circuit; mode changes crossfade old/new processor snapshots over exactly 64 samples.
 The chorus is doing a lot of the "Juno" character and the stereo width — high priority.
 
 ## Code reuse map (reuse before writing — see CLAUDE.md)
@@ -162,7 +166,7 @@ waveform animation — over raw count: **ADR 0015**.
 | SDL2 | system (brew `sdl2`) | Zlib | **host-only** window/present/input; never shipped to device |
 | RtMidi | system (brew `rtmidi`) | MIT-style (permissive) | **host-only** MIDI input via CoreMIDI/ALSA; never shipped to device (gate G6, Stage 5a) |
 | cJSON (ESP-IDF `json` component) | bundled with ESP-IDF v5.5.1 | MIT | preset/bank codec (ADR 0027) — no new firmware dependency, parses embedded + SD/AppFS JSON banks |
-| Ultramaster KR-106 | v2.5.13 / `bc15caee5843ab238a25d0969e68d57db2b1615f` | GPL-3.0-only | primary Juno voice and chorus DSP (ADR 0028); minimal adapted subset only |
+| Ultramaster KR-106 | v2.5.13 / `bc15caee5843ab238a25d0969e68d57db2b1615f` | GPL-3.0-only | primary Juno voice, global J106 HPF, and chorus DSP (ADR 0028); minimal adapted subset only |
 
 **KR-106 source gate (ADR 0028):** before importing code, record the exact source revision,
 retain GPL/copyright notices, and enumerate the copied/adapted files. Existing independently

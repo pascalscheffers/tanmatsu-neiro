@@ -20,7 +20,19 @@ the rate at 48 kHz, omits unreachable mode I+II and plugin variance controls,
 and adds embedded finite/denormal hygiene. Hermite interpolation, BBD filters
 and saturation, leakage/click/floor/ripple models, I/II calibrations, and the
 5 ms mode-change fade are retained. Other target-specific adaptation lives in
-`engine/juno_voice.{h,cpp}`. Ultramaster KR-106 and this combined distribution
+`engine/juno_voice.{h,cpp}`.
+
+`dsp/juno106_hpf.{h,cpp}` is an attributed J106-only extraction from
+`Source/DSP/KR106_HPF.h::{getJuno106HPFFreq,BassBoostFilter}` and
+`Source/DSP/KR106_DSP.h::kr106::HPF` at the same pin. It omits the J6/J60/model
+selection and plugin orchestration, keeps the J106 bass/flat/236 Hz/754 Hz
+positions, common 0.35 Hz AC coupling, circuit constants/equations, and exact
+64-sample state-snapshot crossfade. Target adaptations are float bass state for
+RV32F, the existing `Juno106Hpf` API, coefficient work outside `process()`, and
+finite-input plus software denormal hygiene on bass, DC, and both current and
+previous cut-filter states.
+
+Ultramaster KR-106 and this combined distribution
 are licensed under GPL-3.0-only; the exact upstream license text is at the
 repository root in `LICENSE`.
 

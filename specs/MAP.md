@@ -61,6 +61,9 @@ Paths are relative to repo root. Dependencies live in `managed_components/` (ESP
     `daisysp::Oscillator::SetPw()`. JunoVoice applies once per block at [0.05, 0.95]
     after adding `mout.pwm_mod`. Stage 3c-iii.
 - `dsp/saturate.h` — `soft_clip(float)`: the master soft-clip ceiling (ADR 0016).
+- `dsp/juno106_hpf.{h,cpp}` — one global post-voice-sum J106 HPF adapted from pinned KR-106:
+  bass/flat/236 Hz/754 Hz positions, common 0.35 Hz AC coupling, and an exact 64-sample
+  state-snapshot crossfade; float feedback state with finite/denormal hygiene (ADR 0028).
 - `dsp/vendor/daisysp/` — vendored DaisySP (pinned SHA in MEMORY/ledger). Read-only; don't open
   unless a work-order points at a specific file.
 - `dsp/vendor/kr106/` — minimal GPL-3.0-only Ultramaster KR-106 DSP subset pinned by ADR

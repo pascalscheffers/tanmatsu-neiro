@@ -2320,6 +2320,32 @@ removed HPF member itself is 28 B, with its 4-byte cached position and class-lay
 padding accounting for the rest. Next: WO-14f-ii replaces the approximate response
 with pinned KR-106 global HPF behavior.
 
+## 2026-07-20 — WO-14f-ii: pinned KR-106 J106 HPF response (COMPLETE)
+
+Replaced the old hand-derived `dsp::Juno106Hpf` internals with an attributed J106-only
+adaptation of pinned Ultramaster KR-106
+`KR106_HPF.h::{getJuno106HPFFreq,BassBoostFilter}` and `KR106_DSP.h::kr106::HPF`. The
+existing API/build seam remains; positions are now bass/flat/236 Hz/754 Hz, every mode has
+the 0.35 Hz AC-coupling blocker, and mode changes snapshot state then crossfade old/new
+processors over exactly 64 samples (including rapid repeated switches). Bass feedback state
+is float for RV32F. Non-finite input is sanitized before feedback, and bass/DC/current+previous
+cut states receive explicit finite/denormal cleanup. Coefficient and `tanf` work remains outside
+per-sample processing; the hot path stays inline so it inherits `synth_render`'s IRAM placement.
+Provenance/adaptation details are recorded in `dsp/vendor/kr106/README.md`; spec 02 and MAP now
+describe the global post-sum circuit.
+
+Host response at 48 kHz: 236 Hz = -3.010 dB, 754 Hz = -3.010 dB, common 0.35 Hz =
+-3.010 dB; bass position at 20/70/103/5000 Hz = +10.103/+7.418/+5.857/+1.413 dB
+(all within 0.15 dB pins). Tests also cover deterministic split processing, exact/repeated
+64-sample switching against an independent oracle, NaN/Inf recovery, all-mode bounds, and
+long FTZ-off silence normal-or-zero. `sizeof(dsp::Juno106Hpf)` = 84 B (+56 B from 28 B);
+`sizeof(JunoVoice)` remains 672 B. `make format`, `make host`, `make test`, `make build`,
+`make size`, membrane audit, and `git diff --check` pass. Image 1,377,042 B (+1,268 B from
+WO-14f-i's 1,375,774 B); DIRAM 260,018/576,464 B = 45.11% (+848 B: +792 IRAM text and
++56 B state). No split-if triggered. Remaining risk: the 0.35 Hz blocker is intentionally
+float-state; on a constant 0.25 input its decay reaches float precision before mathematical
+double-precision zero, while measured AC response and strong DC rejection remain in tolerance.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

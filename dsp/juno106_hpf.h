@@ -1,101 +1,115 @@
-// dsp/juno106_hpf.h — Juno-106 four-position HPF switch (pure DSP block).
+// dsp/juno106_hpf.h — attributed Juno-106 HPF extraction from KR-106.
 //
-// Models the Juno-106 front-panel HPF switch's four positions as one shared
-// first-order (one-pole/one-zero) Direct-Form-I biquad section; only the
-// coefficients change per position, so a position switch is a coefficient
-// change on a *running* filter (state preserved), not a topology change —
-// this keeps switching click-safe (bounded transient, no discontinuity).
-//
-// Coefficients are derived (not vendored/borrowed) from the ADR 0026 HPF
-// calibration targets; full derivation + magnitude-response tables in
-// specs/notes/juno106-hpf-analysis.md.
-//
-// ADR 0012: RV32F has no hardware flush-to-zero. A tiny +1e-20f bias is
-// injected into the filter input on every process() call (all positions,
-// including bypass) to keep the feedback state off the denormal floor.
+// Adapted from Ultramaster KR-106 v2.5.13 (commit bc15cae), specifically
+// Source/DSP/KR106_HPF.h::getJuno106HPFFreq/BassBoostFilter and
+// Source/DSP/KR106_DSP.h::kr106::HPF. This target keeps only J106 behavior,
+// uses float state for RV32F, and adds finite/denormal hygiene required by
+// ADR 0012. Full provenance and adaptation notes are in
+// dsp/vendor/kr106/README.md.
 #pragma once
+
+#include <math.h>
 
 namespace dsp {
 
 enum Juno106HpfPosition {
-    JUNO106_HPF_BASS_BOOST = 0,  // low-shelf, ~+3 dB at 70 Hz, flat above
-    JUNO106_HPF_BYPASS     = 1,  // flat unity
-    JUNO106_HPF_225HZ      = 2,  // first-order HPF, corner ~225 Hz
-    JUNO106_HPF_700HZ      = 3,  // first-order HPF, corner ~700 Hz
+    JUNO106_HPF_BASS_BOOST = 0,
+    JUNO106_HPF_BYPASS     = 1,
+    JUNO106_HPF_236HZ      = 2,
+    JUNO106_HPF_754HZ      = 3,
+
+    // Compatibility names retained for the existing public API. The pinned
+    // KR-106 response is 236/754 Hz, not the old approximate 225/700 Hz.
+    JUNO106_HPF_225HZ = JUNO106_HPF_236HZ,
+    JUNO106_HPF_700HZ = JUNO106_HPF_754HZ,
 };
 
 class Juno106Hpf {
 public:
-    void init(float sample_rate) {
-        sample_rate_ = sample_rate;
-        x1_          = 0.0f;
-        y1_          = 0.0f;
-        set_position(JUNO106_HPF_BYPASS);
-    }
-
-    // Recomputes coefficients for the given position at the current sample
-    // rate. State (x1_, y1_) is left untouched so switching positions on a
-    // running filter is a coefficient change, not a reset.
-    void set_position(Juno106HpfPosition pos) {
-        position_ = pos;
-        compute_coeffs(pos);
-    }
-
+    void               init(float sample_rate);
+    void               set_position(Juno106HpfPosition pos);
     Juno106HpfPosition position() const { return position_; }
+    float              process(float in) {
+        if (!isfinite(in)) in = 0.0f;
 
-    // Single-sample process (block callers loop this — matches dsp/filter.h
-    // and dsp/dcblock.h's per-sample style).
-    float process(float in) {
-        // ADR 0012 anti-denormal bias: inhabits every position, including
-        // bypass, so state never settles into a denormal on silence.
-        float x0 = in + 1e-20f;
-        float y0 = b0_ * x0 + b1_ * x1_ - a1_ * y1_;
-        x1_      = x0;
-        y1_      = y0;
-        return y0;
+        float out = process_with(in, current_);
+        if (crossfade_remaining_ > 0) {
+            float previous = process_with(in, previous_);
+            float t = static_cast<float>(crossfade_remaining_) / static_cast<float>(kCrossfadeSamples);
+            out     = out * (1.0f - t) + previous * t;
+            --crossfade_remaining_;
+        }
+        return isfinite(out) ? out : 0.0f;
     }
 
 private:
-    void compute_coeffs(Juno106HpfPosition pos) {
-        switch (pos) {
-            case JUNO106_HPF_BYPASS:
-                b0_ = 1.0f;
-                b1_ = 0.0f;
-                a1_ = 0.0f;
-                break;
-            case JUNO106_HPF_225HZ:
-                hpf_coeffs(225.0f);
-                break;
-            case JUNO106_HPF_700HZ:
-                hpf_coeffs(700.0f);
-                break;
-            case JUNO106_HPF_BASS_BOOST:
-            default:
-                shelf_coeffs(70.0f, 3.0f);
-                break;
-        }
+    static constexpr float kDcBlockHz        = 0.35f;
+    static constexpr int   kCrossfadeSamples = 64;
+    static constexpr float kStateFloor       = 1.0e-20f;
+
+    struct BassCoeffs {
+        float b0 = 1.0f;
+        float b1 = 0.0f;
+        float b2 = 0.0f;
+        float a1 = 0.0f;
+        float a2 = 0.0f;
+    };
+
+    struct ProcessorState {
+        float freq_hz = 0.0f;
+        float cut_g   = 0.0f;
+        float cut_s   = 0.0f;
+        float dc_s    = 0.0f;
+        float bass_z1 = 0.0f;
+        float bass_z2 = 0.0f;
+    };
+
+    void compute_coeffs();
+
+    float process_with(float in, ProcessorState& state) {
+        float shaped  = state.freq_hz < 0.0f ? process_bass(in, state) : in;
+        float blocked = process_dc(shaped, state);
+        if (state.freq_hz <= 0.0f) return blocked;
+
+        float v     = (blocked - state.cut_s) * state.cut_g / (1.0f + state.cut_g);
+        float lp    = state.cut_s + v;
+        state.cut_s = clean_state(lp + v);
+        float out   = blocked - lp;
+        return isfinite(out) ? out : 0.0f;
     }
 
-    // First-order high-pass, prewarped bilinear transform. See
-    // specs/notes/juno106-hpf-analysis.md for the full derivation.
-    void hpf_coeffs(float fc);
+    float process_bass(float in, ProcessorState& state) const {
+        float out = bass_.b0 * in + state.bass_z1;
+        if (!isfinite(out)) {
+            state.bass_z1 = 0.0f;
+            state.bass_z2 = 0.0f;
+            return 0.0f;
+        }
+        state.bass_z1 = clean_state(bass_.b1 * in - bass_.a1 * out + state.bass_z2);
+        state.bass_z2 = clean_state(bass_.b2 * in - bass_.a2 * out);
+        return out;
+    }
 
-    // First-order low-shelf bass boost, corner == probe frequency; DC/low-freq
-    // asymptotic gain solved so the analytic magnitude AT fc hits gain_db_at_fc
-    // exactly. See specs/notes/juno106-hpf-analysis.md.
-    void shelf_coeffs(float fc, float gain_db_at_fc);
+    float process_dc(float in, ProcessorState& state) const {
+        float v    = (in - state.dc_s) * dc_g_ / (1.0f + dc_g_);
+        float lp   = state.dc_s + v;
+        state.dc_s = clean_state(lp + v);
+        float out  = in - lp;
+        return isfinite(out) ? out : 0.0f;
+    }
+
+    static float clean_state(float value) {
+        if (!isfinite(value) || fabsf(value) < kStateFloor) return 0.0f;
+        return value;
+    }
 
     float              sample_rate_ = 48000.0f;
+    float              dc_g_        = 0.0f;
     Juno106HpfPosition position_    = JUNO106_HPF_BYPASS;
-
-    // Direct-Form-I coefficients: y[n] = b0*x[n] + b1*x[n-1] - a1*y[n-1].
-    float b0_ = 1.0f;
-    float b1_ = 0.0f;
-    float a1_ = 0.0f;
-
-    // Filter state, shared across all positions.
-    float x1_ = 0.0f;
-    float y1_ = 0.0f;
+    BassCoeffs         bass_;
+    ProcessorState     current_;
+    ProcessorState     previous_;
+    int                crossfade_remaining_ = 0;
 };
 
 }  // namespace dsp
