@@ -2013,20 +2013,39 @@ is UART framing + record-contract plausibility only (exhaustively tested sum/xor
 holds). Written up in `specs/notes/juno106-tape-format.md` (transport facts only — no WAV
 audio or decoded patch data committed, per clean-room isolation).
 
-Decode of the two candidate evidence recordings: **123/128 records clean** (62/64 bank A,
-61/64 bank B), 0 framing errors — not the full 128/128 the work-order's acceptance wanted.
-Split-if triggered and reported, not forced: record 63 fails identically in both banks (tape
-lead-out overwrites the last record's tail — systematic, both files); records 61(A)/44(B)/51(B)
-have genuine multi-bit source errors no single-bit fix restores. Deterministic across two
-independent demodulators. See note's "Split-if" section for full reasoning.
+Decode of the first candidate evidence pair: **123/128 records clean** (62/64 bank A, 61/64
+bank B), 0 framing errors — not the full 128/128 the work-order's acceptance wanted. Split-if
+triggered and reported, not forced.
 
-**Open question for Pascal** (posed this session): how to treat the 5 unrecoverable slots once
-the separate provenance/licensing gate (below) clears — re-capture the tape, ship 123/128 with
-substitute patches in the 5 gap slots, or something else. Transport description itself is
-final and unblocks re-decoding from a cleaner capture without redoing this work.
+**Same session, second capture pair supplied by Pascal** (independently-digitized dubs of the
+same two physical tapes, 22050 Hz vs. the original 11025 Hz) — cross-validated all 4 files
+record-by-record. Result is more nuanced than "123/128":
 
-**Next:** await Pascal's call on the 5-slot gap; provenance gate below still separately open
-before WO-13g-ii can vendor any tape-derived bytes into the repo.
+- **120/128: legal + byte-identical across both independent captures** — gold, effectively
+  stronger confirmation than an arithmetic checksum would give.
+- **3/128 (A:61, B:44, B:51): illegal in both captures but byte-identical** — confirmed
+  genuine defects in the physical tape/original save, not decoder noise (two independent
+  digitizations reproducing the same "wrong" bytes rules out demod artifact).
+- **2/128 (A:63, B:63): illegal in both, content differs between captures** — tape lead-out
+  overwriting the last record's tail; capture-dependent, content genuinely lost.
+- **3/128 (A:50, A:51, A:62): legal in *both* captures but content *differs*** — new finding,
+  unresolved. This is the failure mode §5/§7 of the note already flagged as undetectable by
+  plausibility alone (a bit flip that stays within legal enum range). Root cause not isolated.
+
+Full reasoning and the record-level breakdown are in `specs/notes/juno106-tape-format.md`
+("Cross-validation" section).
+
+**Open question for Pascal:**
+1. The 3 ambiguous records (A:50/51/62) need a tiebreak this analysis can't supply alone —
+   options: a third capture, closer SNR/segment inspection of the two existing captures around
+   those records, or accept one capture as authoritative and note the uncertainty in-patch.
+2. How to treat the 2 unrecoverable tail slots (A:63/B:63) and, more confidently now, the 3
+   reproducible-but-illegal records (A:61, B:44, B:51) once the separate provenance/licensing
+   gate (below) clears — re-capture, substitute patches in those slots, or ship as-is with the
+   odd-but-genuine values. Transport description itself is final either way.
+
+**Next:** await Pascal's call on the above; provenance gate below still separately open before
+WO-13g-ii can vendor any tape-derived bytes into the repo.
 
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).

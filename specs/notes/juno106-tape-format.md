@@ -1,10 +1,14 @@
 # Juno-106 `TAPE SAVE` transport — clean-room note (WO-13g-i)
 
-**Status: transport fully characterized. Decode of the two candidate evidence WAVs is
-123/128 records clean, not 128/128 — split-if triggered per `WORK-ORDER.md`, reported below,
-not forced.** This note is the transport description only. It contains no WAV audio, no
-decoded patch data, and no third-party decoder was read, adapted, or used as a design input
-at any point (clean-room isolation per stage-13 WO-13g-i).
+**Status: transport fully characterized. A second, independently-digitized pair of captures
+of the same two physical tapes was cross-validated against the original pair (see
+"Cross-validation" below): 120/128 records now carry two-independent-capture confirmation,
+3/128 are reproducible tape-content defects, 2/128 are unrecoverable tail corruption, and
+3/128 are a newly-surfaced ambiguity (both captures individually plausible, but disagree) —
+split-if triggered per `WORK-ORDER.md` on the residue, reported below, not forced.** This note
+is the transport description only. It contains no WAV audio, no decoded patch data, and no
+third-party decoder was read, adapted, or used as a design input at any point (clean-room
+isolation per stage-13 WO-13g-i).
 
 Every constant below is tagged **[measured]** (recovered from the two candidate evidence
 recordings) or **[Roland-fact]** (from Roland's public 18-byte record-shape documentation,
@@ -91,6 +95,30 @@ recorded data, not decoder noise:
   single-bit flip restores switch-enum legality), with normal local amplitude, clean cycle
   periods, and no framing slip. Source-recording bit errors that this checksum-less format
   has no mechanism to catch or repair.
+
+## Cross-validation (second capture pair)
+
+A second, independently-digitized pair of recordings of the same two physical tapes (mono u8
+PCM, 22050 Hz — 2x the original 11025 Hz evidence, same encoding) decodes against this same
+transport description with the same constants scaled by the sample-rate ratio (half-cycle
+period clusters land at exactly 2x; header offset unchanged at 41 bits). Comparing all four
+files (2 original + 2 new) record-by-record:
+
+- **120/128 records: legal and byte-identical across both independent captures.** Two
+  separately-digitized dubs agreeing exactly on content is a stronger validity signal than
+  this transport's own (nonexistent) checksum would have given.
+- **3/128 records: illegal (fail switch-enum plausibility) in both captures, but
+  byte-identical.** Confirms these are defects in the physical tape content itself (or the
+  original save), not decode/digitization noise — a decoder artifact would not reproduce
+  identically across two independent digitizations.
+- **2/128 records: illegal in both, and *different* between captures.** The tape lead-out
+  overwriting the last record's tail (see Result table above) — capture-dependent, as
+  expected, and not recoverable from these sources.
+- **3/128 records: legal in *both* captures, but with *different* content.** This is new and
+  unresolved: plausibility checks alone cannot catch a bit flip that happens to stay within a
+  legal enum range, which is exactly what §5 flagged as an undetectable failure mode. Root
+  cause not yet isolated (most likely a localized dropout in one capture that the other
+  doesn't share). This needs a tiebreak this note cannot supply on its own — see MEMORY.
 
 ## Split-if — reported, not forced
 
