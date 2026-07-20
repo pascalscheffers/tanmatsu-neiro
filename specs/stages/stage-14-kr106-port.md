@@ -77,8 +77,70 @@ optimized Juno-106 IR3109/BA662 VCF at 1x, without importing plugin/desktop infr
 
 ## Planned follow-ups
 
-- **WO-14b:** port KR-106 ADSR/VCA timing and J106 cutoff/DAC mapping.
+- **WO-14b:** port KR-106 ADSR/VCA timing.
 - **WO-14c:** shared KR-106 analog noise and per-voice variance.
 - **WO-14d:** KR-106 BBD chorus behind the master-effect seam, with fixed preallocation.
 - **WO-14e:** delete now-unreferenced hand-built Juno/Daisy DSP and implementation-specific
   tests; shrink the dependency ledger/build only after 14a–d are green.
+
+## WO-14b — Firmware ADSR + measured J106 VCA
+
+**Goal:** Replace only the amp envelope and its linear VCA multiply with KR-106's
+firmware-timed Juno-106 ADSR and measured VCA transfer curve. Keep ENV2 and all control/UI
+parameter IDs intact.
+
+### Touch list (only these seven paths)
+
+1. `dsp/vendor/kr106/KR106ADSR.h` (new; verbatim tracked source)
+2. `dsp/vendor/kr106/KR106VCA.h` (new; verbatim tracked source)
+3. `dsp/vendor/kr106/README.md`
+4. `engine/juno_voice.h`
+5. `engine/juno_voice.cpp`
+6. `tests/host/test_voice.cpp`
+7. `specs/MEMORY.md`
+
+### Read list
+
+1. This work-order.
+2. Source `Source/DSP/KR106ADSR.h` and `Source/DSP/KR106VCA.h` at the pinned commit.
+3. Target `engine/juno_voice.h:JunoVoice` and `engine/juno_voice.cpp:{init,note_on,
+   note_off,reset,set_param,render,is_active}`.
+4. Target `tests/host/test_voice.cpp` envelope/release/reset/VCA tests only.
+5. `dsp/vendor/kr106/README.md` provenance format.
+
+### Reuse / implementation pins
+
+- Vendor both headers verbatim and append them to the vendor README's imported-file list.
+- Replace only amp `dsp::Env env_` with `kr106::ADSR amp_env_`; keep `env2_` unchanged.
+  Configure `mModel=kJ106`, sample rate, A/D/S/R before first note.
+- `ENV_ATTACK`, `ENV_DECAY`, and `ENV_RELEASE` remain physical seconds at the public seam.
+  Map each to its nearest KR-106 slider/index timing. Use fixed, read-only 128-entry timing
+  tables generated offline from the pinned `AttackMs`/`DecRelMs` helpers and a bounded
+  nearest-index lookup; do not run `DecRelMs`'s simulation or libm in the audio path.
+  Document table provenance beside the tables. `ENV_SUSTAIN` maps directly to
+  `SetSustain(clamp(value,0,1))`.
+- Always advance `amp_env_.Process()` once per rendered sample. Envelope VCA mode uses
+  `kr106::VCAGainJ106(clamp(env,0,1))`; gate mode uses the ADSR's smoothed `mGateEnv`.
+  Apply existing velocity and `VCA_LEVEL` afterward so current control contracts remain.
+- `note_on`/`note_off` call the KR envelope edges. `reset` must force a fully finished,
+  silent state while preserving configured A/D/S/R; `is_active`/early-exit use
+  `GetBusy()` rather than Daisy's idle API.
+- Do not replace ENV2, LFOs, VCF cutoff mapping, noise, HPF, chorus, allocator, or params.
+
+### Acceptance
+
+- Add coverage for J106's quantized/tick-timed attack, decay-to-sustain, release-to-idle,
+  smooth gate-mode edges, nonlinear measured VCA curve, reset silence, finite output, and
+  shortest/longest public A/D/R values.
+- Existing note/voice/modulation/oscillator/VCF tests remain green after removing only
+  Daisy-ADSR-specific expectations.
+- `make format`, `make host`, `make test`, `make build`, `make size`, RT membrane grep, and
+  `git diff --check` pass. Record image/DIRAM/`sizeof(JunoVoice)` deltas in `MEMORY.md` and
+  commit atomically.
+
+### Split-if / stop conditions
+
+- Stop if exact timing tables would exceed 2 KiB total, public A/D/R ranges cannot map
+  monotonically, device math/link behavior changes, another target file is required, or
+  the new envelope cannot reach idle in bounded time at the maximum release.
+- Do not import `KR106Voice.h` or change persisted parameter semantics to escape a gate.
