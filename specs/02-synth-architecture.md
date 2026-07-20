@@ -19,10 +19,11 @@ design; those cover how it's hosted, stored, and sequenced.
 - **USB MIDI** (be a device and/or host a controller).
 - Memory-limited target → **dedup and reuse are essential**.
 
-## Recommended sonic base: Juno-style poly skeleton, hybrid voice
+## Current sonic base: KR-106 Juno-106 voice
 
-**Recommendation: a Roland Juno-106-inspired voice architecture, with the single DCO
-replaced by a hybrid macro-oscillator (wavetable + VA + 2-op FM).**
+**The current instrument is a Roland Juno-106 voice implemented with a minimal pinned
+Ultramaster KR-106 DSP port.** Wavetable/FM remain possible later `SynthModel`s; they are
+not parallel modes inside today's Juno oscillator.
 
 Why the Juno-106 as the skeleton:
 - Simplest classic polysynth that still sounds *rich* → cheapest per-voice CPU → more
@@ -32,21 +33,21 @@ Why the Juno-106 as the skeleton:
   mode for bell/glassy timbres.
 - Enormous reference material and samples for validation.
 
-The **hybrid twist**: where the Juno had one DCO + sub, we use one *macro-oscillator*
-that can be a VA shape (saw/pulse/tri), a wavetable scan, or a 2-operator FM pair — plus
-the sub-osc. This folds "analog osc", "wavetable osc", and "FM" into **one engine** (the
-core dedup move) instead of three parallel oscillator types.
+The Juno voice keeps one phase-coherent KR-106 oscillator core for saw, pulse, and the
+CD4013-style octave-down sub. One engine-owned KR-106 noise generator supplies a shared
+block to all voices. Each voice then runs the pinned nonlinear optimized J106 VCF, the
+firmware-model ADSR, and the measured J106 VCA response. ENV2 remains the retained DaisySP
+ADSR wrapper used as a modulation source; it is not the audible amp envelope.
 
 ### Per-voice signal flow
 ```
-  [Macro-osc]  mode ∈ {VA saw/pulse/tri, wavetable scan, 2-op FM}   ─┐
-  [Sub-osc]    -1 oct square/sine, level                            ─┼─► [mix] ─► [VA filter
-  [Noise]      white, level                                         ─┘            LP/BP/HP,
-                                                                                  cutoff+res]
+  [KR saw + pulse] one coherent DCO phase                             ─┐
+  [KR sub]         CD4013-style octave-down, level                    ─┼─► [mix] ─► [nonlinear
+  [shared KR noise block] level                                      ─┘          J106 VCF LP]
                                                                                        │
-                                              [VCA] ◄── [Amp env ADSR]                 ▼
+                            [measured J106 VCA] ◄─ [firmware J106 ADSR]              ▼
                                                                                   ► voice out
-  Modulators per voice: 2× ADSR (amp, filter/mod), 1–2× LFO, velocity, key-track.
+  Modulators per voice: firmware amp ADSR + Daisy ENV2, shared LFOs, velocity, key-track.
 ```
 
 ### Global / master bus
@@ -57,14 +58,17 @@ core dedup move) instead of three parallel oscillator types.
 The HPF is one global post-sum circuit, matching the Juno-106 hardware, and every position
 includes its 0.35 Hz AC-coupling pole. Position 0 retains the pinned KR-106 two-pole/two-zero
 bass circuit; mode changes crossfade old/new processor snapshots over exactly 64 samples.
-The chorus is doing a lot of the "Juno" character and the stereo width — high priority.
+The chorus is the fixed-storage pinned KR-106 BBD model. Off/I/II select its calibrated
+modes; the stored chorus rate/depth/delay IDs remain legacy no-ops pending a separate
+UI/preset-compatibility decision. `FILTER_MODE` likewise remains a stored legacy no-op:
+the J106 VCF is low-pass only, and neither compatibility surface is silently remapped.
 
 ## Code reuse map (reuse before writing — see CLAUDE.md)
 
 | Need | Reuse | License | Notes |
 |---|---|---|---|
-| Macro-oscillator (VA/wavetable/FM) | **Mutable Instruments `plaits` / `braids`** | MIT | Core engine. Vendor `dsp/vendor/mi/`. Ported to Daisy already → known-portable float DSP. |
-| DSP utilities, filters, units, ringbuf | **MI `stmlib`** | MIT | SVF, one-pole, parameter smoothing, dsp helpers. |
+| Juno voice + master character DSP | **Ultramaster KR-106** | GPL-3.0-only | Pinned minimal port: coherent DCO/sub, nonlinear J106 VCF, firmware ADSR/measured VCA, shared noise, global J106 HPF, fixed BBD chorus. |
+| ENV2, output DC block, delay/math utilities | **DaisySP** | MIT | Retained small utility subset; no longer supplies the audible oscillator, VCF, noise, amp envelope/VCA, or chorus. |
 | Audio out / codec / I2S | **`badge-bsp`** (ES8156) | (BSP) | Confirm API from build-env agent report. |
 | USB MIDI device | **`esp_tinyusb`** 1.7.6 / TinyUSB MIDI | Apache-2.0 | USB-C device mode (Stage 5d). FS port (`CONFIG_TINYUSB_RHPORT_FS`). |
 | USB MIDI host | **ESP-IDF `usb` Host Library** + vendored MIDIStreaming class driver | Apache-2.0 (lib) + **Unlicense/CC0** (driver) | USB-A host (Stage 5b). Driver adapted from esp-idf PR #12566 (`Wunderbaeumchen99817/esp-idf`, CC0); no first-party MIDI host component exists. P4-proven on hardware 2026-06-29. |
@@ -160,7 +164,7 @@ waveform animation — over raw count: **ADR 0015**.
 | badge-bsp | ^0.9.9 | (verify) | board support |
 | pax-gfx | ^2.1.0 | MIT | UI (also built host-side via its non-ESP CMake path) |
 | tanmatsu-wifi | ^1.1.2 | (verify) | radio (optional; may drop) |
-| DaisySP (osc/svf/ladder/adsr/noise/chorus) | `599511b` (master, 2025-05-29) | MIT | **primary MVP DSP** — pure float blocks (ADR 0014); vendor at Stage 1a |
+| DaisySP (ADSR/DC block/delay/math subset) | `599511b` (master, 2025-05-29) | MIT | Retained ENV2 and utility DSP; superseded oscillator/SVF/ladder/noise/chorus sources removed (ADR 0014 history, ADR 0028 pivot) |
 | MI eurorack (plaits/stmlib) | (pin on vendor, Stage 7) | MIT | hybrid macro-osc: wavetable/FM modes (later) |
 | miniaudio | 0.11.22 | MIT-0 / public-domain | **host-only** audio sink; vendored `platform/host/miniaudio.h` |
 | SDL2 | system (brew `sdl2`) | Zlib | **host-only** window/present/input; never shipped to device |

@@ -5,7 +5,8 @@ the tree. **Read this before grepping.** If you add or move a seam, add/fix its 
 a stale MAP is worse than none. Layers point downward only (CLAUDE.md architecture).
 
 Paths are relative to repo root. Dependencies live in `managed_components/` (ESP-IDF) and
-`dsp/vendor/` (DaisySP) — **don't open those unless a work-order says so.**
+`dsp/vendor/` (retained DaisySP utilities plus pinned KR-106 DSP) — **don't open those
+unless a work-order says so.**
 
 ## engine/ — the synth, voices, params, presets
 - `engine/synth.h` — **the render contract.** `synth_render(left,right,n,user)` (matches the
@@ -19,7 +20,10 @@ Paths are relative to repo root. Dependencies live in `managed_components/` (ESP
   `IVoice` pool (`VoiceSlot`). Play modes (mono/uni/legato) land here in Stage 3d.
 - `engine/synth_model.h` — **`SynthModel`** factory seam: makes voices for the allocator.
 - `engine/juno_model.{h,cpp}` / `engine/juno_voice.{h,cpp}` — the concrete Juno-106 model +
-  voice (PolyBLEP saw + sub + noise → SVF LP → ADSR VCA). The first `SynthModel`/`IVoice` impl.
+  voice: phase-coherent pinned KR-106 saw/pulse/sub + engine-shared KR noise → nonlinear
+  optimized J106 VCF → firmware J106 ADSR + measured VCA response. The first
+  `SynthModel`/`IVoice` implementation. `FILTER_MODE` remains a stored legacy no-op because
+  the J106 VCF is low-pass only; do not remap it without a UI/preset-compatibility decision.
 - `engine/spsc_ring.h` — **`SpscRing<T,Cap>`**: the reusable lock-free single-producer/
   single-consumer ring (power-of-two, atomic acquire/release). **Reuse this for any
   thread→audio handoff** — do not write a second ring.
@@ -52,20 +56,23 @@ Paths are relative to repo root. Dependencies live in `managed_components/` (ESP
   - `ModOutputs` seeding: all accumulators start at `+1e-20f` (ADR 0012 denormal guard).
 
 ## dsp/ — pure, portable blocks (no ESP-IDF, no I/O, no globals)
-- `dsp/osc.h` / `dsp/filter.h` / `dsp/env.h` — header-only wrappers over DaisySP
-  (Oscillator / SVF / Adsr) with our seam (MIDI note in, anti-denormal per ADR 0012). Wrap,
-  don't edit vendor.
-  - `dsp::Osc::set_waveform(int wf)` — set main osc waveform: 0=SAW, 1=PULSE, 2=TRI
-    (maps to `WAVE_POLYBLEP_SAW/SQUARE/TRI`; out-of-range clamps to SAW). Stage 3c-iii.
-  - `dsp::Osc::set_pw(float pw)` — set pulse width for PULSE waveform; delegates to
-    `daisysp::Oscillator::SetPw()`. JunoVoice applies once per block at [0.05, 0.95]
-    after adding `mout.pwm_mod`. Stage 3c-iii.
+- `dsp/env.h` — retained DaisySP ADSR wrapper used only for ENV2/modulation; the audible
+  amp envelope and VCA are the pinned KR-106 firmware ADSR and measured J106 VCA response
+  in `JunoVoice`.
+- `dsp/vendor/kr106/KR106Oscillators.h`, `KR106VCF_OPTIMIZED.h`, `KR106ADSR.h`, and
+  `KR106VCA.h` — pinned KR-106 voice primitives adapted behind `JunoVoice`; one coherent
+  oscillator phase, nonlinear J106 VCF, firmware envelope timing, and measured VCA curve.
+- `dsp/vendor/kr106/KR106Noise.h` — one engine-owned noise generator fills a shared block
+  injected into every voice; no per-voice PRNG copies.
 - `dsp/saturate.h` — `soft_clip(float)`: the master soft-clip ceiling (ADR 0016).
 - `dsp/juno106_hpf.{h,cpp}` — one global post-voice-sum J106 HPF adapted from pinned KR-106:
   bass/flat/236 Hz/754 Hz positions, common 0.35 Hz AC coupling, and an exact 64-sample
   state-snapshot crossfade; float feedback state with finite/denormal hygiene (ADR 0028).
-- `dsp/vendor/daisysp/` — vendored DaisySP (pinned SHA in MEMORY/ledger). Read-only; don't open
-  unless a work-order points at a specific file.
+- `dsp/kr106_chorus.h` — fixed-storage pinned KR-106 BBD chorus; mode Off/I/II owns the
+  calibrated rate/depth/delay. The stored `CHORUS_RATE`, `CHORUS_DEPTH`, and `CHORUS_DELAY`
+  IDs remain legacy no-ops pending a separate UI/preset-compatibility decision.
+- `dsp/vendor/daisysp/` — retained DaisySP ENV2, DC-block, delay-line, and math utilities
+  (pinned SHA in MEMORY/ledger). Superseded oscillator/filter/noise/chorus candidates are gone.
 - `dsp/vendor/kr106/` — minimal GPL-3.0-only Ultramaster KR-106 DSP subset pinned by ADR
   0028/stage 14. Vendored files remain unmodified; target adapters live in `engine/`/`dsp/`.
 

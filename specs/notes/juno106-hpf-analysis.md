@@ -1,5 +1,11 @@
 # Juno-106 four-position HPF — derivation (WO-13e-i)
 
+> **Superseded historical analysis (WO-14f-ii).** This note records the independently
+> derived HPF that preceded the KR-106 pivot. The live global post-voice-sum HPF is now
+> adapted from pinned KR-106 and implements its bass/flat/236 Hz/754 Hz response, common
+> 0.35 Hz AC coupling, and exact 64-sample state-snapshot crossfade. Keep this document
+> for provenance; do not use its 225/700 Hz coefficients as the current architecture.
+
 Pure-DSP block: `dsp/juno106_hpf.h` / `.cpp`. This note derives the per-position
 difference-equation coefficients from the calibration targets in
 [ADR 0026](../decisions/0026-juno106-factory-bank-and-fidelity.md#hpf-calibration-four-position-switch)

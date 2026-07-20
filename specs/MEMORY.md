@@ -2390,6 +2390,22 @@ the app partition free; mapped flash is 1,227,004 B and DIRAM is 260,018/576,464
 316,446 B free). No gate opened. Next: WO-14e-iv removes the dormant Daisy ladder and updates
 current architecture/user documentation.
 
+## 2026-07-20 — WO-14e-iv: remove dormant ladder and correct current docs (COMPLETE)
+
+After proving no live source/include/build reference remained, deleted the never-wired Daisy
+ladder source/header (historical stage and provenance references remain intentionally). Updated
+the current MAP, architecture, roadmap, and README to describe the pinned KR coherent DCO/sub,
+nonlinear J106 VCF, firmware ADSR/measured VCA, shared KR noise, global KR HPF, and fixed BBD
+chorus. Marked the old hand-derived HPF analysis superseded without rewriting ADR or MEMORY
+history. `FILTER_MODE` and chorus rate/depth/delay are now explicitly documented as stored
+legacy no-ops pending a separate UI/preset-compatibility decision.
+
+README page/order and CC 21–28 consistency, stale-current-claim/reference audits,
+`make host`, `make test`, `make build`, `make size`, and `git diff --check` pass. Normal image
+remains 1,377,042 B with 34% of the app partition free; mapped flash is 1,227,004 B and DIRAM
+is 260,018/576,464 B (45.11%, 316,446 B free). No gate opened; Stage 14 pivot cleanup is
+complete.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

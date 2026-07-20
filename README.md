@@ -16,11 +16,11 @@ Reuse-first and dedup-first by design: a minimal GPL-3.0 Ultramaster KR-106 port
 
 ## What it can do (today)
 
-- **8-voice Juno voice** — PolyBLEP saw + sub + noise → HPF (4-position Juno switch) → state-variable filter → ADSR amp. Fat bass, sparkling highs.
+- **8-voice Juno voice** — phase-coherent KR-106 saw/pulse/sub + shared noise → nonlinear J106 low-pass VCF → firmware-model ADSR and measured J106 VCA. Fat bass, sparkling highs.
 - **Independent DCO controls** — saw and pulse are separate on/off switches (not one waveform picker), pulse width has its own LFO/Manual mode, and the 4-position HPF is a live, navigable control — matching the real Juno-106 panel rather than a simplified stand-in.
 - **Modulation** — 2 envelopes, 2 shared free-running LFOs (authentic Juno-106), and a 16-slot mod matrix.
 - **Play modes** — poly / mono / legato, portamento, and unison with detune.
-- **Chorus** — the Juno BBD chorus (modes I & II).
+- **Master character path** — global four-position KR J106 HPF followed by the fixed-calibration KR BBD chorus (modes I & II).
 - **Arpeggiator** — up / down / up-down / as-played / random, 1–4 octaves, clock-synced rate, gate, swing, latch.
 - **Clock** — internal master clock with adjustable BPM.
 - **MIDI I/O** — USB-A host (plug in a keyboard), USB-C device (play from a DAW), plus expression: pitch-bend, mod wheel, aftertouch, sustain (CC64), and panic.
@@ -97,6 +97,11 @@ Connect a USB MIDI controller to the badge's USB-A port. The following CCs are m
 
 These CC numbers match the default pot assignments on a Novation Launchkey 37 (pots in Custom mode sending CC 21–28). Turning any mapped knob instantly jumps the screen to that parameter's page and shows the value bar moving live.
 
+`FILTER_MODE` and the chorus rate/depth/delay controls (including Pot 5 / CC 25) are
+currently stored legacy no-ops: the J106 VCF is low-pass only, while Chorus I/II use their
+fixed hardware calibration. They remain visible for preset compatibility pending a separate
+UI decision; only the chorus mode changes the current chorus sound.
+
 A few standard General-MIDI CCs are also recognised — handy if your controller or DAW sends them. These follow the screen the same way as the pots:
 
 | Source | CC | Effect |
@@ -113,7 +118,6 @@ A few standard General-MIDI CCs are also recognised — handy if your controller
 ## Known issues
 
 - **Crackle on dense, loud chords.** Smashing roughly four or more notes at once — or fewer notes hit hard — can produce brief crackle. It is **not** distortion or clipping: the signal chain stays clean (the limiter never even engages). It is an audio-block CPU **underrun** — individual blocks momentarily spike to nearly twice their time budget during note-on bursts, and the full-screen redraw competing for the memory bus while the voice meter animates makes it worse. The steady cost of eight voices is well within budget; only the transient spikes drop samples. The next step is to confirm how much of the spike is display contention (dirty-rect redraw, below) versus note-on cost. Soft or sparse playing is clean.
-- **High-pass filter is not wired.** The FILTER page shows an HPF group, but its cutoff does not yet affect the audio path.
 
 ## Roadmap
 
@@ -122,7 +126,7 @@ Bigger features that are designed-for but not yet built (see [`specs/06-feature-
 - **Effects:** tempo-synced delay and a reverb (DaisySP `ReverbSc`) — the FX page is in place ahead of the DSP.
 - **Step sequencer** and a **Standard MIDI File player** for hands-free playback.
 - **Dirty-rect display blitting** — only repaint the parts of the screen that changed, instead of the whole ~1.15 MB framebuffer. Cuts the memory-bus contention behind the crackle above and frees CPU budget for the effects.
-- **Wire up the HPF**, a tap-tempo button on the UI, and MIDI-learn for per-controller CC mapping.
+- A tap-tempo button on the UI and MIDI-learn for per-controller CC mapping.
 
 ## License
 

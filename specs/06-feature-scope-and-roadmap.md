@@ -9,10 +9,10 @@ designed-for, built afterward.
 
 | Area | MVP | v1 | later |
 |---|---|---|---|
-| Voice | Juno voice (osc+sub+noise→VA filter→amp env), 8-voice poly | full Juno param set; mono+porta, unison, legato/retrigger | more `SynthModel`s (Jupiter, FM, **wavetable**), split/layer |
-| Oscillator | VA waveforms (saw/pulse/tri) in MI macro-osc | + 2-op FM mode | + SD wavetable scanning; samples (maybe) |
+| Voice | 8-voice KR-106 Juno voice (coherent DCO/sub + shared noise → nonlinear J106 VCF → firmware ADSR/measured VCA) | full Juno param set; mono+porta, unison, legato/retrigger | more `SynthModel`s (Jupiter, FM, **wavetable**), split/layer |
+| Oscillator | KR-106 phase-coherent saw/pulse/sub | independent saw/pulse, PWM, range and DCO LFO controls | separate FM/wavetable `SynthModel`; SD wavetable scanning; samples (maybe) |
 | Modulation | amp env + 1 LFO, Juno-default routings | 2 envs, 2 LFOs, full mod matrix UI | more sources; deeper matrix |
-| FX (master) | chorus | + delay (tempo-synced), reverb | drive/saturation (if wanted), more |
+| FX (master) | global KR J106 HPF + fixed KR BBD chorus modes I/II | + delay (tempo-synced), reverb | drive/saturation (if wanted), more |
 | Control | musical typing | USB-A host MIDI, pitch/mod, velocity+AT, sustain/hold/panic | USB-C MIDI device, **MPE**, MIDI-learn |
 | Timing | — | internal clock + tap, sample-accurate scheduler | external MIDI-clock in/out, song-position |
 | Arp | — | full arp (modes, octaves, sync, gate, swing, latch) | — |
@@ -39,9 +39,11 @@ gates — ADR 0014); later stages are re-planned with Opus when reached.
   DSP proxies on real P4 silicon and measures the I2S deadline margin at 64@48k → an
   empirical cycles/block budget + max-voice envelope that sizes Stage 1. *Profile before
   optimizing (CLAUDE.md); grounds ADR 0003.* Runbook: `stages/stage-0.5-profiling.md`.
-- **Stage 1 — One voice (MVP).** `SynthModel`/`IVoice` boundary (ADR 0008); Juno voice via
-  DaisySP macro-osc (VA) + VA filter + ADSR; mode-agnostic 8-voice allocator; master chorus;
-  musical-typing; a few params on a minimal page. Host DSP tests (spectra/aliasing/env).
+- **Stage 1 — One voice (MVP, historical implementation).** `SynthModel`/`IVoice` boundary
+  (ADR 0008); mode-agnostic 8-voice allocator; musical typing; a few params on a minimal
+  page. Its original Daisy voice/chorus implementation was superseded by the Stage 14
+  KR-106 port: coherent DCO/sub, nonlinear J106 VCF, firmware ADSR/measured VCA, shared
+  noise, global KR HPF, and fixed BBD chorus.
 - **Stage 2 — Parameter model + UI framework.** Param table + single write path + ring +
   smoothing (ADR-data); hybrid panel+pages UI; presets save/load + INIT + factory bank.
 - **Stage 3 — Modulation + full Juno.** Mod matrix (ADR 0009), 2 LFOs / 2 envs, full Juno
@@ -54,6 +56,11 @@ gates — ADR 0014); later stages are re-planned with Opus when reached.
   WAV record; USB audio-class out; factory sound design; A/B vs reference Juno samples.
 - **Stage 7+ — Second engine.** Add the wavetable (and/or FM) `SynthModel` — the proof
   that the boundary (ADR 0008) holds and nothing above it had to change.
+
+Compatibility note: `FILTER_MODE` and `CHORUS_RATE`/`CHORUS_DEPTH`/`CHORUS_DELAY` remain
+stored legacy no-ops. The J106 filter is low-pass only and KR chorus modes own fixed
+calibration; remapping or removing those IDs requires a separate UI/preset-compatibility
+decision.
 
 ## Continuous (every stage)
 - Track `make size` (flash/RAM budget) and keep a running tally in `specs/MEMORY.md`.
