@@ -2346,6 +2346,22 @@ WO-14f-i's 1,375,774 B); DIRAM 260,018/576,464 B = 45.11% (+848 B: +792 IRAM tex
 float-state; on a constant 0.25 input its decay reaches float precision before mathematical
 double-precision zero, while measured AC response and strong DC rejection remain in tolerance.
 
+## 2026-07-20 — WO-14e-i: obsolete oscillator/SVF cleanup (COMPLETE)
+
+Deleted the superseded Daisy `dsp::Osc`/`dsp::Filter` wrappers and the standalone
+PolyBLEP aliasing suite. `test_osc_waveform.cpp` now retains only ModMatrix PWM and
+live KR-backed `JunoVoice` saw/pulse/sub coverage. The device micro-bench replaces
+its Daisy oscillator/SVF/white-noise rows with KR J106 coherent saw+pulse+sub,
+optimized J106 VCF at 1x, and shared KR noise; ENV2 ADSR, shared LFO, and ModMatrix
+rows remain. No other production/test caller referenced either deleted wrapper.
+
+`make format`, `make host`, `make test`, `make BENCH=1 build`, normal `make build`,
+`make size`, deleted-include/membrane greps, and `git diff --check` pass. Normal image
+is 1,377,042 B (34% app partition free); mapped flash 1,227,004 B; DIRAM
+260,018/576,464 B (45.11%). Normal-build delta is zero by construction: only
+BENCH-guarded firmware code, host tests, and unused wrapper headers changed. Next:
+WO-14e-ii removes the now-dead Daisy oscillator/SVF/chorus build and linker entries.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

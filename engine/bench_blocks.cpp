@@ -4,7 +4,8 @@
 // rate, so we know the -O2 per-block contribution of each piece.
 //
 // Excluded from the shipping image (SYNTH_BENCH guard), same as bench.c.
-// Lives in engine/ to reach dsp/ wrappers + DaisySP headers without touching
+// Lives in engine/ to reach the live KR-106 blocks and retained modulation
+// helpers without touching
 // the audio path or including esp_/bsp_/SDL/miniaudio headers.
 //
 // Findings feed the next optimisation round (see specs/MEMORY.md Stage 3d-ii
@@ -14,14 +15,14 @@
 
 #include "bench.h"
 
-// dsp/ wrappers (thin header-only C++ over DaisySP).
+// Retained envelope and shared LFO helpers.
 #include "dsp/env.h"
-#include "dsp/filter.h"
 #include "dsp/lfo.h"
-#include "dsp/osc.h"
 
-// DaisySP headers (direct, for modules not wrapped in dsp/).
-#include "Noise/whitenoise.h"
+// Live KR-106 voice blocks.
+#include "dsp/vendor/kr106/KR106Noise.h"
+#include "dsp/vendor/kr106/KR106Oscillators.h"
+#include "dsp/vendor/kr106/KR106VCF_OPTIMIZED.h"
 
 // ModMatrix (engine, C++).
 #include <inttypes.h>
@@ -68,53 +69,62 @@ extern "C" void bench_blocks_run(uint32_t block_period, uint32_t cps, uint32_t n
     const float sr = 48000.0f;
 
     // ------------------------------------------------------------------
-    // dsp::Osc — PolyBLEP sawtooth
+    // KR-106 phase-coherent J106 saw + pulse + sub oscillator
     // ------------------------------------------------------------------
     {
-        static dsp::Osc osc;
-        osc.init(sr);
-        osc.set_freq(220.0f);
+        static kr106::Oscillators osc;
+        osc.Init(sr);
+        osc.mPulseInvert      = true;
+        osc.mSawAmp           = kr106::kSawAmpJ106;
+        osc.mPulseAmp         = kr106::kPulseAmpJ106;
+        osc.mSubAmp           = kr106::kSubAmpJ106;
+        const float cps       = 220.0f / sr;
+        const float sub_level = kr106::Oscillators::AudioTaper(0.5f);
+        bool        sync      = false;
 
         // Warmup.
-        for (uint32_t i = 0; i < n; i++) buf[i] = osc.process();
+        for (uint32_t i = 0; i < n; i++) buf[i] = osc.Process(cps, 0.5f, true, true, true, sub_level, 0.0f, sync);
         bb_sink = buf[0];
 
         uint64_t t0 = platform_cycles_now();
         for (int r = 0; r < BB_REPEATS; r++) {
-            for (uint32_t i = 0; i < n; i++) buf[i] = osc.process();
-        }
-        uint64_t t1 = platform_cycles_now();
-        bb_sink     = buf[n - 1];
-        bb_print_row("dsp::Osc PolyBLEP saw", t0, t1, BB_REPEATS, n, block_period, cps);
-    }
-
-    // ------------------------------------------------------------------
-    // dsp::Filter — SVF, block-rate freq (set_freq once per block)
-    // ------------------------------------------------------------------
-    {
-        static dsp::Filter flt;
-        flt.init(sr);
-        flt.set_res(0.3f);
-        flt.set_freq(2000.0f);  // set once before loop — block-rate design
-
-        // Warmup.
-        for (uint32_t i = 0; i < n; i++) {
-            flt.process(buf[i]);
-            buf[i] = flt.output();
-        }
-        bb_sink = buf[0];
-
-        uint64_t t0 = platform_cycles_now();
-        for (int r = 0; r < BB_REPEATS; r++) {
-            flt.set_freq(2000.0f);  // block-rate set_freq (once per block)
             for (uint32_t i = 0; i < n; i++) {
-                flt.process(buf[i]);
-                buf[i] = flt.output();
+                buf[i] = osc.Process(cps, 0.5f, true, true, true, sub_level, 0.0f, sync);
             }
         }
         uint64_t t1 = platform_cycles_now();
         bb_sink     = buf[n - 1];
-        bb_print_row("dsp::Filter SVF (block-rate freq)", t0, t1, BB_REPEATS, n, block_period, cps);
+        bb_print_row("KR J106 osc saw+pulse+sub", t0, t1, BB_REPEATS, n, block_period, cps);
+    }
+
+    // ------------------------------------------------------------------
+    // KR-106 optimized J106 VCF at 1x oversampling
+    // ------------------------------------------------------------------
+    {
+        static kr106::VCF vcf;
+        vcf.SetSampleRate(sr);
+        vcf.SetOversample(1);
+        vcf.mJ106Res = true;
+        vcf.UpdateCoeffs(2000.0f * 2.0f / sr, 0.3f);
+
+        // Warmup.
+        for (uint32_t i = 0; i < n; i++) {
+            vcf.TrackInputEnv(buf[i]);
+            buf[i] = vcf.ProcessSample(buf[i]);
+        }
+        bb_sink = buf[0];
+
+        uint64_t t0 = platform_cycles_now();
+        for (int r = 0; r < BB_REPEATS; r++) {
+            vcf.UpdateCoeffs(2000.0f * 2.0f / sr, 0.3f);
+            for (uint32_t i = 0; i < n; i++) {
+                vcf.TrackInputEnv(buf[i]);
+                buf[i] = vcf.ProcessSample(buf[i]);
+            }
+        }
+        uint64_t t1 = platform_cycles_now();
+        bb_sink     = buf[n - 1];
+        bb_print_row("KR J106 VCF (1x)", t0, t1, BB_REPEATS, n, block_period, cps);
     }
 
     // ------------------------------------------------------------------
@@ -186,11 +196,11 @@ extern "C" void bench_blocks_run(uint32_t block_period, uint32_t cps, uint32_t n
     }
 
     // ------------------------------------------------------------------
-    // WhiteNoise (DaisySP direct)
+    // Shared KR-106 noise source
     // ------------------------------------------------------------------
     {
-        static daisysp::WhiteNoise noise;
-        noise.Init();
+        static kr106::Noise noise;
+        noise.SetSampleRate(sr);
 
         // Warmup.
         for (uint32_t i = 0; i < n; i++) buf[i] = noise.Process();
@@ -202,7 +212,7 @@ extern "C" void bench_blocks_run(uint32_t block_period, uint32_t cps, uint32_t n
         }
         uint64_t t1 = platform_cycles_now();
         bb_sink     = buf[n - 1];
-        bb_print_row("WhiteNoise", t0, t1, BB_REPEATS, n, block_period, cps);
+        bb_print_row("KR shared noise", t0, t1, BB_REPEATS, n, block_period, cps);
     }
 
     // ------------------------------------------------------------------
