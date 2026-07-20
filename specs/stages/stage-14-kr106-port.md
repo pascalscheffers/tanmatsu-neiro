@@ -144,3 +144,69 @@ parameter IDs intact.
   monotonically, device math/link behavior changes, another target file is required, or
   the new envelope cannot reach idle in bounded time at the maximum release.
 - Do not import `KR106Voice.h` or change persisted parameter semantics to escape a gate.
+
+## WO-14c-i — One shared J106 noise source
+
+**Goal:** Replace the per-voice Daisy white-noise generators and linear gain with one
+continuously running KR-106 Juno-106 noise source shared by all voices, matching the
+hardware topology and panel taper.
+
+### Touch list (only these eight paths)
+
+1. `dsp/vendor/kr106/KR106Noise.h` (new; verbatim tracked source)
+2. `dsp/vendor/kr106/README.md`
+3. `engine/voice.h`
+4. `engine/juno_voice.h`
+5. `engine/juno_voice.cpp`
+6. `engine/synth.cpp`
+7. `tests/host/test_voice.cpp`
+8. `specs/MEMORY.md`
+
+### Read list
+
+1. This work-order.
+2. Source `Source/DSP/KR106Noise.h` and only
+   `Source/DSP/KR106Voice.h:dcoNoiseLevel_j106` at the pinned commit.
+3. Target `engine/voice.h:IVoice` and `engine/juno_voice.{h,cpp}:JunoVoice`.
+4. Target `engine/synth.cpp:{s_mono,synth_init,synth_render steps 3a/5}`.
+5. Target `tests/host/test_voice.cpp` noise/zero-level/finite tests only.
+
+### Reuse / implementation pins
+
+- Vendor `KR106Noise.h` verbatim and append it to the vendor README provenance list.
+- `synth.cpp` owns one `kr106::Noise` and one fixed `kMaxBlock` float buffer. In
+  `synth_init`, reconstruct/reset the generator before `SetSampleRate` (that setter clears
+  filter state but does not reset its seed). In every render, advance it once per frame
+  unconditionally, including when no voice or noise parameter is active.
+- Add `IVoice::set_noise_input(const float* samples, size_t n)` as an allocation-free
+  block-input seam with a default no-op implementation so other voice/test doubles do not
+  need edits. `JunoVoice` overrides it and keeps only the pointer/count until its immediate
+  render call; null/short inputs fail silent.
+- Remove the per-voice Daisy `WhiteNoise` include/member/init/process call. Inject the same
+  shared buffer into every voice alongside LFO/expression before voice rendering.
+- Clamp `NOISE_LEVEL + modulation` to `[0,1]`, apply the exact pinned J106 panel curve
+  `d=x-0.0594; gain=0 when x<=0 else 1.0632*(sqrt(d*d+0.0146^2)+d)/2`, then multiply by
+  `kr106::kNoiseAmpJ106` and the shared sample. The descriptor remains linear because it
+  represents slider travel; taper lives in DSP.
+- Preserve the all-sources-off VCF-floor mute contract from WO-14a. Do not add the separate
+  analog-floor/popcorn control described in stale upstream comments (pinned code has none).
+
+### Acceptance
+
+- Tests prove: fresh reconstructed generators are sample-identical; one-shot vs split-block
+  generation is identical; two equivalent voices fed the same block produce identical
+  noise-only output; level 0 is silent; mid/full slider levels are monotonic and nonlinear;
+  long FTZ-off rendering is finite and leaves no subnormal public state/output.
+- No per-voice PRNG/noise generator remains. Render path has no allocation, logging,
+  blocking, or new platform dependency.
+- `make format`, `make host`, `make test`, `make build`, `make size`, membrane grep, and
+  `git diff --check` pass. Record image/DIRAM/`sizeof(JunoVoice)` deltas in `MEMORY.md` and
+  commit atomically.
+
+### Split-if / stop conditions
+
+- Stop if `kMaxBlock` cannot bound the callback, the pointer lifetime crosses a render
+  call, the shared seam requires edits to another voice/test double, the device rejects
+  upstream `M_PI`, or another target file is needed.
+- Do not fall back to one KR noise generator per voice; that defeats the hardware topology
+  and dedup goal.
