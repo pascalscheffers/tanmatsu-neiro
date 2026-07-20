@@ -20,6 +20,29 @@ configure_file(
     "${CMAKE_CURRENT_BINARY_DIR}/generated/factory_bank_embed.cpp"
     @ONLY)
 
+# WO-13h: test-only embed of the 128-patch Juno-106 bank, proving it parses.
+# No runtime provider exists yet (that's WO-13i), so this doesn't need the
+# factory_bank.h seam — just a minimal generated accessor the test links
+# directly, mirroring the neiro embed's file(READ)+raw-string mechanism
+# without a checked-in .in template (kept out of WO-13h's touch list).
+file(READ "${REPO_ROOT}/engine/banks/juno106_factory.json" JUNO106_FACTORY_JSON_CONTENT)
+file(CONFIGURE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/juno106_bank_embed.cpp"
+    CONTENT [==[// GENERATED FILE — do not edit, do not commit. Produced at CMake configure
+// time by tests/host/CMakeLists.txt from engine/banks/juno106_factory.json
+// (WO-13h). Wraps the bank verbatim as a raw string literal so the host test
+// can prove it parses without a device build.
+#include <cstddef>
+
+static const char kJuno106FactoryBankJson[] = R"JUNO106BANK(@JUNO106_FACTORY_JSON_CONTENT@)JUNO106BANK";
+
+const char* juno106_factory_bank_json(size_t* len_out) {
+    if (len_out) *len_out = sizeof(kJuno106FactoryBankJson) - 1;  // exclude the implicit NUL
+    return kJuno106FactoryBankJson;
+}
+]==]
+    @ONLY)
+
 add_executable(tanmatsu-tests
     main.cpp
     test_midi_parse.cpp
@@ -48,8 +71,10 @@ add_executable(tanmatsu-tests
     test_sustain.cpp
     test_bank_json.cpp
     test_neiro_bank.cpp
+    test_juno106_bank.cpp
     test_user_bank.cpp
     "${CMAKE_CURRENT_BINARY_DIR}/generated/factory_bank_embed.cpp"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/juno106_bank_embed.cpp"
     # mono+unison voice-cap regression tests.
     test_alloc_unison_mono.cpp
     # WO-3: preset browser state-machine tests (no PAX dependency).

@@ -2083,6 +2083,57 @@ Pascal: bring `../tape-decoder` in, but **decoded parameter records only — no 
 - **Next:** WO-13h (control-curve mapping to `PresetPatch`) and WO-13i (unified provider) are
   unstarted — `records.json` is raw source bytes, not yet playable.
 
+## 2026-07-20 — WO-13h: Juno-106 records mapped to embedded JSON factory bank (COMPLETE)
+
+Per ADR 0027 (no runtime decoder). New `tools/build_juno106_bank.py`: offline-only mapper,
+frozen `third_party/juno106-factory/records.json` (128 raw 18-byte records) through
+documented curves into `engine/banks/juno106_factory.json` (128 patches, sorted-key JSON,
+deterministic). `--check` proves committed file byte-current from source. Every continuous
+byte→value curve is one named function (`decode_curve`, LIN/EXP) documented in new
+`specs/notes/juno106-control-curves.md`, alongside the two switch-byte decoders
+(`decode_switch16`/`decode_switch17`). Name assignment moved into this WO: patch name =
+canonical slot label, ` (uncertain)` appended when `records.json`'s own `uncertain` flag is
+set (read, not hardcoded) — 8 slots so marked (A73/A74/A86/A87/A88/B65/B74/B88), matching the
+tape-decode residue list.
+
+**Calibration-pending (flagged, not blocking):** all continuous-byte curves use the
+"declared-curve fallback" — each param's own already-declared `ParamCurve`+min/max reused as
+the simplest documented monotonic mapping, in lieu of measured real-hardware tapers. Also
+pending: the range-switch 3-bit field doesn't cleanly encode 3 positions in real data (all 8
+3-bit values appear across 128 records) — clamped `min(field,2)` rather than invented;
+chorus off/I/II bit-inversion convention adopted and documented but unverified against
+hardware. Real WO-13i/13k work: re-derive these against actual Juno-106 measurements.
+
+**Necessary fix mid-build:** 5 already-`uncertain` records (A86, A88, B65, B74, B88) carry a
+stray high bit in byte 16 and/or 17 (tape-decode residue) that would otherwise raise in the
+switch decoders — confirmed via one-off check that `byte16>=128 or byte17>=32` correlates
+100% with `uncertain=True` and no continuous byte ever violates 0-127. Fixed by masking
+(`byte16 &= 0x7F`, `byte17 &= 0x1F`) rather than raising; documented in both the script and
+the control-curves note.
+
+Wired into device build (`main/CMakeLists.txt` `EMBED_TXTFILES`, alongside the Neiro bank)
+and into the test build (`tests/host/CMakeLists.txt`, `file(READ)` + `file(CONFIGURE)`
+generating a minimal wrapper cpp inline — no `.in` template needed, avoiding an extra
+touch-list file). New `tests/host/test_juno106_bank.cpp` (5 cases: 128-patch parse, slot-label
+boundaries incl. `"A88 (uncertain)"`, exactly-8-uncertain, all values finite/in-range, A11
+spot-check incl. Neiro-extension defaults and ADSR→Env2 duplication) and stdlib-only
+`tests/tools/test_build_juno106_bank.py` (24 cases: curve endpoints/monotonicity/rejection,
+switch decoders incl. masking, full-bank invariants, `--check`/committed-file currency).
+
+**Touch-list deviation:** `tests/host/main.cpp` also edited (declare + call
+`test_juno106_bank_suite()`, same pattern as the existing `test_neiro_bank_suite()`) — outside
+the WO's stated 8-file list, but mechanical and necessary: the new suite can't run under
+`make test` without being registered here. No other deviation; no gate or split-if fired.
+
+`make host` / `make test` (incl. new 5+24 cases) / `make build` / `make format` / `make size`
+all green. Device: both banks embedded (`neiro_factory.json.S.obj` +
+`juno106_factory.json.S.obj`), app.bin 42% flash free. Membrane clean (no `esp_`/`bsp_`/SDL/
+miniaudio in new files).
+
+Next: **WO-13i** — unified factory-bank provider selecting between Neiro/Juno-106 banks
+(runtime seam), then retune/calibrate the flagged curves above against real hardware
+(WO-13k or folded into 13i).
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.

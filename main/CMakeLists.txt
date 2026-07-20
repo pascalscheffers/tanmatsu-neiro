@@ -93,6 +93,10 @@ idf_component_register(
 	EMBED_TXTFILES
 		# WO-13-neiro-bank: the Neiro factory bank's only home (ADR 0027).
 		"../engine/banks/neiro_factory.json"
+		# WO-13h: the 128-patch original Juno-106 bank, offline-mapped by
+		# tools/build_juno106_bank.py from third_party/juno106-factory/records.json.
+		# Embeds the bytes only; the runtime provider lands in WO-13i.
+		"../engine/banks/juno106_factory.json"
 	INCLUDE_DIRS
 		"."
 		"../platform"

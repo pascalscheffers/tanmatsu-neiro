@@ -152,7 +152,7 @@ single Juno envelope drives both destinations. All source bytes are 0–127.
 | 13-neiro-bank | serialize the 12 Neiro patches to an embedded JSON bank; drop hardcoded data | medium | 13-fmt, 13c–13e |
 | 13g-i | **Opus-led**: document then decode the tape transport (offline tool) | high | 13a |
 | 13g-ii | vendor licensed WAVs; offline-generate the 128-patch JSON bank | medium | 13g-i + source gate |
-| 13h | offline: decode raw Juno records through calibrated curves into JSON | high | 13d, 13-fmt, 13g-ii |
+| 13h | offline: map raw Juno records through calibrated curves into the embedded JSON bank | high | 13d, 13-fmt, 13g-i (`records.json` frozen) |
 | 13i | expose 128 originals + Neiro bank + user banks through one provider | high | 13-neiro-bank, 13h |
 | 13j | browser labels, documentation, exhaustive smoke verification | medium | 13i |
 | 13k | host/device sonic calibration and final acceptance at 6 voices | high | 13j |
@@ -492,43 +492,86 @@ MEMORY.
 or exact 2×64-record shape. Stop; do not silently substitute GPL output or a merely
 downloadable bank.
 
-## WO-13h — Decode Juno records with calibrated curves
+## WO-13h — Map Juno records through calibrated curves into the embedded JSON bank
 
-**Touch list (8):** `engine/juno106_patch.h`, `engine/juno106_patch.cpp`,
-`tests/host/test_juno106_patch.cpp`, `main/CMakeLists.txt`, `host/CMakeLists.txt`,
-`tests/host/CMakeLists.txt`, `specs/notes/juno106-control-curves.md`,
-`specs/MEMORY.md`.
+> **Reworked for ADR 0027 (2026-07-20).** The original text below authored a C++ *runtime*
+> record decoder (`engine/juno106_patch.*`). ADR 0027 deleted the runtime decoder: the tape is
+> mapped to patches **once, offline**, into a JSON bank embedded via `EMBED_TXTFILES` and parsed
+> at boot by the existing `bank_json` codec. This WO is now **pure offline build tooling** — no
+> new firmware code, no per-record C++ decoder, no on-device allocation to reason about. It
+> mirrors the neiro-bank pipeline already landed at WO-13-neiro-bank
+> (`engine/banks/neiro_factory.json` + `configure_file` host embed + `EMBED_TXTFILES` device
+> embed + `test_neiro_bank.cpp`) — copy that shape.
 
-**Read list (5):** this work-order and Source record contract;
-`engine/preset.h:PresetPatch`; `engine/param_desc.cpp:Juno rows`; Roland Owner's Manual
-`MIDI Implementation`; Roland's published Juno-106 control ranges pinned by ADR 0026.
+**Touch list (8):** `tools/build_juno106_bank.py`, `specs/notes/juno106-control-curves.md`,
+`engine/banks/juno106_factory.json` (generated), `main/CMakeLists.txt`,
+`tests/host/CMakeLists.txt`, `tests/host/test_juno106_bank.cpp`,
+`tests/tools/test_build_juno106_bank.py`, `specs/MEMORY.md`.
 
-**Reuse:** parameter descriptors for ordinary normalized mapping, shared-envelope duplication,
-direct Juno panel params from 13c/13d, and fixed-capacity `PresetPatch`.
+**Read list (5):** this work-order + the Source record contract earlier in this file;
+`engine/bank_json.h` (bank JSON schema, `PresetPatch`, param-key = canonical `ParamDesc::name`,
+values in **physical** units); `specs/notes/juno106-parameter-set.md` (byte→`ParamId` map, switch
+decode formulas, §B open-research list of un-calibrated curves); `tools/decode_juno106_tape.py`
++ `third_party/juno106-factory/records.json` (the frozen 128-record source: `slot`, `uncertain`,
+18-byte `record`); the neiro-bank pattern (`engine/banks/neiro_factory.json`, its
+`main/CMakeLists.txt` / `tests/host/CMakeLists.txt` wiring, `tests/host/test_neiro_bank.cpp`).
 
-**Don't read:** KR-106 or other GPL decoders/curves/generated headers/DSP, UI, platform, or
-unrelated tests.
+**Reuse:** the Juno byte→`ParamId` map and switch-decode formulas already written in
+`juno106-parameter-set.md` §A; the `bank_json` schema (do not invent a new format); the
+neiro-bank CMake embed + host-test scaffolding (copy, don't re-derive); `param_desc` ranges for
+range-clamping and validation.
 
-**Implementation:** decode one raw record into a complete neutral-initialized `PresetPatch`.
-Use small named conversion functions for the Juno-106 slider curves; do not scatter `/127`
-or magic times/frequencies. Independently document each mapping and its published range or
-measurement basis in the control-curves note. At minimum cover LFO rate/delay, DCO/VCF
-modulation depths, VCF cutoff, ADSR times, and VCA level. Where no authoritative curve is
-available, use the simplest monotonic mapping through Neiro's parameter descriptor and mark
-it for hardware calibration rather than borrowing a third-party table. Map all switches
-exactly. Duplicate A/D/S/R to both envelopes. Set master gain to unity and emit zero matrix
-routes.
+**Don't read:** KR-106 or any GPL decoder/curve table/generated header; DSP/voice code; UI;
+platform; unrelated tests. Do **not** borrow a third-party byte→units curve table — clean-room
+only (Roland published ranges + `param_desc` ranges + simplest monotonic fallback).
 
-**Acceptance:** exhaustive tests cover all 128 records and every switch combination present;
-selected patches assert exact decoded controls; all values are within their descriptor ranges;
-no record produces NaN/Inf; decoder allocates nothing; all standard verification passes;
-atomic MIT decoder commit and MEMORY.
+**Implementation:**
+1. **`tools/build_juno106_bank.py`** — offline, stdlib-only (no numpy/scipy; it consumes JSON,
+   not audio). Read `third_party/juno106-factory/records.json`; for each of the 128 records map
+   the 18 bytes through small, named per-parameter conversion functions into a `PresetPatch`-
+   shaped JSON object: `{ "name", "params": { "<canonical param name>": <physical value>, ... } }`,
+   `routes` omitted/empty. **No `/127` or magic times/frequencies scattered inline** — every
+   continuous curve is one named function, and each one is documented (published range or
+   "monotonic fallback, needs hardware calibration") in the control-curves note. Cover at least:
+   LFO rate/delay, DCO/VCF LFO depths, DCO PWM, noise/sub/VCA levels, VCF cutoff/res/env-depth/
+   key-track, ADSR A/D/S/R. Decode **all** switch bytes exactly per `juno106-parameter-set.md`
+   §A (range, saw/pulse independent, PWM mode, HPF `3-((sw2>>3)&3)`, VCA gate, env polarity,
+   chorus off/I/II). **Duplicate A/D/S/R** into both envelope pairs (ENV1 amp / ENV2 filter).
+   Load Neiro extensions at their neutral originals value (`OSC_LEVEL` unity, `FILTER_MODE` LP,
+   master gain unity). **Name assignment** (moved here from WO-13i): patch name = canonical slot
+   label (`A11`..`B88`); append ` (uncertain)` for the 8 flagged slots (A73, A74, A86, A87, A88,
+   B65, B74, B88 — read the flag from `records.json`, don't hardcode the list). Emit
+   deterministic, sorted-key JSON so the checked-in file is reproducible.
+2. **`engine/banks/juno106_factory.json`** — commit the generated 128-patch bank.
+3. **Embed wiring** — add the Juno bank to `main/CMakeLists.txt` `EMBED_TXTFILES` and the host
+   `configure_file`/`file(READ ...)` in `tests/host/CMakeLists.txt`, mirroring `neiro_factory.json`
+   exactly. (The unified *provider* that exposes this bank at runtime is WO-13i; this WO only
+   embeds the bytes + proves they parse.)
 
-**Split-if:** faithful VCF/envelope conversion requires replacing the DSP algorithm rather
-than mapping its controls. Stop with the mismatch and an isolated follow-up proposal; do not
-copy any third-party voice engine into this job.
+**Acceptance:** `build_juno106_bank.py` regenerates `juno106_factory.json` byte-identically from
+the committed `records.json` (a `--check` mode, like the decoder's, proves the checked-in file is
+current). `tests/tools/test_build_juno106_bank.py` (stdlib-only): per-curve conversion unit tests
++ switch-decode tests + structural checks on the emitted bank (128 patches, unique slot-label
+names, exactly the 8 `(uncertain)` suffixes, spot-checked known switch combos). `test_juno106_bank.cpp`
+(host, mirrors `test_neiro_bank.cpp`): `bank_json_parse` over the embedded bytes yields 128
+patches; every param value is finite (no NaN/Inf) and within its `param_desc` range; a few
+hand-verified records assert exact decoded control values. `make host`/`make test`/`make build`/
+`make format`/`make size` green; atomic commit + MEMORY entry.
+
+**Split-if:** a faithful continuous curve for some parameter genuinely needs measured hardware
+data we don't have (per `juno106-parameter-set.md` §B). Ship the monotonic-fallback mapping,
+mark that parameter in the control-curves note as calibration-pending, and note it in MEMORY —
+do **not** block the bank on it, and do **not** copy a third-party curve table. Only hard-stop
+if the record contract itself doesn't match `records.json`.
 
 ## WO-13i — Unified factory provider
+
+> **Needs the same ADR-0027 rework as 13h (not yet applied — do before dispatching 13i).** The
+> refs below to `engine/juno106_patch.h:decoder` and `engine/factory_juno106_data.inc` are the
+> dead runtime-decoder pipeline. Post-rework: both original + Neiro banks are embedded JSON, and
+> **patch names (incl. the 8 `(uncertain)` slots) are already baked into `juno106_factory.json`
+> by WO-13h** — 13i just parses the two embedded banks and exposes them behind one provider; it
+> does not re-derive names or run any record decoder.
 
 **Touch list (8):** `engine/factory_juno106.h`, `engine/factory_juno106.cpp`,
 `engine/preset.cpp`, `tests/host/test_preset.cpp`, `main/CMakeLists.txt`,
