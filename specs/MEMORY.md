@@ -2002,11 +2002,42 @@ audio-path cost). App partition/DIRAM % unchanged in kind (bootloader untouched,
 
 **Next:** WO-13g-i (Opus-led tape transport) or the WO-13i user-bank provider.
 
+## 2026-07-20 — WO-13g-i: clean-room tape transport decoded (SPLIT-IF, reported)
+
+Opus-led R&D per stage-13. Transport fully reverse-engineered by measurement in an isolated
+`../tape-decoder/` workspace (no third-party decoder consulted): AC-coupled square-wave FSK,
+2 bits/cycle (short/long half-cycles), standard async UART framing (10 bits, LSB-first
+inverted data, 0 frame errors on both evidence files), 41-bit header + 64 × 128-bit records,
+18×7-bit fields + 2 spare bits. **No arithmetic checksum exists in this transport** — integrity
+is UART framing + record-contract plausibility only (exhaustively tested sum/xor/parity, none
+holds). Written up in `specs/notes/juno106-tape-format.md` (transport facts only — no WAV
+audio or decoded patch data committed, per clean-room isolation).
+
+Decode of the two candidate evidence recordings: **123/128 records clean** (62/64 bank A,
+61/64 bank B), 0 framing errors — not the full 128/128 the work-order's acceptance wanted.
+Split-if triggered and reported, not forced: record 63 fails identically in both banks (tape
+lead-out overwrites the last record's tail — systematic, both files); records 61(A)/44(B)/51(B)
+have genuine multi-bit source errors no single-bit fix restores. Deterministic across two
+independent demodulators. See note's "Split-if" section for full reasoning.
+
+**Open question for Pascal** (posed this session): how to treat the 5 unrecoverable slots once
+the separate provenance/licensing gate (below) clears — re-capture the tape, ship 123/128 with
+substitute patches in the 5 gap slots, or something else. Transport description itself is
+final and unblocks re-decoding from a cleaner capture without redoing this work.
+
+**Next:** await Pascal's call on the 5-slot gap; provenance gate below still separately open
+before WO-13g-ii can vendor any tape-derived bytes into the repo.
+
 ## Open Opus gates
 Sonnet appends a 🛑 gate here when a runbook step needs Opus (see `specs/stages/README.md`).
 Opus clears the entry when the gate is resolved.
 
-*(none open — Stage 3d-ii CPU gate cleared 2026-06-29; see archive and `stage-3d-ii-results.md`.)*
+**🛑 Permissive factory-bank provenance (stage-13 WO-13g-ii gate)** — still open, unaffected by
+WO-13g-i. Need explicit MIT/CC0/public-domain redistribution grant covering Edy Hinzen's two
+`TAPE SAVE` WAV recordings (or an equivalent independently-captured source) before any
+tape-derived bytes may be vendored into the repo. WO-13a–13g-i are not blocked by this.
+
+*(Stage 3d-ii CPU gate cleared 2026-06-29; see archive and `stage-3d-ii-results.md`.)*
 
 ✅ Stage 3d-ii (unison / voice CPU cost) — **RATIFIED 2026-06-29 (Opus 4.8)**. Device bench:
   8 voices + worst-case unison+chorus = 50.8% of the 480k-cyc budget (per-voice ~27.5k, fixed
