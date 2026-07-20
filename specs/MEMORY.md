@@ -5,6 +5,26 @@ The **live** log: recent entries + open gates. Older history is in
 just above the "Open Opus gates" section** (which stays last). Lean — link to specs, don't
 restate. When this passes ~200 lines, rotate older entries into the archive.
 
+## 2026-07-20 — SD-card user preset bank loader (COMPLETE)
+
+While WO-13g-i (tape decode) is out-of-session: finished/cleaned up leftover
+`engine/user_bank.{h,cpp}` (control-path only, opendir `/presets/*.json` on
+`platform_sd_root()`, parse via `bank_json_parse`, fixed 128-patch cache).
+Removed dead first parse call + stray comments, added `preset_user_count/name/
+params/routings/bank_reload`. Not yet wired into `preset.cpp`'s factory facade
+or UI/browser — standalone module, no WO in stage-13 doc covers this; treat as
+prep, not part of the WO-13i/13h chain (those still block on the tape decode).
+Host tests added (`tests/host/test_user_bank.cpp`, 3 cases: load+skip
+non-.json, out-of-range safety, reload picks up new files) reusing
+`test_wav_recorder.cpp`'s existing `platform_sd_root`/`platform_sd_available`
+stub rather than redefining it (only one extern "C" definition allowed per
+link). `make format`/`make host`/`make test`/`make build`/`make size` all
+green; device image 1,213,892 B.
+
+Next: still waiting on WO-13g-i tape decode before 13h/13i can proceed. If
+user-bank browsing becomes a real feature, wire `preset_user_*` into
+`preset.cpp` and UI as its own WO.
+
 ## 2026-07-19 — WO-13e-ii: wire Juno-106 HPF before the VCF (COMPLETE)
 
 Per ADR 0026 and WO-13e-i's DSP block. `JunoVoice` gains one `dsp::Juno106Hpf hpf_` member
