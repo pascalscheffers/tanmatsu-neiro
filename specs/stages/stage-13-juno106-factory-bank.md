@@ -1,7 +1,9 @@
 # Stage 13 — Original Juno-106 factory bank and fidelity pass
 
-> **Status: reworked 2026-07-18 (JSON banks + 6-voice). Implementation-ready through WO-13g-i;
-> source gate before WO-13g-ii.** Execute in order as fresh worker jobs. The user ratified the
+> **Status: reworked 2026-07-18 (JSON banks + 6-voice). WO-13a–13h COMPLETE (source gate met;
+> tape decoded once offline; 128-patch `engine/banks/juno106_factory.json` embedded). Next:
+> WO-13i (unified provider), reworked 2026-07-20 for the JSON reality below.** Execute in order
+> as fresh worker jobs. The user ratified the
 > original three decisions on 2026-07-18: (1) when the existing Neiro Juno model conflicts with
 > the original Juno-106 control/signal model, prefer the Juno-106 unless doing so would break a
 > platform invariant; (2) Neiro remains MIT, so no GPL-covered code, data, generated output, or
@@ -566,46 +568,86 @@ if the record contract itself doesn't match `records.json`.
 
 ## WO-13i — Unified factory provider
 
-> **Needs the same ADR-0027 rework as 13h (not yet applied — do before dispatching 13i).** The
-> refs below to `engine/juno106_patch.h:decoder` and `engine/factory_juno106_data.inc` are the
-> dead runtime-decoder pipeline. Post-rework: both original + Neiro banks are embedded JSON, and
-> **patch names (incl. the 8 `(uncertain)` slots) are already baked into `juno106_factory.json`
-> by WO-13h** — 13i just parses the two embedded banks and exposes them behind one provider; it
-> does not re-derive names or run any record decoder.
+> **Reworked for ADR 0027 (2026-07-20).** The original text (now deleted) referenced a dead
+> runtime record-decoder pipeline (`engine/factory_juno106.*`, `engine/juno106_patch.h:decoder`,
+> `engine/factory_juno106_data.inc`) — none of those files exist. The real state after WO-13h:
+> **both banks are embedded JSON** — `engine/banks/neiro_factory.json` (12 Neiro) and
+> `engine/banks/juno106_factory.json` (128 originals, names incl. the 8 `(uncertain)` slots
+> already baked in by the offline `tools/build_juno106_bank.py`). The device build already
+> `EMBED_TXTFILES`-embeds both (`main/CMakeLists.txt`); `tests/host/CMakeLists.txt` already
+> generates an ad-hoc `juno106_factory_bank_json()` accessor for `test_juno106_bank.cpp`.
+> WO-13i does **no decoding of records** — it wires a shared byte accessor for the second bank
+> and extends the existing `preset_factory_*` facade in `engine/preset.cpp` to span 140 entries
+> by parsing the two embedded JSON banks with the existing `bank_json` codec.
 
-**Touch list (8):** `engine/factory_juno106.h`, `engine/factory_juno106.cpp`,
-`engine/preset.cpp`, `tests/host/test_preset.cpp`, `main/CMakeLists.txt`,
-`host/CMakeLists.txt`, `tests/host/CMakeLists.txt`, `specs/MEMORY.md`.
+**Decided design (Opus, no worker gate):** the provider must **not** hold 128 expanded
+`PresetPatch` resident (≈512 KB) and must keep browser scroll cheap. So:
 
-**Read list (5):** this work-order; `engine/preset.cpp:factory facade/default`;
-`engine/factory_neiro_presets.h:private provider`; `engine/juno106_patch.h:decoder`;
-`engine/factory_juno106_data.inc:generated shape`.
+- At first load, parse the Neiro bank into `g_neiro` (unchanged) **and** pull only the 128
+  original **names** into a resident `char[128][PRESET_NAME_LEN]` index (~4 KB) + a count.
+  A name index is not "an expanded patch cache" — it is the minimum the WO-13j browser needs.
+- `preset_factory_params/routings(idx)` for an original (`idx < 128`) **decodes that one patch
+  on demand** by re-parsing the embedded JSON and selecting array element `idx`. This is a
+  control-path action (explicit audition/load), never audio; a re-parse per selection is fine.
+- Indices `>= 128` delegate to the existing `g_neiro` path unchanged.
 
-**Reuse:** `PresetPatch`, the compact data, decoder, existing default-by-name behavior, and
-the current Neiro bank provider.
+**Touch list (9, budget-stretch — see Split-if):** `engine/factory_bank.h`,
+`engine/factory_bank_embed.cpp.in`, `main/factory_bank_embed.cpp`, `engine/bank_json.h`,
+`engine/bank_json.cpp`, `engine/preset.cpp`, `tests/host/CMakeLists.txt`,
+`tests/host/test_preset.cpp`, `specs/MEMORY.md`. (`host/CMakeLists.txt` only if the host app
+target links preset.cpp and needs the second accessor — check before touching.)
 
-**Don't read:** DSP/voice code, UI drawing/state, KR-106 sources, or platform.
+**Read list (5):** this work-order; `engine/preset.cpp` (the `ensure_neiro_bank_loaded` +
+`preset_factory_*` facade); `engine/bank_json.h` (`PresetPatch`, `bank_json_parse`,
+`bank_json_parse_patch`); `engine/factory_bank.h` + `engine/factory_bank_embed.cpp.in` +
+`main/factory_bank_embed.cpp` (the neiro accessor/embed seam to mirror);
+`tests/host/CMakeLists.txt` (existing ad-hoc `juno106_factory_bank_json()` to consolidate).
 
-**Implementation:** expose 140 factory entries: original 128 first, current 12 afterward.
-Original entries use canonical slot labels (`A11`, etc.); add descriptive names only if the
-resolved source grant explicitly covers them. Per `specs/notes/juno106-tape-format.md`
-("Resolution — no further recordings available"), append ` (uncertain)` to the slot label for
-exactly these 8 canonical slots: A73, A74, A86, A87, A88, B65, B74, B88 — the tape-decode
-residue that neither a second independent capture nor further recordings could clear. (An
-earlier draft of this instruction and of the tape-format note misidentified these 8 by raw
-0-indexed record position rather than canonical slot label; corrected 2026-07-20 when
-`tools/decode_juno106_tape.py` generated the actual bank.) All other 120 slots are unmarked.
-Decode only the selected original patch on request. Delegate later indices to the Neiro
-provider.
-Keep boot default resolution by name; preserve the current default unless ADR 0026 names a
-different one. Do not cache 128 expanded patches or allocate.
+**Reuse:** `PresetPatch`, `bank_json_parse` / `bank_json_parse_patch`, the existing
+`ensure_neiro_bank_loaded` lazy-load + fail-closed pattern, the current default-by-name
+behavior, and the `factory_bank.h` accessor seam (device `EMBED_TXTFILES`, host/test
+`configure_file` on `factory_bank_embed.cpp.in`).
 
-**Acceptance:** count 140; exact first/last original slots and all 12 legacy names/order;
-every entry returns a valid `PresetPatch`; repeated decode is deterministic; all standard
-verification passes; flash delta is recorded; atomic feature commit and MEMORY.
+**Don't read:** DSP/voice code, UI drawing/state, KR-106 sources, platform backends, or the
+tape decoder / `records.json`.
 
-**Split-if:** provider integration requires modifying UI or storage. Stop after the provider
-is green; those callers belong to WO-13j.
+**Implementation:**
+1. **Shared accessor.** Add `const char* juno106_factory_bank_json(size_t* len_out)` to
+   `engine/factory_bank.h`. Extend `factory_bank_embed.cpp.in` to emit this accessor alongside
+   the neiro one (second raw-string literal, second `@..._CONTENT@` placeholder); update
+   `tests/host/CMakeLists.txt` to `file(READ ... juno106_factory.json ...)` into that
+   placeholder and **delete its ad-hoc inline accessor**. Add the device-side accessor body to
+   `main/factory_bank_embed.cpp` (the bytes are already `EMBED_TXTFILES`-embedded).
+2. **Two small `bank_json` helpers** (thin cJSON wrappers reusing `bank_json_parse_patch`):
+   `int bank_json_names(const char* json, size_t len, char (*names)[PRESET_NAME_LEN], int max)`
+   → count, fills names; and
+   `bool bank_json_patch_at(const char* json, size_t len, int index, PresetPatch* out)` →
+   decode the one patch at array `index`. Same fail-closed/forward-compat rules; never OOB.
+3. **140-span facade in `preset.cpp`.** Extend `ensure_neiro_bank_loaded` (rename optional) to
+   also load the juno106 name index via `bank_json_names`. `preset_factory_count()` returns
+   `g_juno_count + g_neiro_count` (expected 128 + 12 = 140; if either fails to parse, that half
+   reports 0 — fail closed). `preset_factory_name(idx)`: originals from the name index, Neiro
+   after. `preset_factory_params/routings(idx)`: originals via `bank_json_patch_at` on the
+   embedded JSON, Neiro delegated as today. Keep boot default resolution by name (`"Solo Lead"`,
+   a Neiro patch) — preserve the current default unless ADR 0026 names another. No allocation in
+   the audio path; all parsing stays control-side.
+
+Names (incl. the 8 `(uncertain)` slots and the `A11..B88` slot labels) are already in the JSON;
+WO-13i must **not** re-derive or re-mark them.
+
+**Acceptance:** `preset_factory_count()` == 140; `preset_factory_name(0)` == the first original
+slot label and `name(127)` == the last, verified against `juno106_factory.json`; at least one
+`(uncertain)` slot name carries the ` (uncertain)` suffix; `name(128)`..`name(139)` are the 12
+Neiro patches in current order; `preset_factory_params(idx)` returns a valid `PresetPatch` for a
+sampled original and for a Neiro index; repeated `params(idx)` for the same original is
+byte-identical (deterministic); `preset_factory_default()` unchanged; `make format`/`host`/
+`test`/`build`/`size` green; flash/RAM delta recorded; atomic feature commit + MEMORY.
+
+**Split-if:** (a) if the accessor/embed consolidation + the 140-span provider together blow the
+read/verify budget, land them as two commits — **13i-a** the shared `juno106_factory_bank_json()`
+accessor + embed wiring (mechanical, provider stays Neiro-only, build green) then **13i-b** the
+provider — but still one WO. (b) If provider integration turns out to require touching UI or
+storage, stop after the provider is green; those callers are WO-13j.
 
 ## WO-13j — Browser integration, docs, and exhaustive smoke tests
 
